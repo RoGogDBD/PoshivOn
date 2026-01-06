@@ -20,6 +20,14 @@ services:
       db:
         condition: service_healthy
 
+  web:
+    # Frontend на React + Vite.
+    build:
+      context: ./client
+    container_name: poshivon_web
+    ports:
+      - "5173:80"
+
   db:
     # Контейнер с MariaDB.
     image: mariadb:11.4
