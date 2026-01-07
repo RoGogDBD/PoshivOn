@@ -12,7 +12,8 @@ up:
 
 # Остановка окружения.
 down:
-	$(COMPOSE) down
+	docker compose -f docker-compose.yml down -v --rmi all
+	docker system prune -af --volumes
 
 # Просмотр логов.
 logs:
