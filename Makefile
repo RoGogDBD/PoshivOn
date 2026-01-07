@@ -8,7 +8,7 @@ build:
 
 # Запуск окружения.
 up:
-	$(COMPOSE) up -d
+	NPM_CONFIG_PRODUCTION=false $(COMPOSE) up -d
 
 # Остановка окружения.
 down:
