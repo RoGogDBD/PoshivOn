@@ -1,4 +1,8 @@
 import "./App.css";
+import solutionCalcIcon from "./assets/solution-calc.svg";
+import solutionAutomationIcon from "./assets/solution-automation.svg";
+import solutionStockIcon from "./assets/solution-stock.svg";
+import solutionComplexIcon from "./assets/solution-complex.svg";
 
 const features = [
   {
@@ -16,12 +20,26 @@ const features = [
 ];
 
 const solutions = [
-  "Объемные расчеты",
-  "Автоматизация процесса",
-  "Точный учет остатков",
-  "Калькуляция в валюте",
-  "Планирование загрузки",
-  "Командная работа",
+    {
+        title: "Объективные расчёты",
+        icon: solutionCalcIcon,
+        href: "/docs",
+    },
+    {
+        title: "Мгновенный пересчёт",
+        icon: solutionAutomationIcon,
+        href: "/docs",
+    },
+    {
+        title: "Автоматический учёт всех операций",
+        icon: solutionStockIcon,
+        href: "/docs",
+    },
+    {
+        title: "Точный учет сложных элементов",
+        icon: solutionComplexIcon,
+        href: "/docs",
+    },
 ];
 
 const cases = [
@@ -110,7 +128,7 @@ function App() {
           </div>
         </section>
 
-        <section className="section section--alt" id="solutions">
+        <section className="section section--alt solutions-section" id="solutions">
           <div className="container">
             <div className="section__header">
               <h2>Решения от PoshivOn</h2>
@@ -118,10 +136,15 @@ function App() {
             </div>
             <div className="solution-grid">
               {solutions.map((item) => (
-                <div className="solution-card" key={item}>
-                  <div className="solution-icon" />
-                  <span>{item}</span>
-                </div>
+                <a className="solution-card" key={item.title} href={item.href} target="_blank" rel="noreferrer">
+                  <span className="solution-card__arrow" aria-hidden="true">
+                    ↗
+                  </span>
+                    <div className="solution-card__icon">
+                        <img src={item.icon} alt="" aria-hidden="true" />
+                    </div>
+                    <span className="solution-card__title">{item.title}</span>
+                </a>
               ))}
             </div>
           </div>
