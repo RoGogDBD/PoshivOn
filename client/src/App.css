@@ -404,6 +404,57 @@
 .footer .logo {
   color: #ffffff;
 }
+.modal-open {
+    overflow: hidden;
+}
+
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 20, 40, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    z-index: 30;
+}
+
+.modal {
+    background: #ffffff;
+    border-radius: 24px;
+    padding: 32px;
+    width: min(420px, 100%);
+    box-shadow: 0 30px 70px rgba(15, 20, 40, 0.35);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.modal__close {
+    position: absolute;
+    top: 18px;
+    right: 18px;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: none;
+    background: #f1f3ff;
+    color: #3b4675;
+    font-size: 20px;
+    cursor: pointer;
+}
+
+.modal h3 {
+    margin: 0;
+    font-size: 22px;
+    color: #1d2a5a;
+}
+
+.modal__action {
+    display: flex;
+    justify-content: center;
+}
 
 @media (max-width: 900px) {
   .header__inner {
@@ -437,5 +488,9 @@
 
   .case-card {
     flex-direction: column;
+  }
+
+  .modal {
+    padding: 24px;
   }
 }

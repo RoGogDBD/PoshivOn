@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import "./App.css";
 import solutionCalcIcon from "./assets/solution-calc.svg";
 import solutionAutomationIcon from "./assets/solution-automation.svg";
@@ -58,6 +59,98 @@ const cases = [
 ];
 
 function App() {
+    const [isAuthOpen, setIsAuthOpen] = useState(false);
+
+    useEffect(() => {
+        if (isAuthOpen) {
+            document.body.classList.add("modal-open");
+            return () => {
+                document.body.classList.remove("modal-open");
+            };
+        }
+
+        document.body.classList.remove("modal-open");
+        return undefined;
+    }, [isAuthOpen]);
+
+    useEffect(() => {
+        if (!isAuthOpen) {
+            return undefined;
+        }
+
+        const buttonContainerId = "yandex-id-button";
+        const scriptSrc = "https://yastatic.net/s3/passport-sdk/autofill/v1/sdk-suggest.js";
+
+        const handleKeyDown = (event) => {
+            if (event.key === "Escape") {
+                setIsAuthOpen(false);
+            }
+        };
+
+        window.addEventListener("keydown", handleKeyDown);
+
+        const initAuthSuggest = () => {
+            if (!window.YaAuthSuggest?.init) {
+                return;
+            }
+
+            const oauthQueryParams = {
+                client_id: 'privet_hacker',
+                response_type: 'token',
+                redirect_uri: 'https://poshivon.ru/auth'
+            };
+            const tokenPageOrigin = window.location.origin;
+
+            window.YaAuthSuggest.init(oauthQueryParams, tokenPageOrigin, {
+                view: "button",
+                parentId: buttonContainerId,
+                buttonSize: "xxl",
+                buttonView: "main",
+                buttonTheme: "light",
+                buttonBorderRadius: "28",
+                buttonIcon: "ya",
+            })
+                .then(({ handler }) => handler())
+                .then((data) => {
+                    console.log("Сообщение с токеном", data);
+                })
+                .catch((error) => {
+                    console.log("Обработка ошибки", error);
+                });
+        };
+
+        const container = document.getElementById(buttonContainerId);
+        if (container) {
+            container.innerHTML = "";
+        }
+
+        if (window.YaAuthSuggest?.init) {
+            initAuthSuggest();
+        } else {
+            const existingScript = document.querySelector(`script[src="${scriptSrc}"]`);
+            if (existingScript) {
+                existingScript.addEventListener("load", initAuthSuggest, { once: true });
+            } else {
+                const script = document.createElement("script");
+                script.src = scriptSrc;
+                script.async = true;
+                script.addEventListener("load", initAuthSuggest, { once: true });
+                script.addEventListener(
+                    "error",
+                    () => {
+                        console.log("Не удалось загрузить виджет Яндекс ID.");
+                    },
+                    { once: true },
+                );
+                document.body.appendChild(script);
+            }
+        }
+
+        return () => {
+            window.removeEventListener("keydown", handleKeyDown);
+        };
+    }, [isAuthOpen]);
+
   return (
     <div className="page">
       <header className="header">
@@ -69,7 +162,9 @@ function App() {
             <a href="#cases">Кейсы</a>
             <a href="#cta">Попробовать</a>
           </nav>
-          <button className="btn btn--ghost">Вход</button>
+          <button className="btn btn--ghost" type="button" onClick={() => setIsAuthOpen(true)}>
+              Вход
+          </button>
         </div>
       </header>
 
@@ -200,6 +295,25 @@ function App() {
           </div>
         </div>
       </footer>
+        {isAuthOpen && (
+            <div
+                className="modal-overlay"
+                role="presentation"
+                onClick={(event) => {
+                    if (event.target === event.currentTarget) {
+                        setIsAuthOpen(false);
+                    }
+                }}
+            >
+                <div className="modal" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+                    <button className="modal__close" type="button" onClick={() => setIsAuthOpen(false)} aria-label="Закрыть окно входа">
+                        ×
+                    </button>
+                    <h3 id="auth-title">Вход через Яндекс ID</h3>
+                    <div id="yandex-id-button" className="modal__action" />
+                </div>
+            </div>
+        )}
     </div>
   );
 }
