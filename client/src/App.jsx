@@ -85,20 +85,6 @@ function App() {
                 Автоматизируйте расчеты в PoshivOn: точная калькуляция ткани,
                 фурнитуры и труда — всё в одном сервисе.
               </p>
-              <div className="hero__actions">
-                <button className="btn btn--primary">Рассчитать</button>
-                <button className="btn btn--light">Демо 3 минуты</button>
-              </div>
-              <div className="hero__stats">
-                <div>
-                  <span>15+ моделей</span>
-                  <p>Базовые шаблоны расчетов</p>
-                </div>
-                <div>
-                  <span>24/7 поддержка</span>
-                  <p>Помогаем с внедрением</p>
-                </div>
-              </div>
             </div>
             <div className="hero__visual">
               <div className="machine">
@@ -131,8 +117,8 @@ function App() {
         <section className="section section--alt solutions-section" id="solutions">
           <div className="container">
             <div className="section__header">
-              <h2>Решения от PoshivOn</h2>
-              <p>Соберите расчет под свой тип изделий и команду.</p>
+              <h2>Возможности PoshivOn</h2>
+              <p>Настройте расчёт под ваши изделия и процессы.</p>
             </div>
             <div className="solution-grid">
               {solutions.map((item) => (
@@ -211,7 +197,6 @@ function App() {
           <div className="footer__contacts">
             <span>support@poshivon.ru</span>
             <span>+7 (495) 000-00-00</span>
-            <button className="btn btn--ghost">Рассчитать</button>
           </div>
         </div>
       </footer>

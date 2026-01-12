@@ -208,7 +208,7 @@
 }
 
 .solutions-section .section__header h2 {
-    color: #3b4675;
+    color: #0f1b3d;
 }
 
 .feature-grid {
@@ -240,6 +240,12 @@
   gap: 20px;
 }
 
+@media (min-width: 1000px) {
+    .solution-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+}
+
 .solution-card {
   background: #ffffff;
     border-radius: 18px;
@@ -262,8 +268,8 @@
 }
 
 .solution-card__icon {
-    width: 70px;
-    height: 70px;
+    width: 88px;
+    height: 88px;
     border-radius: 20px;
     background: #f0f4ff;
     display: flex;
@@ -273,8 +279,8 @@
 }
 
 .solution-card__icon img {
-    width: 62px;
-    height: 62px;
+    width: 78px;
+    height: 78px;
     object-fit: contain;
 }
 
