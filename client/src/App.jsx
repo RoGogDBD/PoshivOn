@@ -61,8 +61,7 @@ function App() {
             <div className="hero__content">
               <p className="eyebrow">Посчитайте стоимость пошива</p>
               <h1>
-                Считайте стоимость пошива <span>вручную — по калькулятору</span>,
-                Excel или на глаз?
+                Сервис <span>PoshivOn</span> за <span>2 минуты</span> расчитает точную себестоимость - без ошибок, споров и пересчетов.
               </h1>
               <p className="subtitle">
                 Автоматизируйте расчеты в PoshivOn: точная калькуляция ткани,
