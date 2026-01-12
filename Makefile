@@ -8,11 +8,12 @@ build:
 
 # Запуск окружения.
 up:
-	$(COMPOSE) up -d
+	NPM_CONFIG_PRODUCTION=false $(COMPOSE) up -d
 
 # Остановка окружения.
 down:
-	$(COMPOSE) down
+	docker compose -f docker-compose.yml down -v --rmi all
+	docker system prune -af --volumes
 
 # Просмотр логов.
 logs:
