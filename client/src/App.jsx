@@ -2,16 +2,16 @@ import "./App.css";
 
 const features = [
   {
-    title: "Быстрое планирование",
-    description: "Считайте стоимость заказа за минуты с готовыми шаблонами.",
+    title: "Руководители цехов",
+    description: "Контролируйте загрузку линий и сроки выпуска, не теряя детали.",
   },
   {
-    title: "Точная аналитика",
-    description: "Учитывайте расход ткани и фурнитуры без ручных таблиц.",
+    title: "Технологи",
+    description: "Собирайте точные нормы материалов и стандартные карты пошива.",
   },
   {
-    title: "Коммерческое предложение",
-    description: "Подготовьте понятный расчет для клиента за один клик.",
+    title: "Заказчики",
+    description: "Получайте прозрачный расчет и понятные сроки выполнения заказов.",
   },
 ];
 
@@ -102,7 +102,6 @@ function App() {
             <div className="feature-grid">
               {features.map((item) => (
                 <div className="feature-card" key={item.title}>
-                  <div className="feature-icon" />
                   <h3>{item.title}</h3>
                   <p>{item.description}</p>
                 </div>
