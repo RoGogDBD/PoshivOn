@@ -13,7 +13,16 @@ type Config struct {
 }
 
 func Load() (*Config, error) {
-	_ = loadEnvFile(".env")
+	envPaths := []string{
+		".env",
+		"../.env",
+		"../../.env",
+		"../../../.env",
+	}
+
+	for _, path := range envPaths {
+		loadEnvFile(path)
+	}
 
 	cfg := &Config{
 		Host:        envOrDefault("APP_HOST", "0.0.0.0"),
@@ -25,10 +34,10 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
-func loadEnvFile(filePath string) error {
+func loadEnvFile(filePath string) {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		return err
+		return
 	}
 
 	lines := strings.Split(string(data), "\n")
@@ -53,11 +62,9 @@ func loadEnvFile(filePath string) error {
 		}
 
 		if os.Getenv(key) == "" {
-			_ = os.Setenv(key, value)
+			os.Setenv(key, value)
 		}
 	}
-
-	return nil
 }
 
 func envOrDefault(key, fallback string) string {
