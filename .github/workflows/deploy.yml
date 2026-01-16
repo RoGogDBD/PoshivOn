@@ -58,7 +58,7 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           script: |
             set -e
-            mkdir -p /srv/poshivob
+            mkdir -p /srv/poshivon
 
       - name: Upload docker-compose
         uses: appleboy/scp-action@v0.1.7
@@ -68,7 +68,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
           source: docker-compose.prod.yml
-          target: /srv/poshivob
+          target: /srv/poshivon
 
       - name: Deploy
         uses: appleboy/ssh-action@v1.0.3
@@ -95,7 +95,7 @@ jobs:
           script: |
             set -euo pipefail
             DATABASE_URL="mysql://${DB_USER}:${DB_PASSWORD}@tcp(${DB_HOST}:${DB_PORT})/${DB_NAME}"
-            cat > /srv/poshivob/.env <<EOF
+            cat > /srv/poshivon/.env <<EOF
             IMAGE_OWNER=${IMAGE_OWNER}
             IMAGE_TAG=${IMAGE_TAG}
             APP_HOST=${APP_HOST}
@@ -110,5 +110,5 @@ jobs:
             DB_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
             EOF
             docker login ghcr.io -u "${GHCR_USERNAME}" -p "${GHCR_TOKEN}"
-            docker compose -f /srv/poshivob/docker-compose.prod.yml pull
-            docker compose -f /srv/poshivob/docker-compose.prod.yml up -d
+            docker compose -f /srv/poshivon/docker-compose.prod.yml pull
+            docker compose -f /srv/poshivon/docker-compose.prod.yml up -d
