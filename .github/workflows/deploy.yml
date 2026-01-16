@@ -58,7 +58,11 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           script: |
             set -e
-            mkdir -p /srv/poshivon
+            whoami
+            pwd
+            id
+            ls -ld /srv || true
+            mkdir -p /srv/poshivon || sudo mkdir -p /srv/poshivon
 
       - name: Upload docker-compose
         uses: appleboy/scp-action@v0.1.7
