@@ -1,8 +1,12 @@
 import { useEffect } from "react";
 
 const BUTTON_CONTAINER_ID = "yandex-id-button";
-const SCRIPT_SRC =
-  "https://yastatic.net/s3/passport-sdk/autofill/v1/sdk-suggest-with-polyfills-latest.js";
+const SCRIPT_SRCS = [
+  "https://yastatic.net/s3/passport-sdk/autofill/v1/sdk-suggest-with-polyfills-latest.js",
+  "https://yastatic.net/s3/passport-sdk/autofill/v1/sdk-suggest-latest.js",
+];
+const SCRIPT_LOAD_TIMEOUT_MS = 6000;
+let authScriptPromise;
 
 const persistToken = (data) => {
   if (!data?.access_token) {
@@ -65,30 +69,92 @@ const clearAuthContainer = () => {
   }
 };
 
-const ensureAuthScript = () => {
+const waitForSuggestReady = (script) =>
+  new Promise((resolve) => {
+    if (window.YaAuthSuggest?.init) {
+      resolve(true);
+      return;
+    }
+
+    const finalize = (ok) => resolve(ok);
+    const loaded = script?.dataset?.yaLoaded === "true";
+    const errored = script?.dataset?.yaError === "true";
+
+    if (loaded) {
+      finalize(!!window.YaAuthSuggest?.init);
+      return;
+    }
+
+    if (errored) {
+      finalize(false);
+      return;
+    }
+
+    if (script) {
+      script.addEventListener(
+        "load",
+        () => {
+          script.dataset.yaLoaded = "true";
+          finalize(!!window.YaAuthSuggest?.init);
+        },
+        { once: true }
+      );
+      script.addEventListener(
+        "error",
+        () => {
+          script.dataset.yaError = "true";
+          finalize(false);
+        },
+        { once: true }
+      );
+    }
+
+    window.setTimeout(() => finalize(!!window.YaAuthSuggest?.init), SCRIPT_LOAD_TIMEOUT_MS);
+  });
+
+const loadSuggestScript = async () => {
   if (window.YaAuthSuggest?.init) {
-    initAuthSuggest();
-    return;
+    return true;
   }
 
-  const existingScript = document.querySelector(`script[src="${SCRIPT_SRC}"]`);
-  if (existingScript) {
-    existingScript.addEventListener("load", initAuthSuggest, { once: true });
-    return;
+  for (const src of SCRIPT_SRCS) {
+    const existingScript = document.querySelector(`script[src="${src}"]`);
+    const script =
+      existingScript ||
+      Object.assign(document.createElement("script"), {
+        src,
+        async: true,
+      });
+
+    if (!existingScript) {
+      document.body.appendChild(script);
+    }
+
+    const ready = await waitForSuggestReady(script);
+    if (ready) {
+      return true;
+    }
   }
 
-  const script = document.createElement("script");
-  script.src = SCRIPT_SRC;
-  script.async = true;
-  script.addEventListener("load", initAuthSuggest, { once: true });
-  script.addEventListener(
-    "error",
-    () => {
+  return false;
+};
+
+const ensureAuthScript = () => {
+  if (!authScriptPromise) {
+    authScriptPromise = loadSuggestScript();
+  }
+
+  authScriptPromise
+    .then((ready) => {
+      if (ready) {
+        initAuthSuggest();
+        return;
+      }
       console.log("Не удалось загрузить виджет Яндекс ID.");
-    },
-    { once: true }
-  );
-  document.body.appendChild(script);
+    })
+    .catch((error) => {
+      console.log("Не удалось загрузить виджет Яндекс ID.", error);
+    });
 };
 
 export const useAuthModal = (isOpen, onClose) => {
