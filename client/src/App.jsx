@@ -182,15 +182,7 @@ function App() {
               </p>
             </div>
             <div className="hero__visual">
-              <div className="machine">
-                <div className="machine__screen" />
-                <div className="machine__details" />
-              </div>
-              <div className="hero__card">
-                <p>Калькуляция</p>
-                <strong>₽ 27 450</strong>
-                <span>Готово за 4 минуты</span>
-              </div>
+              <img className="hero__image" src="/sewing_machine.svg" alt="Швейная машина" />
             </div>
           </div>
         </section>
