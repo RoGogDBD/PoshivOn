@@ -48,6 +48,9 @@ jobs:
           file: ./client/Dockerfile
           push: true
           tags: ghcr.io/${{ steps.meta.outputs.owner }}/poshivon-web:${{ steps.meta.outputs.tag }}
+          build-args: |
+            VITE_YA_CLIENT_ID=${{ secrets.VITE_YA_CLIENT_ID }}
+            VITE_YA_REDIRECT_URI=${{ secrets.VITE_YA_REDIRECT_URI }}
 
       - name: Create remote directory
         uses: appleboy/ssh-action@v1.0.3

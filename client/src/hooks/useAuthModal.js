@@ -8,10 +8,19 @@ const initAuthSuggest = () => {
     return;
   }
 
+  const clientId = import.meta.env.VITE_YA_CLIENT_ID;
+  if (!clientId) {
+    console.log("Не задан VITE_YA_CLIENT_ID для Яндекс ID.");
+    return;
+  }
+
+  const redirectUri =
+    import.meta.env.VITE_YA_REDIRECT_URI || `${window.location.origin}/auth`;
+
   const oauthQueryParams = {
-    client_id: "privet_hacker",
+    client_id: clientId,
     response_type: "token",
-    redirect_uri: "https://poshivon.ru/auth",
+    redirect_uri: redirectUri,
   };
   const tokenPageOrigin = window.location.origin;
 

@@ -10,6 +10,7 @@ import CasesSection from "./sections/CasesSection.jsx";
 import CtaSection from "./sections/CtaSection.jsx";
 import { cases, features, footerContacts, navItems, solutions } from "./data/landing.js";
 import { useAuthModal } from "./hooks/useAuthModal.js";
+import AuthCallback from "./pages/AuthCallback.jsx";
 
 function App() {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
@@ -17,6 +18,10 @@ function App() {
   const handleAuthOpen = useCallback(() => setIsAuthOpen(true), []);
 
   useAuthModal(isAuthOpen, handleAuthClose);
+
+  if (window.location.pathname.startsWith("/auth")) {
+    return <AuthCallback />;
+  }
 
   return (
     <div className="page">
