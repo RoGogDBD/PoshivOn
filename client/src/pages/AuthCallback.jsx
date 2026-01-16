@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 
+const TOKEN_SCRIPT_SRC =
+  "https://yastatic.net/s3/passport-sdk/autofill/v1/sdk-suggest-token-with-polyfills-latest.js";
+
 const parseAuthParams = () => {
   const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
   const queryParams = new URLSearchParams(window.location.search);
@@ -22,6 +25,34 @@ const AuthCallback = () => {
   const params = useMemo(() => parseAuthParams(), []);
 
   useEffect(() => {
+    const script = document.createElement("script");
+    script.src = TOKEN_SCRIPT_SRC;
+    script.async = true;
+    script.addEventListener(
+      "load",
+      () => {
+        if (window.YaSendSuggestToken) {
+          window.YaSendSuggestToken(window.location.origin, {
+            onSuccess: () => {
+              setStatus((prev) => (prev === "pending" ? "success" : prev));
+            },
+            onError: () => {
+              setStatus((prev) => (prev === "pending" ? "error" : prev));
+            },
+          });
+        }
+      },
+      { once: true }
+    );
+    script.addEventListener(
+      "error",
+      () => {
+        console.log("Не удалось загрузить скрипт передачи токена.");
+      },
+      { once: true }
+    );
+    document.body.appendChild(script);
+
     if (params.error) {
       setStatus("error");
       return;

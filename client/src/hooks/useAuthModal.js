@@ -1,7 +1,22 @@
 import { useEffect } from "react";
 
 const BUTTON_CONTAINER_ID = "yandex-id-button";
-const SCRIPT_SRC = "https://yastatic.net/s3/passport-sdk/autofill/v1/sdk-suggest.js";
+const SCRIPT_SRC =
+  "https://yastatic.net/s3/passport-sdk/autofill/v1/sdk-suggest-with-polyfills-latest.js";
+
+const persistToken = (data) => {
+  if (!data?.access_token) {
+    return;
+  }
+
+  localStorage.setItem("ya_access_token", data.access_token);
+  if (data.expires_in) {
+    localStorage.setItem("ya_token_expires_in", String(data.expires_in));
+  }
+  if (data.token_type) {
+    localStorage.setItem("ya_token_type", data.token_type);
+  }
+};
 
 const initAuthSuggest = () => {
   if (!window.YaAuthSuggest?.init) {
@@ -36,6 +51,7 @@ const initAuthSuggest = () => {
     .then(({ handler }) => handler())
     .then((data) => {
       console.log("Сообщение с токеном", data);
+      persistToken(data);
     })
     .catch((error) => {
       console.log("Обработка ошибки", error);
