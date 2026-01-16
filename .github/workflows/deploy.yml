@@ -74,16 +74,6 @@ jobs:
           source: docker-compose.prod.yml
           target: /srv/poshivon
 
-      - name: Upload nginx config
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SSH_PORT }}
-          source: deploy/nginx.conf
-          target: /srv/poshivon/nginx
-
       - name: Deploy
         uses: appleboy/ssh-action@v1.0.3
         env:
@@ -112,6 +102,31 @@ jobs:
             set -euo pipefail
             DATABASE_URL="mysql://${DB_USER}:${DB_PASSWORD}@tcp(${DB_HOST}:${DB_PORT})/${DB_NAME}"
             umask 077
+            cat > /srv/poshivon/nginx/default.conf <<'EOF'
+            server {
+              listen 80;
+              server_name poshivon.ru www.poshivon.ru;
+              return 301 https://$host$request_uri;
+            }
+
+            server {
+              listen 443 ssl;
+              server_name poshivon.ru www.poshivon.ru;
+
+              ssl_certificate /etc/nginx/certs/fullchain.pem;
+              ssl_certificate_key /etc/nginx/certs/privkey.pem;
+              ssl_protocols TLSv1.2 TLSv1.3;
+              ssl_prefer_server_ciphers off;
+
+              location / {
+                proxy_pass http://web:80;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+              }
+            }
+            EOF
             cat > /srv/poshivon/certs/fullchain.pem <<EOF
             ${TLS_FULLCHAIN}
             EOF
