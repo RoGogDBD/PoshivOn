@@ -6,18 +6,20 @@ const SCRIPT_SRC =
 const SCRIPT_LOAD_TIMEOUT_MS = 6000;
 let authScriptPromise;
 
-const persistToken = (data) => {
+const persistToken = async (data) => {
   if (!data?.access_token) {
     return;
   }
 
-  localStorage.setItem("ya_access_token", data.access_token);
-  if (data.expires_in) {
-    localStorage.setItem("ya_token_expires_in", String(data.expires_in));
-  }
-  if (data.token_type) {
-    localStorage.setItem("ya_token_type", data.token_type);
-  }
+  const apiBase = import.meta.env.VITE_API_URL || "";
+  await fetch(`${apiBase}/auth/yandex`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    credentials: "include",
+    body: JSON.stringify(data),
+  });
 };
 
 const initAuthSuggest = () => {
@@ -42,7 +44,7 @@ const initAuthSuggest = () => {
 
   const oauthQueryParams = {
     client_id: clientId,
-    response_type: "token",
+    response_type: "code",
     redirect_uri: redirectUri,
   };
   let tokenPageOrigin = window.location.origin;
@@ -64,7 +66,7 @@ const initAuthSuggest = () => {
     .then(({ handler }) => handler())
     .then((data) => {
       console.log("Сообщение с токеном", data);
-      persistToken(data);
+      return persistToken(data);
     })
     .catch((error) => {
       console.log("Обработка ошибки", error);

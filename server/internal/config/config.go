@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -10,6 +11,24 @@ type Config struct {
 	Port        string
 	DatabaseURL string
 	LogLevel    string
+	DBHost      string
+	DBPort      string
+	DBName      string
+	DBUser      string
+	DBPassword  string
+
+	CookieDomain   string
+	CookiePath     string
+	CookieSecure   bool
+	CookieSameSite string
+
+	YandexClientID     string
+	YandexClientSecret string
+	YandexTokenURL     string
+	YandexRedirectURI  string
+
+	AllowedOrigins  string
+	RefreshTTLHours int
 }
 
 func Load() (*Config, error) {
@@ -29,6 +48,24 @@ func Load() (*Config, error) {
 		Port:        envOrDefault("APP_PORT", "8080"),
 		DatabaseURL: envOrDefault("DATABASE_URL", ""),
 		LogLevel:    envOrDefault("LOG_LEVEL", "info"),
+		DBHost:      envOrDefault("DB_HOST", "127.0.0.1"),
+		DBPort:      envOrDefault("DB_PORT", "3306"),
+		DBName:      envOrDefault("DB_NAME", "poshivon"),
+		DBUser:      envOrDefault("DB_USER", "poshivon"),
+		DBPassword:  envOrDefault("DB_PASSWORD", "poshivon"),
+
+		CookieDomain:   envOrDefault("COOKIE_DOMAIN", ""),
+		CookiePath:     envOrDefault("COOKIE_PATH", "/"),
+		CookieSecure:   envBool("COOKIE_SECURE", false),
+		CookieSameSite: envOrDefault("COOKIE_SAMESITE", "Lax"),
+
+		YandexClientID:     envOrDefault("YANDEX_CLIENT_ID", envOrDefault("VITE_YA_CLIENT_ID", "")),
+		YandexClientSecret: envOrDefault("YANDEX_CLIENT_SECRET", envOrDefault("VITE_YA_CLIENT_SECRET", "")),
+		YandexTokenURL:     envOrDefault("YANDEX_TOKEN_URL", "https://oauth.yandex.ru/token"),
+		YandexRedirectURI:  envOrDefault("YANDEX_REDIRECT_URI", envOrDefault("VITE_YA_REDIRECT_URI", "")),
+
+		AllowedOrigins:  envOrDefault("CORS_ALLOWED_ORIGINS", ""),
+		RefreshTTLHours: envInt("REFRESH_TTL_HOURS", 720),
 	}
 
 	return cfg, nil
@@ -72,4 +109,31 @@ func envOrDefault(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func envBool(key string, fallback bool) bool {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	switch strings.ToLower(value) {
+	case "1", "true", "yes", "y", "on":
+		return true
+	case "0", "false", "no", "n", "off":
+		return false
+	default:
+		return fallback
+	}
+}
+
+func envInt(key string, fallback int) int {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
 }
