@@ -3,6 +3,24 @@ const AuthModal = ({ isOpen, onClose }) => {
     return null;
   }
 
+  const handleLogin = () => {
+    const clientId = import.meta.env.VITE_YA_CLIENT_ID;
+    if (!clientId) {
+      console.log("Не задан VITE_YA_CLIENT_ID для Яндекс ID.");
+      return;
+    }
+
+    const redirectUri =
+      import.meta.env.VITE_YA_REDIRECT_URI || `${window.location.origin}/auth`;
+    const params = new URLSearchParams({
+      client_id: clientId,
+      response_type: "code",
+      redirect_uri: redirectUri,
+    });
+
+    window.location.assign(`https://oauth.yandex.ru/authorize?${params.toString()}`);
+  };
+
   return (
     <div
       className="modal-overlay"
@@ -18,7 +36,9 @@ const AuthModal = ({ isOpen, onClose }) => {
           ×
         </button>
         <h3 id="auth-title">Вход через Яндекс ID</h3>
-        <div id="yandex-id-button" className="modal__action" />
+        <button className="btn btn--primary modal__action" type="button" onClick={handleLogin}>
+          Вход
+        </button>
       </div>
     </div>
   );
