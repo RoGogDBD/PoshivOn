@@ -25,36 +25,6 @@ const AuthCallback = () => {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const code = params.get("code");
-    const apiBase = import.meta.env.VITE_API_URL || "";
-    const redirectUri =
-      import.meta.env.VITE_YA_REDIRECT_URI || `${window.location.origin}/auth`;
-
-    if (code) {
-      fetch(`${apiBase}/auth/yandex/code`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: "include",
-        body: JSON.stringify({ code, redirect_uri: redirectUri }),
-      })
-        .then((response) => {
-          if (!response.ok) {
-            throw new Error("exchange_failed");
-          }
-          setStatus("success");
-          window.setTimeout(() => {
-            redirectAfterSuccess();
-          }, 300);
-        })
-        .catch((error) => {
-          console.log("Не удалось обменять код.", error);
-          setStatus("error");
-        });
-      return;
-    }
-
     setStatus("error");
   }, []);
 

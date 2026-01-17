@@ -44,7 +44,7 @@ const initAuthSuggest = () => {
 
   const oauthQueryParams = {
     client_id: clientId,
-    response_type: "code",
+    response_type: "token",
     redirect_uri: redirectUri,
   };
   let tokenPageOrigin = window.location.origin;
@@ -183,6 +183,24 @@ export const useAuthModal = (isOpen, onClose) => {
       return undefined;
     }
 
+    const handleMessage = (event) => {
+      if (event.origin !== window.location.origin) {
+        return;
+      }
+
+      const data = event?.data;
+      if (!data?.access_token) {
+        return;
+      }
+
+      persistToken(data).finally(() => {
+        onClose();
+        window.location.assign(
+          import.meta.env.VITE_AUTH_SUCCESS_REDIRECT || window.location.pathname
+        );
+      });
+    };
+
     const handleKeyDown = (event) => {
       if (event.key === "Escape") {
         onClose();
@@ -190,10 +208,12 @@ export const useAuthModal = (isOpen, onClose) => {
     };
 
     window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("message", handleMessage);
     ensureAuthScript();
 
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("message", handleMessage);
     };
   }, [isOpen, onClose]);
 };
