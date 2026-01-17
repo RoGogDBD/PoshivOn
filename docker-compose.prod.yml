@@ -33,6 +33,7 @@ services:
       - /srv/poshivon/certs:/etc/nginx/certs:ro
     depends_on:
       - web
+      - app
 
   db:
     image: mariadb:11.4

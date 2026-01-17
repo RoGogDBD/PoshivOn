@@ -63,7 +63,18 @@ const initAuthSuggest = () => {
     buttonBorderRadius: "28",
     buttonIcon: "ya",
   })
-    .then(({ handler }) => handler())
+    .then(({ handler }) => {
+      const originalOpen = window.open;
+      window.open = (url) => {
+        if (url) {
+          window.location.assign(url);
+        }
+        return window;
+      };
+      return handler().finally(() => {
+        window.open = originalOpen;
+      });
+    })
     .then((data) => {
       console.log("Сообщение с токеном", data);
       return persistToken(data);
