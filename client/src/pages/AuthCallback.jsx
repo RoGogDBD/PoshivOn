@@ -13,6 +13,16 @@ const AuthCallback = () => {
     return import.meta.env.VITE_AUTH_SUCCESS_REDIRECT || "/";
   };
 
+  const redirectAfterSuccess = () => {
+    const target = resolveRedirectTarget();
+    if (window.opener && !window.opener.closed) {
+      window.opener.location.replace(target);
+      window.close();
+      return;
+    }
+    window.location.replace(target);
+  };
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const code = params.get("code");
@@ -34,9 +44,8 @@ const AuthCallback = () => {
             throw new Error("exchange_failed");
           }
           setStatus("success");
-          const target = resolveRedirectTarget();
           window.setTimeout(() => {
-            window.location.replace(target);
+            redirectAfterSuccess();
           }, 300);
         })
         .catch((error) => {
