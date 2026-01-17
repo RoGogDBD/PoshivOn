@@ -18,7 +18,7 @@ const AuthModal = ({ isOpen, onClose }) => {
           ×
         </button>
         <h3 id="auth-title">Вход через Яндекс ID</h3>
-        <p className="modal__action">Откроется окно мгновенной авторизации Яндекс ID.</p>
+        <div id="yandex-id-button" className="modal__action" />
       </div>
     </div>
   );
