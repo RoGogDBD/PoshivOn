@@ -40,6 +40,10 @@ func NewAuthHandler(store *auth.Store, cfg *config.Config) *AuthHandler {
 }
 
 func (h *AuthHandler) HandleYandexLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
@@ -93,6 +97,10 @@ func (h *AuthHandler) HandleYandexLogin(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *AuthHandler) HandleYandexCode(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
