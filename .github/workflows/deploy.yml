@@ -175,5 +175,5 @@ jobs:
               fi
               sleep 2
             done
-            docker exec poshivon_db mariadb -uroot -p"${DB_ROOT_PASSWORD}" -e "CREATE USER IF NOT EXISTS '${DB_USER}'@'%' IDENTIFIED BY '${DB_PASSWORD}'; GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'%'; FLUSH PRIVILEGES;"
+            docker exec -e MYSQL_PWD="${DB_ROOT_PASSWORD}" poshivon_db mariadb -uroot --protocol=tcp -e "CREATE USER IF NOT EXISTS '${DB_USER}'@'%' IDENTIFIED BY '${DB_PASSWORD}'; GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'%'; FLUSH PRIVILEGES;"
             docker compose -f /srv/poshivon/docker-compose.prod.yml up -d app web proxy
