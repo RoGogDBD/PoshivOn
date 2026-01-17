@@ -1,10 +1,7 @@
 import { useEffect } from "react";
 
-const BUTTON_CONTAINER_ID = "yandex-id-button";
-const SCRIPT_SRCS = [
-  "https://yastatic.net/s3/passport-sdk/autofill/v1/sdk-suggest-with-polyfills-latest.js",
-  "https://yastatic.net/s3/passport-sdk/autofill/v1/sdk-suggest-latest.js",
-];
+const SCRIPT_SRC =
+  "https://yastatic.net/s3/passport-sdk/autofill/v1/sdk-suggest-with-polyfills-latest.js";
 const SCRIPT_LOAD_TIMEOUT_MS = 6000;
 let authScriptPromise;
 
@@ -41,17 +38,14 @@ const initAuthSuggest = () => {
     response_type: "token",
     redirect_uri: redirectUri,
   };
-  const tokenPageOrigin = window.location.origin;
+  let tokenPageOrigin = window.location.origin;
+  try {
+    tokenPageOrigin = new URL(redirectUri).origin;
+  } catch (error) {
+    console.log("Не удалось определить origin для страницы приема токена.", error);
+  }
 
-  window.YaAuthSuggest.init(oauthQueryParams, tokenPageOrigin, {
-    view: "button",
-    parentId: BUTTON_CONTAINER_ID,
-    buttonSize: "xxl",
-    buttonView: "main",
-    buttonTheme: "light",
-    buttonBorderRadius: "28",
-    buttonIcon: "ya",
-  })
+  window.YaAuthSuggest.init(oauthQueryParams, tokenPageOrigin)
     .then(({ handler }) => handler())
     .then((data) => {
       console.log("Сообщение с токеном", data);
@@ -60,13 +54,6 @@ const initAuthSuggest = () => {
     .catch((error) => {
       console.log("Обработка ошибки", error);
     });
-};
-
-const clearAuthContainer = () => {
-  const container = document.getElementById(BUTTON_CONTAINER_ID);
-  if (container) {
-    container.innerHTML = "";
-  }
 };
 
 const waitForSuggestReady = (script) =>
@@ -117,26 +104,19 @@ const loadSuggestScript = async () => {
     return true;
   }
 
-  for (const src of SCRIPT_SRCS) {
-    const existingScript = document.querySelector(`script[src="${src}"]`);
-    const script =
-      existingScript ||
-      Object.assign(document.createElement("script"), {
-        src,
-        async: true,
-      });
+  const existingScript = document.querySelector(`script[src="${SCRIPT_SRC}"]`);
+  const script =
+    existingScript ||
+    Object.assign(document.createElement("script"), {
+      src: SCRIPT_SRC,
+      async: true,
+    });
 
-    if (!existingScript) {
-      document.body.appendChild(script);
-    }
-
-    const ready = await waitForSuggestReady(script);
-    if (ready) {
-      return true;
-    }
+  if (!existingScript) {
+    document.body.appendChild(script);
   }
 
-  return false;
+  return waitForSuggestReady(script);
 };
 
 const ensureAuthScript = () => {
@@ -183,7 +163,6 @@ export const useAuthModal = (isOpen, onClose) => {
 
     window.addEventListener("keydown", handleKeyDown);
 
-    clearAuthContainer();
     ensureAuthScript();
 
     return () => {

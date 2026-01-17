@@ -1,32 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
-const TOKEN_SCRIPT_SRCS = [
-  "https://yastatic.net/s3/passport-sdk/autofill/v1/sdk-suggest-token-with-polyfills-latest.js",
-  "https://yastatic.net/s3/passport-sdk/autofill/v1/sdk-suggest-token-latest.js",
-];
+const TOKEN_SCRIPT_SRC =
+  "https://yastatic.net/s3/passport-sdk/autofill/v1/sdk-suggest-token-with-polyfills-latest.js";
 const TOKEN_SCRIPT_LOAD_TIMEOUT_MS = 6000;
 let tokenScriptPromise;
 
-const parseAuthParams = () => {
-  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
-  const queryParams = new URLSearchParams(window.location.search);
-
-  const params = {
-    accessToken: hashParams.get("access_token") || queryParams.get("access_token"),
-    tokenType: hashParams.get("token_type") || queryParams.get("token_type"),
-    expiresIn: hashParams.get("expires_in") || queryParams.get("expires_in"),
-    error: hashParams.get("error") || queryParams.get("error"),
-    errorDescription:
-      hashParams.get("error_description") || queryParams.get("error_description"),
-  };
-
-  return params;
-};
-
 const AuthCallback = () => {
   const [status, setStatus] = useState("pending");
-
-  const params = useMemo(() => parseAuthParams(), []);
 
   useEffect(() => {
     const waitForTokenReady = (script) =>
@@ -80,26 +60,19 @@ const AuthCallback = () => {
         return true;
       }
 
-      for (const src of TOKEN_SCRIPT_SRCS) {
-        const existingScript = document.querySelector(`script[src="${src}"]`);
-        const script =
-          existingScript ||
-          Object.assign(document.createElement("script"), {
-            src,
-            async: true,
-          });
+      const existingScript = document.querySelector(`script[src="${TOKEN_SCRIPT_SRC}"]`);
+      const script =
+        existingScript ||
+        Object.assign(document.createElement("script"), {
+          src: TOKEN_SCRIPT_SRC,
+          async: true,
+        });
 
-        if (!existingScript) {
-          document.body.appendChild(script);
-        }
-
-        const ready = await waitForTokenReady(script);
-        if (ready) {
-          return true;
-        }
+      if (!existingScript) {
+        document.body.appendChild(script);
       }
 
-      return false;
+      return waitForTokenReady(script);
     };
 
     if (!tokenScriptPromise) {
@@ -113,48 +86,24 @@ const AuthCallback = () => {
           return;
         }
 
-        window.YaSendSuggestToken(window.location.origin, {
-          onSuccess: () => {
-            setStatus((prev) => (prev === "pending" ? "success" : prev));
-          },
-          onError: () => {
-            setStatus((prev) => (prev === "pending" ? "error" : prev));
-          },
-        });
+        window.YaSendSuggestToken(window.location.origin, { flag: true });
+        setStatus("success");
       })
       .catch((error) => {
         console.log("Не удалось загрузить скрипт передачи токена.", error);
+        setStatus("error");
       });
-
-    if (params.error) {
-      setStatus("error");
-      return;
-    }
-
-    if (params.accessToken) {
-      localStorage.setItem("ya_access_token", params.accessToken);
-      if (params.expiresIn) {
-        localStorage.setItem("ya_token_expires_in", params.expiresIn);
-      }
-      if (params.tokenType) {
-        localStorage.setItem("ya_token_type", params.tokenType);
-      }
-      setStatus("success");
-      return;
-    }
-
-    setStatus("empty");
-  }, [params]);
+  }, []);
 
   const content = (() => {
     if (status === "pending") {
       return "Проверяем авторизацию...";
     }
     if (status === "success") {
-      return "Авторизация успешна. Токен сохранен.";
+      return "Токен передан. Можно закрыть эту страницу.";
     }
     if (status === "error") {
-      return `Ошибка авторизации: ${params.errorDescription || params.error}`;
+      return "Ошибка передачи токена. Закройте окно и попробуйте снова.";
     }
     return "Токен не найден. Закройте окно и попробуйте снова.";
   })();
