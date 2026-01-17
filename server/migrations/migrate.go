@@ -1,4 +1,4 @@
-package db
+package migrations
 
 import (
 	"database/sql"
@@ -10,15 +10,15 @@ import (
 	"time"
 )
 
-//go:embed ../../migrations/*.up.sql
+//go:embed *.up.sql
 var migrationsFS embed.FS
 
-func RunMigrations(db *sql.DB) error {
+func Run(db *sql.DB) error {
 	if err := ensureSchemaMigrations(db); err != nil {
 		return err
 	}
 
-	entries, err := fs.Glob(migrationsFS, "../../migrations/*.up.sql")
+	entries, err := fs.Glob(migrationsFS, "*.up.sql")
 	if err != nil {
 		return fmt.Errorf("migration glob failed: %w", err)
 	}
@@ -85,7 +85,5 @@ func loadAppliedVersions(db *sql.DB) (map[string]bool, error) {
 }
 
 func extractVersion(path string) string {
-	parts := strings.Split(path, "/")
-	filename := parts[len(parts)-1]
-	return strings.TrimSuffix(filename, ".up.sql")
+	return strings.TrimSuffix(path, ".up.sql")
 }

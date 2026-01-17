@@ -11,6 +11,7 @@ import (
 	"github.com/RoGogDBD/PoshivOn/internal/config"
 	"github.com/RoGogDBD/PoshivOn/internal/db"
 	"github.com/RoGogDBD/PoshivOn/internal/handler"
+	"github.com/RoGogDBD/PoshivOn/migrations"
 )
 
 func main() {
@@ -25,7 +26,7 @@ func main() {
 	}
 	defer database.Close()
 
-	if err := db.RunMigrations(database); err != nil {
+	if err := migrations.Run(database); err != nil {
 		log.Fatalf("Ошибка применения миграций: %v", err)
 	}
 
