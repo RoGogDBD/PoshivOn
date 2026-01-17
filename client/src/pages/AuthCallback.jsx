@@ -1,31 +1,68 @@
 import { useEffect, useState } from "react";
+import {
+  exchangeYandexCode,
+  getAuthRedirectTarget,
+  getRedirectUri,
+  persistYandexToken,
+} from "../utils/yandexAuth.js";
 
 const AuthCallback = () => {
   const [status, setStatus] = useState("pending");
 
-  const resolveRedirectTarget = () => {
-    const params = new URLSearchParams(window.location.search);
-    const explicit =
-      params.get("returnTo") || params.get("next") || params.get("redirect");
-    if (explicit) {
-      return explicit;
-    }
-    return import.meta.env.VITE_AUTH_SUCCESS_REDIRECT || "/";
-  };
-
-  const redirectAfterSuccess = () => {
-    const target = resolveRedirectTarget();
-    if (window.opener && !window.opener.closed) {
-      window.opener.location.replace(target);
-      window.close();
-      return;
-    }
-    window.location.replace(target);
-  };
-
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    setStatus("error");
+    let isActive = true;
+
+    const finalize = (nextStatus) => {
+      if (isActive) {
+        setStatus(nextStatus);
+      }
+    };
+
+    const run = async () => {
+      const searchParams = new URLSearchParams(window.location.search);
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+
+      const error = searchParams.get("error") || hashParams.get("error");
+      if (error) {
+        finalize("error");
+        return;
+      }
+
+      const accessToken = hashParams.get("access_token");
+      const refreshToken = hashParams.get("refresh_token");
+      const expiresIn = hashParams.get("expires_in");
+
+      try {
+        if (accessToken) {
+          await persistYandexToken({
+            access_token: accessToken,
+            refresh_token: refreshToken || undefined,
+            expires_in: expiresIn ? Number(expiresIn) : undefined,
+          });
+          finalize("success");
+          window.location.replace(getAuthRedirectTarget());
+          return;
+        }
+
+        const code = searchParams.get("code");
+        if (code) {
+          await exchangeYandexCode(code, getRedirectUri());
+          finalize("success");
+          window.location.replace(getAuthRedirectTarget());
+          return;
+        }
+
+        finalize("error");
+      } catch (authError) {
+        console.log("Не удалось завершить авторизацию.", authError);
+        finalize("error");
+      }
+    };
+
+    run();
+    return () => {
+      isActive = false;
+    };
   }, []);
 
   const content = (() => {
@@ -33,12 +70,12 @@ const AuthCallback = () => {
       return "Проверяем авторизацию...";
     }
     if (status === "success") {
-      return "Токен передан. Можно закрыть эту страницу.";
+      return "Авторизация завершена. Возвращаемся назад...";
     }
     if (status === "error") {
-      return "Ошибка передачи токена. Закройте окно и попробуйте снова.";
+      return "Ошибка авторизации. Попробуйте снова.";
     }
-    return "Токен не найден. Закройте окно и попробуйте снова.";
+    return "Токен не найден. Попробуйте снова.";
   })();
 
   return (

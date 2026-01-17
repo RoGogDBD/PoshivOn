@@ -1,7 +1,21 @@
+import { buildYandexAuthUrl, saveAuthReturnTo } from "../utils/yandexAuth.js";
+
 const AuthModal = ({ isOpen, onClose }) => {
   if (!isOpen) {
     return null;
   }
+
+  const handleAuthClick = () => {
+    const authUrl = buildYandexAuthUrl();
+    if (!authUrl) {
+      console.log("Не задан VITE_YA_CLIENT_ID для Яндекс ID.");
+      return;
+    }
+
+    const returnTo = `${window.location.pathname}${window.location.search}`;
+    saveAuthReturnTo(returnTo);
+    window.location.assign(authUrl);
+  };
 
   return (
     <div
@@ -18,7 +32,11 @@ const AuthModal = ({ isOpen, onClose }) => {
           ×
         </button>
         <h3 id="auth-title">Вход через Яндекс ID</h3>
-        <div id="yandex-id-button" className="modal__action" />
+        <div className="modal__action">
+          <button className="btn btn--primary" type="button" onClick={handleAuthClick}>
+            Продолжить с Яндекс ID
+          </button>
+        </div>
       </div>
     </div>
   );
