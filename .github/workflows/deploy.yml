@@ -167,8 +167,8 @@ jobs:
             DB_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
             EOF
             docker login ghcr.io -u "${GHCR_USERNAME}" -p "${GHCR_TOKEN}"
-            docker compose -f /srv/poshivon/docker-compose.prod.yml pull
-            docker compose -f /srv/poshivon/docker-compose.prod.yml up -d db
+            docker compose --env-file /srv/poshivon/.env -f /srv/poshivon/docker-compose.prod.yml pull
+            docker compose --env-file /srv/poshivon/.env -f /srv/poshivon/docker-compose.prod.yml up -d db
             for i in $(seq 1 30); do
               if docker inspect -f '{{.State.Health.Status}}' poshivon_db 2>/dev/null | grep -q healthy; then
                 break
@@ -176,4 +176,4 @@ jobs:
               sleep 2
             done
             docker exec -e DB_USER -e DB_PASSWORD -e DB_NAME poshivon_db /bin/sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" -h 127.0.0.1 -e "CREATE USER IF NOT EXISTS '\''$DB_USER'\''@'\''%'\'' IDENTIFIED BY '\''$DB_PASSWORD'\''; GRANT ALL PRIVILEGES ON \`$DB_NAME\`.* TO '\''$DB_USER'\''@'\''%'\''; FLUSH PRIVILEGES;"'
-            docker compose -f /srv/poshivon/docker-compose.prod.yml up -d app web proxy
+            docker compose --env-file /srv/poshivon/.env -f /srv/poshivon/docker-compose.prod.yml up -d app web proxy
