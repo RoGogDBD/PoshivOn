@@ -462,6 +462,44 @@
     justify-content: center;
 }
 
+.ya-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 18px;
+  border-radius: 16px;
+  border: 1px solid #d6d9e6;
+  background: #ffffff;
+  color: #111827;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.ya-btn:hover {
+  box-shadow: 0 10px 24px rgba(17, 24, 39, 0.12);
+  border-color: #c3c7d9;
+}
+
+.ya-btn__icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #ff0000;
+}
+
+.ya-btn__icon-letter {
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 1;
+  transform: translateY(0.5px);
+}
+
 .panel {
   min-height: 100vh;
   display: grid;

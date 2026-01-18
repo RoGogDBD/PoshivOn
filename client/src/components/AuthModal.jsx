@@ -33,8 +33,11 @@ const AuthModal = ({ isOpen, onClose }) => {
         </button>
         <h3 id="auth-title">Вход через Яндекс ID</h3>
         <div className="modal__action">
-          <button className="btn btn--primary" type="button" onClick={handleAuthClick}>
-            Продолжить с Яндекс ID
+          <button className="ya-btn" type="button" onClick={handleAuthClick}>
+            <span className="ya-btn__icon" aria-hidden="true">
+              <span className="ya-btn__icon-letter">Y</span>
+            </span>
+            Войти с Яндекс ID
           </button>
         </div>
       </div>
