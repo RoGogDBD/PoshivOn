@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import "./App.css";
 import Header from "./components/Header.jsx";
 import Footer from "./components/Footer.jsx";
@@ -11,6 +11,8 @@ import CtaSection from "./sections/CtaSection.jsx";
 import { cases, features, footerContacts, navItems, solutions } from "./data/landing.js";
 import { useAuthModal } from "./hooks/useAuthModal.js";
 import AuthCallback from "./pages/AuthCallback.jsx";
+import Panel from "./pages/Panel.jsx";
+import { checkAuthStatus } from "./utils/yandexAuth.js";
 
 function App() {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
@@ -19,8 +21,26 @@ function App() {
 
   useAuthModal(isAuthOpen, handleAuthClose);
 
+  useEffect(() => {
+    const pathname = window.location.pathname;
+    if (pathname.startsWith("/auth") || pathname.startsWith("/panel")) {
+      return;
+    }
+
+    checkAuthStatus()
+      .then((isAuthed) => {
+        if (isAuthed) {
+          window.location.replace("/panel");
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   if (window.location.pathname.startsWith("/auth")) {
     return <AuthCallback />;
+  }
+  if (window.location.pathname.startsWith("/panel")) {
+    return <Panel />;
   }
 
   return (

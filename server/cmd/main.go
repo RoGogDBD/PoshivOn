@@ -41,6 +41,7 @@ func main() {
 	})
 	mux.HandleFunc("/auth/yandex", authHandler.HandleYandexLogin)
 	mux.HandleFunc("/auth/yandex/code", authHandler.HandleYandexCode)
+	mux.HandleFunc("/auth/status", authHandler.HandleStatus)
 	mux.HandleFunc("/auth/refresh", authHandler.HandleRefresh)
 	mux.HandleFunc("/auth/logout", authHandler.HandleLogout)
 

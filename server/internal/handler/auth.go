@@ -167,6 +167,34 @@ func (h *AuthHandler) HandleYandexCode(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (h *AuthHandler) HandleStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	refreshToken, err := readCookie(r, refreshCookieName)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "refresh_cookie_missing")
+		return
+	}
+
+	refreshHash := auth.HashRefreshToken(refreshToken)
+	session, err := h.store.FindByRefreshHash(refreshHash)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "session_not_found")
+		return
+	}
+
+	now := time.Now().UTC()
+	if session.RevokedAt.Valid || session.RefreshExpiresAt.Before(now) {
+		writeError(w, http.StatusUnauthorized, "session_expired")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *AuthHandler) HandleRefresh(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)

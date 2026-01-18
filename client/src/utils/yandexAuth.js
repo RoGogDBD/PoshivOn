@@ -99,3 +99,12 @@ export const getRedirectUri = () =>
   normalizeRedirectUri(
     import.meta.env.VITE_YA_REDIRECT_URI || `${window.location.origin}/auth`
   );
+
+export const checkAuthStatus = async () => {
+  const apiBase = getApiBase();
+  const response = await fetch(`${apiBase}/auth/status`, {
+    method: "GET",
+    credentials: "include",
+  });
+  return response.ok;
+};
