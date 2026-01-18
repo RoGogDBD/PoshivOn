@@ -173,42 +173,35 @@ func (h *AuthHandler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	accessToken, err := readCookie(r, accessCookieName)
+	_, err := h.validateSession(r)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, "access_cookie_missing")
-		return
-	}
-
-	refreshToken, err := readCookie(r, refreshCookieName)
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "refresh_cookie_missing")
-		return
-	}
-
-	refreshHash := auth.HashRefreshToken(refreshToken)
-	session, err := h.store.FindByRefreshHash(refreshHash)
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "session_not_found")
-		return
-	}
-
-	now := time.Now().UTC()
-	if session.RevokedAt.Valid || session.RefreshExpiresAt.Before(now) {
-		writeError(w, http.StatusUnauthorized, "session_expired")
-		return
-	}
-
-	if session.AccessExpiresAt.Before(now) {
-		writeError(w, http.StatusUnauthorized, "access_expired")
-		return
-	}
-
-	if session.YandexAccessToken != accessToken {
-		writeError(w, http.StatusUnauthorized, "access_mismatch")
+		writeError(w, http.StatusUnauthorized, err.Error())
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *AuthHandler) HandleMe(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	session, err := h.validateSession(r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+
+	profile, err := h.fetchYandexProfile(r.Context(), session.YandexAccessToken)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "yandex_profile_failed")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(profile)
 }
 
 func (h *AuthHandler) HandleRefresh(w http.ResponseWriter, r *http.Request) {
@@ -423,6 +416,98 @@ func (h *AuthHandler) clearCookie(w http.ResponseWriter, name string) {
 		SameSite: parseSameSite(h.cfg.CookieSameSite),
 		MaxAge:   -1,
 	})
+}
+
+func (h *AuthHandler) validateSession(r *http.Request) (*auth.Session, error) {
+	accessToken, err := readCookie(r, accessCookieName)
+	if err != nil {
+		return nil, errors.New("access_cookie_missing")
+	}
+
+	refreshToken, err := readCookie(r, refreshCookieName)
+	if err != nil {
+		return nil, errors.New("refresh_cookie_missing")
+	}
+
+	refreshHash := auth.HashRefreshToken(refreshToken)
+	session, err := h.store.FindByRefreshHash(refreshHash)
+	if err != nil {
+		return nil, errors.New("session_not_found")
+	}
+
+	now := time.Now().UTC()
+	if session.RevokedAt.Valid || session.RefreshExpiresAt.Before(now) {
+		return nil, errors.New("session_expired")
+	}
+
+	if session.AccessExpiresAt.Before(now) {
+		return nil, errors.New("access_expired")
+	}
+
+	if session.YandexAccessToken != accessToken {
+		return nil, errors.New("access_mismatch")
+	}
+
+	return session, nil
+}
+
+type yandexProfile struct {
+	Name  string `json:"name"`
+	Login string `json:"login"`
+}
+
+func (h *AuthHandler) fetchYandexProfile(ctx context.Context, accessToken string) (*yandexProfile, error) {
+	if h.cfg.YandexUserInfoURL == "" {
+		return nil, errors.New("user_info_url_missing")
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, h.cfg.YandexUserInfoURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "OAuth "+accessToken)
+
+	resp, err := h.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, errors.New("user_info_failed")
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, err
+	}
+
+	login := strings.TrimSpace(getString(payload, "login"))
+	displayName := strings.TrimSpace(getString(payload, "display_name"))
+	realName := strings.TrimSpace(getString(payload, "real_name"))
+	firstName := strings.TrimSpace(getString(payload, "first_name"))
+	lastName := strings.TrimSpace(getString(payload, "last_name"))
+
+	name := displayName
+	if name == "" {
+		name = realName
+	}
+	if name == "" {
+		name = strings.TrimSpace(strings.Join([]string{firstName, lastName}, " "))
+	}
+	if name == "" {
+		name = login
+	}
+
+	return &yandexProfile{
+		Name:  name,
+		Login: login,
+	}, nil
 }
 
 func parseSameSite(value string) http.SameSite {

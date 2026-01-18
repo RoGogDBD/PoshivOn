@@ -504,12 +504,33 @@
   min-height: 100vh;
   display: grid;
   grid-template-columns: 260px 1fr;
-  background: #f6f7fb;
+  background: var(--panel-bg);
+  color: var(--panel-text);
+}
+
+.panel--light {
+  --panel-bg: #f6f7fb;
+  --panel-text: #0f172a;
+  --panel-card: #ffffff;
+  --panel-border: #e2e8f0;
+  --panel-sidebar: #111827;
+  --panel-sidebar-text: #e5e7eb;
+  --panel-accent: #2f47ff;
+}
+
+.panel--dark {
+  --panel-bg: #0b1020;
+  --panel-text: #e2e8f0;
+  --panel-card: #151b2d;
+  --panel-border: #1f2937;
+  --panel-sidebar: #0a0f1c;
+  --panel-sidebar-text: #cbd5f5;
+  --panel-accent: #7c93ff;
 }
 
 .panel__sidebar {
-  background: #111827;
-  color: #e5e7eb;
+  background: var(--panel-sidebar);
+  color: var(--panel-sidebar-text);
   padding: 32px 24px;
   display: flex;
   flex-direction: column;
@@ -548,12 +569,75 @@
 
 .panel__content {
   padding: 48px;
-  color: #0f172a;
+  color: var(--panel-text);
 }
 
 .panel__content h1 {
   margin: 0 0 12px;
   font-size: 32px;
+}
+
+.panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.panel__eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 12px;
+  color: #93a2c8;
+  margin-bottom: 6px;
+}
+
+.panel__logout {
+  border: 1px solid var(--panel-border);
+  background: transparent;
+  color: var(--panel-text);
+  padding: 8px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.panel__card {
+  background: var(--panel-card);
+  border: 1px solid var(--panel-border);
+  border-radius: 18px;
+  padding: 24px;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+}
+
+.panel__card h2 {
+  margin: 0 0 8px;
+}
+
+.panel__setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.panel__setting-title {
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+
+.panel__setting-text {
+  margin: 0;
+  color: #7b8bb3;
+}
+
+.panel__theme-toggle {
+  border: none;
+  background: var(--panel-accent);
+  color: #ffffff;
+  padding: 8px 16px;
+  border-radius: 999px;
+  cursor: pointer;
 }
 
 @media (max-width: 900px) {

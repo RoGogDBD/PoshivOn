@@ -26,6 +26,7 @@ type Config struct {
 	YandexClientSecret string
 	YandexTokenURL     string
 	YandexRedirectURI  string
+	YandexUserInfoURL  string
 
 	AllowedOrigins  string
 	RefreshTTLHours int
@@ -63,6 +64,7 @@ func Load() (*Config, error) {
 		YandexClientSecret: envOrDefault("YANDEX_CLIENT_SECRET", envOrDefault("VITE_YA_CLIENT_SECRET", "")),
 		YandexTokenURL:     envOrDefault("YANDEX_TOKEN_URL", "https://oauth.yandex.ru/token"),
 		YandexRedirectURI:  envOrDefault("YANDEX_REDIRECT_URI", envOrDefault("VITE_YA_REDIRECT_URI", "")),
+		YandexUserInfoURL:  envOrDefault("YANDEX_USERINFO_URL", "https://login.yandex.ru/info"),
 
 		AllowedOrigins:  envOrDefault("CORS_ALLOWED_ORIGINS", ""),
 		RefreshTTLHours: envInt("REFRESH_TTL_HOURS", 720),

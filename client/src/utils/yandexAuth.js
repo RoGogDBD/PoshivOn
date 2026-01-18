@@ -108,3 +108,26 @@ export const checkAuthStatus = async () => {
   });
   return response.ok;
 };
+
+export const fetchAuthProfile = async () => {
+  const apiBase = getApiBase();
+  const response = await fetch(`${apiBase}/auth/me`, {
+    method: "GET",
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error("profile_failed");
+  }
+  return response.json();
+};
+
+export const logout = async () => {
+  const apiBase = getApiBase();
+  const response = await fetch(`${apiBase}/auth/logout`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error("logout_failed");
+  }
+};
