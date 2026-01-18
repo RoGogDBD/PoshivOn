@@ -2,6 +2,13 @@ const AUTH_RETURN_TO_KEY = "poshivon.auth.returnTo";
 
 const getApiBase = () => import.meta.env.VITE_API_URL || "";
 
+const normalizeRedirectUri = (value) => {
+  if (!value) {
+    return value;
+  }
+  return value.endsWith("/") ? value.slice(0, -1) : value;
+};
+
 export const persistYandexToken = async (data) => {
   if (!data?.access_token) {
     throw new Error("missing_access_token");
@@ -72,8 +79,9 @@ export const buildYandexAuthUrl = () => {
     return null;
   }
 
-  const redirectUri =
-    import.meta.env.VITE_YA_REDIRECT_URI || `${window.location.origin}/auth`;
+  const redirectUri = normalizeRedirectUri(
+    import.meta.env.VITE_YA_REDIRECT_URI || `${window.location.origin}/auth`
+  );
 
   const params = new URLSearchParams({
     response_type: "token",
@@ -88,4 +96,6 @@ export const getAuthRedirectTarget = () =>
   consumeAuthReturnTo() || import.meta.env.VITE_AUTH_SUCCESS_REDIRECT || "/";
 
 export const getRedirectUri = () =>
-  import.meta.env.VITE_YA_REDIRECT_URI || `${window.location.origin}/auth`;
+  normalizeRedirectUri(
+    import.meta.env.VITE_YA_REDIRECT_URI || `${window.location.origin}/auth`
+  );
