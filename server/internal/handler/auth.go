@@ -173,6 +173,12 @@ func (h *AuthHandler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	accessToken, err := readCookie(r, accessCookieName)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "access_cookie_missing")
+		return
+	}
+
 	refreshToken, err := readCookie(r, refreshCookieName)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, "refresh_cookie_missing")
@@ -189,6 +195,16 @@ func (h *AuthHandler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC()
 	if session.RevokedAt.Valid || session.RefreshExpiresAt.Before(now) {
 		writeError(w, http.StatusUnauthorized, "session_expired")
+		return
+	}
+
+	if session.AccessExpiresAt.Before(now) {
+		writeError(w, http.StatusUnauthorized, "access_expired")
+		return
+	}
+
+	if session.YandexAccessToken != accessToken {
+		writeError(w, http.StatusUnauthorized, "access_mismatch")
 		return
 	}
 
