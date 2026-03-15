@@ -52,6 +52,18 @@ export const createChat = async (userID, title) =>
     body: JSON.stringify({ title }),
   });
 
+export const deleteChat = async (userID, chatID) => {
+  await request(`/api/v1/users/${userID}/chats/${chatID}`, {
+    method: "DELETE",
+  });
+};
+
+export const restoreChat = async (userID, chatID) => {
+  await request(`/api/v1/users/${userID}/chats/${chatID}/restore`, {
+    method: "POST",
+  });
+};
+
 export const listChatCalculations = async (userID, chatID) =>
   request(`/api/v1/users/${userID}/chats/${chatID}/calculations`);
 

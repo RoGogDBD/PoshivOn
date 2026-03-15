@@ -47,6 +47,12 @@ func (h *APIHandler) handleUsers(w http.ResponseWriter, r *http.Request) {
 	case resource == "chats" && len(parts) == 2 && r.Method == http.MethodGet:
 		h.handleListChats(w, r, userID)
 		return
+	case resource == "chats" && len(parts) == 3 && r.Method == http.MethodDelete:
+		h.handleDeleteChat(w, r, userID, parts[2])
+		return
+	case resource == "chats" && len(parts) == 4 && parts[3] == "restore" && r.Method == http.MethodPost:
+		h.handleRestoreChat(w, r, userID, parts[2])
+		return
 	case resource == "chats" && len(parts) == 4 && parts[3] == "calculate" && r.Method == http.MethodPost:
 		h.handleCalculate(w, r, userID, parts[2])
 		return
@@ -108,6 +114,23 @@ func (h *APIHandler) handleListChats(w http.ResponseWriter, r *http.Request, use
 	}
 
 	writeAPIJSON(w, http.StatusOK, map[string]any{"items": chats})
+}
+
+func (h *APIHandler) handleDeleteChat(w http.ResponseWriter, r *http.Request, userID, chatID string) {
+	hard := strings.EqualFold(r.URL.Query().Get("hard"), "true")
+	if err := h.costing.DeleteChat(r.Context(), userID, chatID, hard); err != nil {
+		writeAPIDomainError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *APIHandler) handleRestoreChat(w http.ResponseWriter, r *http.Request, userID, chatID string) {
+	if err := h.costing.RestoreChat(r.Context(), userID, chatID); err != nil {
+		writeAPIDomainError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *APIHandler) handleCalculate(w http.ResponseWriter, r *http.Request, userID, chatID string) {

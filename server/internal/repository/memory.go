@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/RoGogDBD/PoshivOn/internal/service"
 )
@@ -73,6 +74,9 @@ func (r *MemoryRepository) ListChats(_ context.Context, userID string) ([]servic
 
 	items := make([]service.Chat, 0, len(byUser))
 	for _, chat := range byUser {
+		if chat.DeletedAt != nil {
+			continue
+		}
 		items = append(items, copyChat(chat))
 	}
 	sort.Slice(items, func(i, j int) bool {
@@ -80,6 +84,52 @@ func (r *MemoryRepository) ListChats(_ context.Context, userID string) ([]servic
 	})
 
 	return items, nil
+}
+
+func (r *MemoryRepository) DeleteChat(_ context.Context, userID, chatID, deletedBy string, hard bool) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	byUser, ok := r.chatsByID[userID]
+	if !ok {
+		return fmt.Errorf("chat %q not found: %w", chatID, service.ErrNotFound)
+	}
+	chat, ok := byUser[chatID]
+	if !ok {
+		return fmt.Errorf("chat %q not found: %w", chatID, service.ErrNotFound)
+	}
+
+	if hard {
+		delete(byUser, chatID)
+		if historyByUser, ok := r.chatHistory[userID]; ok {
+			delete(historyByUser, chatID)
+		}
+		return nil
+	}
+
+	now := time.Now().UTC()
+	chat.DeletedAt = &now
+	chat.DeletedBy = deletedBy
+	byUser[chatID] = chat
+	return nil
+}
+
+func (r *MemoryRepository) RestoreChat(_ context.Context, userID, chatID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	byUser, ok := r.chatsByID[userID]
+	if !ok {
+		return fmt.Errorf("chat %q not found: %w", chatID, service.ErrNotFound)
+	}
+	chat, ok := byUser[chatID]
+	if !ok {
+		return fmt.Errorf("chat %q not found: %w", chatID, service.ErrNotFound)
+	}
+	chat.DeletedAt = nil
+	chat.DeletedBy = ""
+	byUser[chatID] = chat
+	return nil
 }
 
 func (r *MemoryRepository) AppendCalculation(_ context.Context, result service.CalculationResult) error {
@@ -139,33 +189,43 @@ func (r *MemoryRepository) ListCalculations(_ context.Context, userID, chatID st
 }
 
 func copySettings(src service.UserSettings) service.UserSettings {
-	basePrices := make(map[string]int64, len(src.BasePrices))
-	for k, v := range src.BasePrices {
-		basePrices[k] = v
+	item := src
+	item.Garments = make(map[string]service.GarmentConfig, len(src.Garments))
+	for key, value := range src.Garments {
+		item.Garments[key] = value
 	}
-
-	surchargePercent := make(map[string]float64, len(src.SurchargePercent))
-	for k, v := range src.SurchargePercent {
-		surchargePercent[k] = v
+	item.Operations = make(map[string]service.OperationConfig, len(src.Operations))
+	for key, value := range src.Operations {
+		item.Operations[key] = value
 	}
-
-	batchDiscounts := make([]service.BatchDiscount, len(src.BatchDiscounts))
-	copy(batchDiscounts, src.BatchDiscounts)
-
-	return service.UserSettings{
-		BasePrices:       basePrices,
-		SurchargePercent: surchargePercent,
-		BatchDiscounts:   batchDiscounts,
+	item.Materials = make(map[string]service.MaterialConfig, len(src.Materials))
+	for key, value := range src.Materials {
+		item.Materials[key] = value
 	}
+	item.Urgency = make(map[string]service.UrgencyRule, len(src.Urgency))
+	for key, value := range src.Urgency {
+		item.Urgency[key] = value
+	}
+	item.MarketBands = make(map[string]service.MarketBand, len(src.MarketBands))
+	for key, value := range src.MarketBands {
+		item.MarketBands[key] = value
+	}
+	item.BatchDiscounts = append([]service.BatchDiscount(nil), src.BatchDiscounts...)
+	return item
 }
 
 func copyCalculation(src service.CalculationResult) service.CalculationResult {
 	item := src
-	item.AppliedSurcharges = make([]service.AppliedSurcharge, len(src.AppliedSurcharges))
-	copy(item.AppliedSurcharges, src.AppliedSurcharges)
+	item.AppliedOperations = append([]service.AppliedOperation(nil), src.AppliedOperations...)
+	item.MaterialLines = append([]service.MaterialLine(nil), src.MaterialLines...)
 	return item
 }
 
 func copyChat(src service.Chat) service.Chat {
-	return src
+	item := src
+	if src.DeletedAt != nil {
+		value := *src.DeletedAt
+		item.DeletedAt = &value
+	}
+	return item
 }
