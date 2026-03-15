@@ -58,6 +58,37 @@ const cases = [
   },
 ];
 
+function CasePreview() {
+  return (
+    <div className="case-preview">
+      <div className="case-preview__window">
+        <div className="case-preview__topbar">
+          <span className="case-preview__dot" />
+          <span className="case-preview__dot" />
+          <span className="case-preview__dot" />
+        </div>
+        <div className="case-preview__layout">
+          <div className="case-preview__sidebar">
+            <div className="case-preview__pill case-preview__pill--active" />
+            <div className="case-preview__pill" />
+            <div className="case-preview__pill" />
+          </div>
+          <div className="case-preview__content">
+            <div className="case-preview__line case-preview__line--lg" />
+            <div className="case-preview__line" />
+            <div className="case-preview__line case-preview__line--short" />
+            <div className="case-preview__table">
+              <div className="case-preview__row" />
+              <div className="case-preview__row" />
+              <div className="case-preview__row" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function App() {
     const [isAuthOpen, setIsAuthOpen] = useState(false);
 
@@ -174,12 +205,30 @@ function App() {
             <div className="hero__content">
               <p className="eyebrow">Посчитайте стоимость пошива</p>
               <h1>
-                Сервис <span>PoshivOn</span> за <span>2 минуты</span> расчитает точную себестоимость - без ошибок, споров и пересчетов.
+                Сервис <span>PoshivOn</span> за <span>2 минуты</span> рассчитает точную себестоимость без ошибок, споров и пересчетов.
               </h1>
               <p className="subtitle">
                 Автоматизируйте расчеты в PoshivOn: точная калькуляция ткани,
                 фурнитуры и труда — всё в одном сервисе.
               </p>
+              <div className="hero__actions">
+                <button className="btn btn--primary" type="button">Начать бесплатно</button>
+                <a className="btn btn--light" href="#solutions">Смотреть возможности</a>
+              </div>
+              <div className="hero__stats">
+                <div>
+                  <span>15 минут</span>
+                  <p>на внедрение</p>
+                </div>
+                <div>
+                  <span>-35%</span>
+                  <p>ошибок в расчетах</p>
+                </div>
+                <div>
+                  <span>1 окно</span>
+                  <p>для технолога и менеджера</p>
+                </div>
+              </div>
             </div>
             <div className="hero__visual">
               <div className="machine">
@@ -235,7 +284,7 @@ function App() {
           <div className="container">
             <h2>Решения от PoshivOn</h2>
             <div className="case-grid">
-              <div className="case-preview">скрин</div>
+              <CasePreview />
               <div className="case-list">
                 {cases.map((item) => (
                   <div className="case-card" key={item.title}>
@@ -249,7 +298,7 @@ function App() {
               </div>
             </div>
             <div className="case-grid case-grid--reverse">
-              <div className="case-preview">скрин</div>
+              <CasePreview />
               <div className="case-list">
                 {cases.map((item) => (
                   <div className="case-card" key={`${item.title}-second`}>

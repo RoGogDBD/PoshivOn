@@ -10,3 +10,11 @@
 - Загрузка конфигурации из `.env` файла
 - Значения по умолчанию для всех параметров
 - Приоритет: переменные окружения > .env файл > значения по умолчанию
+
+## Основные переменные
+
+- `APP_HOST` — адрес bind сервера (default: `0.0.0.0`)
+- `APP_PORT` — порт сервера (default: `8080`)
+- `APP_STORAGE` — тип хранилища (`memory` или `postgres`, default: `memory`)
+- `DATABASE_URL` — DSN для PostgreSQL (обязателен при `APP_STORAGE=postgres`)
+- `LOG_LEVEL` — уровень логирования (default: `info`)

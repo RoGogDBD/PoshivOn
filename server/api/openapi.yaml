@@ -1,0 +1,264 @@
+openapi: 3.0.3
+info:
+  title: PoshivOn Costing API
+  version: 1.0.0
+  description: API для настройки пользовательских правил ценообразования и расчета стоимости партии в чатах.
+servers:
+  - url: http://localhost:8080
+paths:
+  /health:
+    get:
+      summary: Healthcheck
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: ok
+
+  /api/v1/users/{userID}/settings:
+    parameters:
+      - in: path
+        name: userID
+        required: true
+        schema:
+          type: string
+    post:
+      summary: Create or update user pricing settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserSettings'
+      responses:
+        '204':
+          description: Settings saved
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    get:
+      summary: Get user pricing settings
+      responses:
+        '200':
+          description: Settings returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserSettings'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/users/{userID}/chats/{chatID}/calculate:
+    parameters:
+      - in: path
+        name: userID
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: chatID
+        required: true
+        schema:
+          type: string
+    post:
+      summary: Calculate order cost in chat and persist result
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderInput'
+      responses:
+        '200':
+          description: Calculation completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalculationResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/users/{userID}/chats/{chatID}/calculations:
+    parameters:
+      - in: path
+        name: userID
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: chatID
+        required: true
+        schema:
+          type: string
+    get:
+      summary: List saved calculations for a chat
+      responses:
+        '200':
+          description: Calculations returned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CalculationResult'
+                required: [items]
+
+components:
+  schemas:
+    BatchDiscount:
+      type: object
+      properties:
+        min_qty:
+          type: integer
+          minimum: 1
+          example: 11
+        max_qty:
+          type: integer
+          minimum: 1
+          example: 50
+        percent:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+          example: 5
+      required: [min_qty, max_qty, percent]
+
+    UserSettings:
+      type: object
+      properties:
+        base_prices:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int64
+          example:
+            Пиджак: 5000
+            Юбка: 2000
+            Рубашка: 3000
+        surcharge_percent:
+          type: object
+          additionalProperties:
+            type: number
+            format: float
+          example:
+            Карман: 20
+            Трудная ткань: 20
+            Молния: 20
+        batch_discounts:
+          type: array
+          items:
+            $ref: '#/components/schemas/BatchDiscount'
+      required: [base_prices, surcharge_percent, batch_discounts]
+
+    OrderInput:
+      type: object
+      properties:
+        garment_type:
+          type: string
+          example: Пиджак
+        complications:
+          type: array
+          items:
+            type: string
+          example: [Карман, Карман, Трудная ткань]
+        quantity:
+          type: integer
+          minimum: 1
+          example: 15
+      required: [garment_type, complications, quantity]
+
+    AppliedSurcharge:
+      type: object
+      properties:
+        name:
+          type: string
+        percent:
+          type: integer
+          format: int64
+        amount:
+          type: integer
+          format: int64
+        repeats:
+          type: integer
+        per_unit:
+          type: boolean
+        calc_basis:
+          type: string
+      required: [name, percent, amount, repeats, per_unit, calc_basis]
+
+    CalculationResult:
+      type: object
+      properties:
+        user_id:
+          type: string
+        chat_id:
+          type: string
+        garment_type:
+          type: string
+        quantity:
+          type: integer
+        base_price_per_unit:
+          type: integer
+          format: int64
+        surcharge_per_unit:
+          type: integer
+          format: int64
+        price_per_unit:
+          type: integer
+          format: int64
+        subtotal:
+          type: integer
+          format: int64
+        discount_percent:
+          type: integer
+          format: int64
+        discount_amount:
+          type: integer
+          format: int64
+        total:
+          type: integer
+          format: int64
+        applied_surcharges:
+          type: array
+          items:
+            $ref: '#/components/schemas/AppliedSurcharge'
+        applied_discount_min:
+          type: integer
+        applied_discount_max:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+      required:
+        [user_id, chat_id, garment_type, quantity, base_price_per_unit, surcharge_per_unit,
+         price_per_unit, subtotal, discount_percent, discount_amount, total,
+         applied_surcharges, applied_discount_min, applied_discount_max, created_at]
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
