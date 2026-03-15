@@ -13,6 +13,8 @@ import (
 	"github.com/RoGogDBD/PoshivOn/internal/config"
 	"github.com/RoGogDBD/PoshivOn/internal/db"
 	"github.com/RoGogDBD/PoshivOn/internal/handler"
+	"github.com/RoGogDBD/PoshivOn/internal/repository"
+	"github.com/RoGogDBD/PoshivOn/internal/service"
 	"github.com/RoGogDBD/PoshivOn/migrations"
 )
 
@@ -88,4 +90,35 @@ func splitCSV(value string) []string {
 		}
 	}
 	return result
+}
+
+func buildRepositories(cfg *config.Config) (
+	service.UserSettingsRepository,
+	service.ChatCalculationRepository,
+	func(),
+	error,
+) {
+	switch strings.ToLower(cfg.Storage) {
+	case "", "memory":
+		repo := repository.NewMemoryRepository()
+		return repo, repo, func() {}, nil
+	case "postgres":
+		if cfg.DatabaseURL == "" {
+			return nil, nil, nil, errors.New("DATABASE_URL обязателен для APP_STORAGE=postgres")
+		}
+
+		dbConn, err := sql.Open("postgres", cfg.DatabaseURL)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("open postgres connection: %w", err)
+		}
+		if err := dbConn.Ping(); err != nil {
+			_ = dbConn.Close()
+			return nil, nil, nil, fmt.Errorf("ping postgres connection: %w", err)
+		}
+
+		repo := repository.NewPostgresRepository(dbConn)
+		return repo, repo, func() { _ = dbConn.Close() }, nil
+	default:
+		return nil, nil, nil, fmt.Errorf("неподдерживаемый APP_STORAGE=%q", cfg.Storage)
+	}
 }
