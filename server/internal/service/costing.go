@@ -2,9 +2,12 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -58,9 +61,27 @@ type CalculationResult struct {
 	CreatedAt          time.Time          `json:"created_at"`
 }
 
+type Chat struct {
+	UserID            string    `json:"user_id"`
+	ID                string    `json:"id"`
+	Title             string    `json:"title"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
+	CalculationsCount int       `json:"calculations_count"`
+}
+
+type CreateChatInput struct {
+	Title string `json:"title"`
+}
+
 type UserSettingsRepository interface {
 	UpsertSettings(ctx context.Context, userID string, settings UserSettings) error
 	GetSettings(ctx context.Context, userID string) (UserSettings, error)
+}
+
+type ChatRepository interface {
+	CreateChat(ctx context.Context, chat Chat) (Chat, error)
+	ListChats(ctx context.Context, userID string) ([]Chat, error)
 }
 
 type ChatCalculationRepository interface {
@@ -70,14 +91,60 @@ type ChatCalculationRepository interface {
 
 type CostingService struct {
 	settingsRepo UserSettingsRepository
-	chatRepo     ChatCalculationRepository
+	chatRepo     ChatRepository
+	calcRepo     ChatCalculationRepository
 }
 
-func NewCostingService(settingsRepo UserSettingsRepository, chatRepo ChatCalculationRepository) *CostingService {
+func NewCostingService(
+	settingsRepo UserSettingsRepository,
+	chatRepo ChatRepository,
+	calculationRepo ChatCalculationRepository,
+) *CostingService {
 	return &CostingService{
 		settingsRepo: settingsRepo,
 		chatRepo:     chatRepo,
+		calcRepo:     calculationRepo,
 	}
+}
+
+func (s *CostingService) CreateChat(ctx context.Context, userID string, input CreateChatInput) (Chat, error) {
+	if userID == "" {
+		return Chat{}, fmt.Errorf("user id is required: %w", ErrInvalidArgument)
+	}
+
+	title := strings.TrimSpace(input.Title)
+	if title == "" {
+		title = "Новый чат"
+	}
+
+	chat := Chat{
+		UserID:            userID,
+		ID:                newChatID(),
+		Title:             title,
+		CreatedAt:         time.Now().UTC(),
+		UpdatedAt:         time.Now().UTC(),
+		CalculationsCount: 0,
+	}
+
+	createdChat, err := s.chatRepo.CreateChat(ctx, chat)
+	if err != nil {
+		return Chat{}, fmt.Errorf("create chat: %w", err)
+	}
+
+	return createdChat, nil
+}
+
+func (s *CostingService) ListChats(ctx context.Context, userID string) ([]Chat, error) {
+	if userID == "" {
+		return nil, fmt.Errorf("user id is required: %w", ErrInvalidArgument)
+	}
+
+	chats, err := s.chatRepo.ListChats(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list chats: %w", err)
+	}
+
+	return chats, nil
 }
 
 func (s *CostingService) SaveUserSettings(ctx context.Context, userID string, settings UserSettings) error {
@@ -180,7 +247,7 @@ func (s *CostingService) CalculateInChat(ctx context.Context, userID, chatID str
 		CreatedAt:          time.Now().UTC(),
 	}
 
-	if err := s.chatRepo.AppendCalculation(ctx, result); err != nil {
+	if err := s.calcRepo.AppendCalculation(ctx, result); err != nil {
 		return CalculationResult{}, fmt.Errorf("save calculation: %w", err)
 	}
 
@@ -191,7 +258,7 @@ func (s *CostingService) ListChatCalculations(ctx context.Context, userID, chatI
 	if userID == "" || chatID == "" {
 		return nil, fmt.Errorf("user id and chat id are required: %w", ErrInvalidArgument)
 	}
-	items, err := s.chatRepo.ListCalculations(ctx, userID, chatID)
+	items, err := s.calcRepo.ListCalculations(ctx, userID, chatID)
 	if err != nil {
 		return nil, fmt.Errorf("list chat calculations: %w", err)
 	}
@@ -260,6 +327,14 @@ func normalizeSettings(settings UserSettings) UserSettings {
 		SurchargePercent: normalizedSurcharge,
 		BatchDiscounts:   normalizedDiscounts,
 	}
+}
+
+func newChatID() string {
+	var raw [12]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return fmt.Sprintf("chat-%d", time.Now().UTC().UnixNano())
+	}
+	return hex.EncodeToString(raw[:])
 }
 
 func pickDiscount(discounts []BatchDiscount, qty int) BatchDiscount {

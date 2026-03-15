@@ -41,6 +41,12 @@ func (h *APIHandler) handleUsers(w http.ResponseWriter, r *http.Request) {
 	case resource == "settings" && len(parts) == 2 && r.Method == http.MethodGet:
 		h.handleGetSettings(w, r, userID)
 		return
+	case resource == "chats" && len(parts) == 2 && r.Method == http.MethodPost:
+		h.handleCreateChat(w, r, userID)
+		return
+	case resource == "chats" && len(parts) == 2 && r.Method == http.MethodGet:
+		h.handleListChats(w, r, userID)
+		return
 	case resource == "chats" && len(parts) == 4 && parts[3] == "calculate" && r.Method == http.MethodPost:
 		h.handleCalculate(w, r, userID, parts[2])
 		return
@@ -76,6 +82,32 @@ func (h *APIHandler) handleGetSettings(w http.ResponseWriter, r *http.Request, u
 	}
 
 	writeAPIJSON(w, http.StatusOK, settings)
+}
+
+func (h *APIHandler) handleCreateChat(w http.ResponseWriter, r *http.Request, userID string) {
+	var req service.CreateChatInput
+	if err := decodeJSON(r, &req); err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	chat, err := h.costing.CreateChat(r.Context(), userID, req)
+	if err != nil {
+		writeAPIDomainError(w, err)
+		return
+	}
+
+	writeAPIJSON(w, http.StatusCreated, chat)
+}
+
+func (h *APIHandler) handleListChats(w http.ResponseWriter, r *http.Request, userID string) {
+	chats, err := h.costing.ListChats(r.Context(), userID)
+	if err != nil {
+		writeAPIDomainError(w, err)
+		return
+	}
+
+	writeAPIJSON(w, http.StatusOK, map[string]any{"items": chats})
 }
 
 func (h *APIHandler) handleCalculate(w http.ResponseWriter, r *http.Request, userID, chatID string) {

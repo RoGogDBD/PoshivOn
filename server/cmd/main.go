@@ -1,8 +1,6 @@
 package main
 
 import (
-	"database/sql"
-	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -39,13 +37,13 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	settingsRepo, chatRepo, cleanup, err := buildRepositories(cfg)
+	settingsRepo, chatRepo, calculationRepo, cleanup, err := buildRepositories(cfg)
 	if err != nil {
 		log.Fatalf("Ошибка инициализации репозитория: %v", err)
 	}
 	defer cleanup()
 
-	costingService := service.NewCostingService(settingsRepo, chatRepo)
+	costingService := service.NewCostingService(settingsRepo, chatRepo, calculationRepo)
 	apiHandler := handler.NewAPIHandler(costingService)
 	apiHandler.Register(mux)
 
@@ -94,6 +92,7 @@ func splitCSV(value string) []string {
 
 func buildRepositories(cfg *config.Config) (
 	service.UserSettingsRepository,
+	service.ChatRepository,
 	service.ChatCalculationRepository,
 	func(),
 	error,
@@ -101,24 +100,16 @@ func buildRepositories(cfg *config.Config) (
 	switch strings.ToLower(cfg.Storage) {
 	case "", "memory":
 		repo := repository.NewMemoryRepository()
-		return repo, repo, func() {}, nil
-	case "postgres":
-		if cfg.DatabaseURL == "" {
-			return nil, nil, nil, errors.New("DATABASE_URL обязателен для APP_STORAGE=postgres")
-		}
-
-		dbConn, err := sql.Open("postgres", cfg.DatabaseURL)
+		return repo, repo, repo, func() {}, nil
+	case "postgres", "mysql", "mariadb":
+		dbConn, err := db.Open(cfg)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("open postgres connection: %w", err)
-		}
-		if err := dbConn.Ping(); err != nil {
-			_ = dbConn.Close()
-			return nil, nil, nil, fmt.Errorf("ping postgres connection: %w", err)
+			return nil, nil, nil, nil, fmt.Errorf("open sql connection: %w", err)
 		}
 
 		repo := repository.NewPostgresRepository(dbConn)
-		return repo, repo, func() { _ = dbConn.Close() }, nil
+		return repo, repo, repo, func() { _ = dbConn.Close() }, nil
 	default:
-		return nil, nil, nil, fmt.Errorf("неподдерживаемый APP_STORAGE=%q", cfg.Storage)
+		return nil, nil, nil, nil, fmt.Errorf("неподдерживаемый APP_STORAGE=%q", cfg.Storage)
 	}
 }

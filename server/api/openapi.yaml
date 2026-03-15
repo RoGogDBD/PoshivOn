@@ -50,6 +50,46 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /api/v1/users/{userID}/chats:
+    parameters:
+      - in: path
+        name: userID
+        required: true
+        schema:
+          type: string
+    post:
+      summary: Create chat for user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateChatInput'
+      responses:
+        '201':
+          description: Chat created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Chat'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    get:
+      summary: List user chats
+      responses:
+        '200':
+          description: Chats returned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Chat'
+                required: [items]
+
   /api/v1/users/{userID}/chats/{chatID}/calculate:
     parameters:
       - in: path
@@ -174,6 +214,32 @@ components:
           minimum: 1
           example: 15
       required: [garment_type, complications, quantity]
+
+    CreateChatInput:
+      type: object
+      properties:
+        title:
+          type: string
+          example: Партия пиджаков
+
+    Chat:
+      type: object
+      properties:
+        user_id:
+          type: string
+        id:
+          type: string
+        title:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        calculations_count:
+          type: integer
+      required: [user_id, id, title, created_at, updated_at, calculations_count]
 
     AppliedSurcharge:
       type: object

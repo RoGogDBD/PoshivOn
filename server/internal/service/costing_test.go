@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 )
 
 type settingsRepoStub struct {
@@ -27,7 +28,19 @@ func (s *settingsRepoStub) GetSettings(_ context.Context, userID string) (UserSe
 }
 
 type chatRepoStub struct {
+	chats []Chat
 	items []CalculationResult
+}
+
+func (c *chatRepoStub) CreateChat(_ context.Context, chat Chat) (Chat, error) {
+	c.chats = append(c.chats, chat)
+	return chat, nil
+}
+
+func (c *chatRepoStub) ListChats(_ context.Context, _ string) ([]Chat, error) {
+	result := make([]Chat, len(c.chats))
+	copy(result, c.chats)
+	return result, nil
 }
 
 func (c *chatRepoStub) AppendCalculation(_ context.Context, result CalculationResult) error {
@@ -44,7 +57,7 @@ func TestCostingService_CalculateInChat_Example114000(t *testing.T) {
 
 	settingsRepo := &settingsRepoStub{}
 	chatRepo := &chatRepoStub{}
-	svc := NewCostingService(settingsRepo, chatRepo)
+	svc := NewCostingService(settingsRepo, chatRepo, chatRepo)
 
 	settings := UserSettings{
 		BasePrices: map[string]int64{
@@ -99,7 +112,7 @@ func TestCostingService_CalculateInChat_UnknownComplication(t *testing.T) {
 			},
 		},
 	}
-	svc := NewCostingService(settingsRepo, &chatRepoStub{})
+	svc := NewCostingService(settingsRepo, &chatRepoStub{}, &chatRepoStub{})
 
 	_, err := svc.CalculateInChat(context.Background(), "u-1", "chat-1", OrderInput{
 		GarmentType:   "Пиджак",
@@ -108,5 +121,32 @@ func TestCostingService_CalculateInChat_UnknownComplication(t *testing.T) {
 	})
 	if !errors.Is(err, ErrInvalidArgument) {
 		t.Fatalf("error = %v, want ErrInvalidArgument", err)
+	}
+}
+
+func TestCostingService_CreateChat(t *testing.T) {
+	t.Parallel()
+
+	chatRepo := &chatRepoStub{}
+	svc := NewCostingService(&settingsRepoStub{}, chatRepo, chatRepo)
+
+	chat, err := svc.CreateChat(context.Background(), "u-1", CreateChatInput{Title: "Партия пиджаков"})
+	if err != nil {
+		t.Fatalf("CreateChat() error = %v", err)
+	}
+	if chat.ID == "" {
+		t.Fatal("CreateChat() returned empty id")
+	}
+	if chat.Title != "Партия пиджаков" {
+		t.Fatalf("chat title = %q, want %q", chat.Title, "Партия пиджаков")
+	}
+	if len(chatRepo.chats) != 1 {
+		t.Fatalf("stored chats = %d, want 1", len(chatRepo.chats))
+	}
+	if chat.CreatedAt.IsZero() || chat.UpdatedAt.IsZero() {
+		t.Fatalf("chat timestamps must be set: %+v", chat)
+	}
+	if chat.UpdatedAt.Before(chat.CreatedAt.Add(-1 * time.Second)) {
+		t.Fatalf("updated_at = %v should not be before created_at = %v", chat.UpdatedAt, chat.CreatedAt)
 	}
 }

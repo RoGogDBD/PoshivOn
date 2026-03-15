@@ -3,6 +3,7 @@ services:
     image: ghcr.io/${IMAGE_OWNER}/poshivon-app:${IMAGE_TAG}
     container_name: poshivon_app
     environment:
+      APP_STORAGE: ${APP_STORAGE}
       APP_HOST: ${APP_HOST}
       APP_PORT: ${APP_PORT}
       LOG_LEVEL: ${LOG_LEVEL}
