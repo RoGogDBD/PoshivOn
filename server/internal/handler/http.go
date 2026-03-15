@@ -27,7 +27,7 @@ func (h *APIHandler) handleUsers(w http.ResponseWriter, r *http.Request) {
 	parts := splitPath(path)
 
 	if len(parts) < 2 {
-		writeError(w, http.StatusNotFound, "route not found")
+		writeAPIError(w, http.StatusNotFound, "route not found")
 		return
 	}
 
@@ -48,7 +48,7 @@ func (h *APIHandler) handleUsers(w http.ResponseWriter, r *http.Request) {
 		h.handleListChatCalculations(w, r, userID, parts[2])
 		return
 	default:
-		writeError(w, http.StatusNotFound, "route not found")
+		writeAPIError(w, http.StatusNotFound, "route not found")
 		return
 	}
 }
@@ -56,12 +56,12 @@ func (h *APIHandler) handleUsers(w http.ResponseWriter, r *http.Request) {
 func (h *APIHandler) handleUpsertSettings(w http.ResponseWriter, r *http.Request, userID string) {
 	var req service.UserSettings
 	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	if err := h.costing.SaveUserSettings(r.Context(), userID, req); err != nil {
-		writeDomainError(w, err)
+		writeAPIDomainError(w, err)
 		return
 	}
 
@@ -71,37 +71,37 @@ func (h *APIHandler) handleUpsertSettings(w http.ResponseWriter, r *http.Request
 func (h *APIHandler) handleGetSettings(w http.ResponseWriter, r *http.Request, userID string) {
 	settings, err := h.costing.GetUserSettings(r.Context(), userID)
 	if err != nil {
-		writeDomainError(w, err)
+		writeAPIDomainError(w, err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, settings)
+	writeAPIJSON(w, http.StatusOK, settings)
 }
 
 func (h *APIHandler) handleCalculate(w http.ResponseWriter, r *http.Request, userID, chatID string) {
 	var req service.OrderInput
 	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	result, err := h.costing.CalculateInChat(r.Context(), userID, chatID, req)
 	if err != nil {
-		writeDomainError(w, err)
+		writeAPIDomainError(w, err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, result)
+	writeAPIJSON(w, http.StatusOK, result)
 }
 
 func (h *APIHandler) handleListChatCalculations(w http.ResponseWriter, r *http.Request, userID, chatID string) {
 	items, err := h.costing.ListChatCalculations(r.Context(), userID, chatID)
 	if err != nil {
-		writeDomainError(w, err)
+		writeAPIDomainError(w, err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+	writeAPIJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 func splitPath(path string) []string {
@@ -127,23 +127,23 @@ func decodeJSON(r *http.Request, dst any) error {
 	return nil
 }
 
-func writeJSON(w http.ResponseWriter, status int, payload any) {
+func writeAPIJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(payload)
 }
 
-func writeError(w http.ResponseWriter, status int, message string) {
-	writeJSON(w, status, map[string]string{"error": message})
+func writeAPIError(w http.ResponseWriter, status int, message string) {
+	writeAPIJSON(w, status, map[string]string{"error": message})
 }
 
-func writeDomainError(w http.ResponseWriter, err error) {
+func writeAPIDomainError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, service.ErrInvalidArgument):
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeAPIError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, service.ErrNotFound):
-		writeError(w, http.StatusNotFound, err.Error())
+		writeAPIError(w, http.StatusNotFound, err.Error())
 	default:
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
 	}
 }
