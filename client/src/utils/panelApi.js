@@ -20,6 +20,9 @@ const request = async (path, options = {}) => {
     } catch {
       // Ignore JSON decode failures for error payloads.
     }
+    if (message === `request_failed:${response.status}` && response.status === 405) {
+      message = "api_method_not_allowed";
+    }
     const error = new Error(message);
     error.status = response.status;
     throw error;

@@ -177,6 +177,10 @@ const Panel = () => {
     [settings.surcharge_percent]
   );
   const activeChat = chats.find((chat) => chat.id === activeChatID) || null;
+  const totalHistoryAmount = useMemo(
+    () => history.reduce((sum, item) => sum + (Number(item.total) || 0), 0),
+    [history]
+  );
 
   const handleLogout = () => {
     logout()
@@ -226,7 +230,7 @@ const Panel = () => {
       await saveUserSettings(userID, settings);
       setSettingsNotice("Настройки сохранены.");
     } catch (error) {
-      setSettingsNotice(error.message || "Не удалось сохранить настройки.");
+      setSettingsNotice(mapPanelError(error));
     } finally {
       setIsSavingSettings(false);
     }
@@ -246,7 +250,7 @@ const Panel = () => {
       setChatTitleDraft("");
       setChatNotice("Чат создан.");
     } catch (error) {
-      setChatNotice(error.message || "Не удалось создать чат.");
+      setChatNotice(mapPanelError(error));
     } finally {
       setIsCreatingChat(false);
     }
@@ -298,7 +302,7 @@ const Panel = () => {
       );
       setCalcNotice(`Расчёт выполнен. Итог: ${formatMoney(result.total)} ₽`);
     } catch (error) {
-      setCalcNotice(error.message || "Не удалось выполнить расчёт.");
+      setCalcNotice(mapPanelError(error));
     } finally {
       setIsCalculating(false);
     }
@@ -355,6 +359,28 @@ const Panel = () => {
             </button>
           </div>
         </div>
+
+        <section className="panel-summary">
+          <article className="panel-summary__card">
+            <span className="panel-summary__label">Активный чат</span>
+            <strong>{activeChat?.title || "Не выбран"}</strong>
+            <p>
+              {activeChat
+                ? `${activeChat.calculations_count || 0} расчётов сохранено`
+                : "Создайте чат и начните расчёт."}
+            </p>
+          </article>
+          <article className="panel-summary__card">
+            <span className="panel-summary__label">Всего чатов</span>
+            <strong>{chats.length}</strong>
+            <p>У каждого пользователя свой набор чатов и история заказов.</p>
+          </article>
+          <article className="panel-summary__card">
+            <span className="panel-summary__label">Сумма по чату</span>
+            <strong>{formatMoney(totalHistoryAmount)} ₽</strong>
+            <p>Сумма всех сохранённых расчётов в выбранном чате.</p>
+          </article>
+        </section>
 
         {activeSection === "settings" ? (
           <section className="panel__card">
@@ -610,5 +636,12 @@ const normalizeSettings = (settings) => ({
 });
 
 const formatMoney = (value) => new Intl.NumberFormat("ru-RU").format(Number(value) || 0);
+
+const mapPanelError = (error) => {
+  if (error?.message === "api_method_not_allowed") {
+    return "API недоступно для записи. Обычно это значит, что proxy для /api ещё не применён.";
+  }
+  return error?.message || "Операция не выполнена.";
+};
 
 export default Panel;

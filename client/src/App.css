@@ -1065,3 +1065,315 @@
     grid-template-columns: 1fr;
   }
 }
+
+.panel {
+  grid-template-columns: 292px 1fr;
+}
+
+.panel--light {
+  --panel-bg: radial-gradient(circle at top right, rgba(36, 107, 255, 0.12), transparent 28%), #f3f6fc;
+  --panel-text: #15233f;
+  --panel-card: rgba(255, 255, 255, 0.84);
+  --panel-border: rgba(148, 163, 184, 0.22);
+  --panel-sidebar: linear-gradient(180deg, #14213d 0%, #1b2d52 100%);
+  --panel-sidebar-text: #dbe7ff;
+  --panel-accent: #245eff;
+  --panel-accent-soft: rgba(36, 94, 255, 0.1);
+}
+
+.panel--dark {
+  --panel-bg: radial-gradient(circle at top right, rgba(90, 129, 255, 0.18), transparent 24%), #0a1222;
+  --panel-text: #edf2ff;
+  --panel-card: rgba(17, 27, 47, 0.88);
+  --panel-border: rgba(93, 114, 155, 0.28);
+  --panel-sidebar: linear-gradient(180deg, #09111f 0%, #111b31 100%);
+  --panel-sidebar-text: #d5def6;
+  --panel-accent: #7f9bff;
+  --panel-accent-soft: rgba(127, 155, 255, 0.12);
+}
+
+.panel__sidebar {
+  position: sticky;
+  top: 0;
+  min-height: 100vh;
+  padding: 28px 22px;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.04);
+}
+
+.panel__brand {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.panel__nav {
+  gap: 10px;
+}
+
+.panel__link {
+  padding: 12px 14px;
+  border-radius: 14px;
+  font-weight: 600;
+}
+
+.panel__link:hover,
+.panel__link--active {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.panel__content {
+  padding: 34px;
+}
+
+.panel__header {
+  align-items: center;
+  margin-bottom: 22px;
+}
+
+.panel__content h1 {
+  margin: 0 0 6px;
+  font-size: clamp(32px, 4vw, 42px);
+  letter-spacing: -0.04em;
+}
+
+.panel__eyebrow {
+  margin-bottom: 8px;
+  color: #6e85b8;
+}
+
+.panel__meta,
+.panel__notice,
+.panel__empty,
+.panel-chat-list__header p,
+.panel-history__head span,
+.panel-history__stats span,
+.panel-history__list,
+.panel-summary__card p {
+  color: #6f7f9d;
+}
+
+.panel--dark .panel__meta,
+.panel--dark .panel__notice,
+.panel--dark .panel__empty,
+.panel--dark .panel-chat-list__header p,
+.panel--dark .panel-history__head span,
+.panel--dark .panel-history__stats span,
+.panel--dark .panel-history__list,
+.panel--dark .panel-summary__card p {
+  color: #91a0c1;
+}
+
+.panel__actions {
+  gap: 10px;
+}
+
+.panel__logout,
+.panel__theme-toggle,
+.panel-chat-list__create button {
+  min-height: 42px;
+  padding: 10px 16px;
+  font-weight: 700;
+}
+
+.panel__logout {
+  background: transparent;
+  backdrop-filter: blur(14px);
+}
+
+.panel__theme-toggle,
+.panel-chat-list__create button,
+.panel-form__footer .panel__theme-toggle {
+  background: linear-gradient(135deg, var(--panel-accent) 0%, #4d82ff 100%);
+  box-shadow: 0 16px 30px rgba(36, 94, 255, 0.22);
+}
+
+.panel-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.panel-summary__card,
+.panel__card {
+  background: var(--panel-card);
+  border: 1px solid var(--panel-border);
+  border-radius: 22px;
+  box-shadow: 0 22px 48px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(16px);
+}
+
+.panel-summary__card {
+  padding: 20px 22px;
+  display: grid;
+  gap: 10px;
+}
+
+.panel-summary__label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: #7b90bc;
+}
+
+.panel-summary__card strong {
+  font-size: 30px;
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
+
+.panel__card {
+  padding: 24px;
+}
+
+.panel-workspace {
+  grid-template-columns: 340px 1fr;
+  align-items: start;
+}
+
+.panel-chat-list,
+.panel-workspace__main {
+  gap: 18px;
+}
+
+.panel-chat-list__create {
+  grid-template-columns: 1fr;
+}
+
+.panel-chat-list__create button {
+  width: 100%;
+}
+
+.panel-chat-list__create input,
+.panel-form__row input,
+.panel-form__row select {
+  min-height: 44px;
+  border-radius: 14px;
+  border: 1px solid var(--panel-border);
+  background: rgba(255, 255, 255, 0.52);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.panel--dark .panel-chat-list__create input,
+.panel--dark .panel-form__row input,
+.panel--dark .panel-form__row select {
+  background: rgba(10, 18, 34, 0.6);
+}
+
+.panel-chat-list__items {
+  gap: 12px;
+  max-height: 520px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.panel-chat-list__item {
+  border-radius: 16px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.48);
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+.panel--dark .panel-chat-list__item {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.panel-chat-list__item:hover {
+  transform: translateY(-1px);
+}
+
+.panel-chat-list__item--active {
+  background: var(--panel-accent-soft);
+  border-color: color-mix(in srgb, var(--panel-accent) 45%, transparent);
+  box-shadow: 0 12px 28px rgba(36, 94, 255, 0.12);
+}
+
+.panel-form {
+  gap: 18px;
+}
+
+.panel-form__block {
+  gap: 10px;
+}
+
+.panel-form__block h3 {
+  font-size: 15px;
+  letter-spacing: -0.02em;
+}
+
+.panel-form__row {
+  grid-template-columns: minmax(150px, 1fr) minmax(120px, 240px);
+  gap: 16px;
+}
+
+.panel-form__row span {
+  font-weight: 600;
+}
+
+.panel-form__grid {
+  gap: 10px;
+}
+
+.panel-history__item {
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.46);
+}
+
+.panel--dark .panel-history__item {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.panel-history__head strong {
+  font-size: 18px;
+}
+
+.panel-history__stats {
+  padding: 12px 0;
+  border-top: 1px solid var(--panel-border);
+  border-bottom: 1px solid var(--panel-border);
+}
+
+@media (max-width: 1100px) {
+  .panel {
+    grid-template-columns: 1fr;
+  }
+
+  .panel__sidebar {
+    position: static;
+    min-height: auto;
+    border-right: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .panel-summary,
+  .panel-workspace {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .panel__content {
+    padding: 20px;
+  }
+
+  .panel__header,
+  .panel__actions,
+  .panel-form__row,
+  .panel-form__grid,
+  .panel-history__head,
+  .panel-history__stats {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .panel__actions {
+    width: 100%;
+  }
+
+  .panel__actions > * {
+    width: 100%;
+  }
+}
