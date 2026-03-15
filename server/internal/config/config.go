@@ -10,6 +10,7 @@ type Config struct {
 	Host        string
 	Port        string
 	DatabaseURL string
+	Storage     string
 	LogLevel    string
 	DBHost      string
 	DBPort      string
@@ -48,6 +49,7 @@ func Load() (*Config, error) {
 		Host:        envOrDefault("APP_HOST", "0.0.0.0"),
 		Port:        envOrDefault("APP_PORT", "8080"),
 		DatabaseURL: envOrDefault("DATABASE_URL", ""),
+		Storage:     envOrDefault("APP_STORAGE", "memory"),
 		LogLevel:    envOrDefault("LOG_LEVEL", "info"),
 		DBHost:      envOrDefault("DB_HOST", "127.0.0.1"),
 		DBPort:      envOrDefault("DB_PORT", "3306"),

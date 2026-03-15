@@ -1,6 +1,8 @@
 package main
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -34,6 +36,17 @@ func main() {
 	authHandler := handler.NewAuthHandler(store, cfg)
 
 	mux := http.NewServeMux()
+
+	settingsRepo, chatRepo, cleanup, err := buildRepositories(cfg)
+	if err != nil {
+		log.Fatalf("Ошибка инициализации репозитория: %v", err)
+	}
+	defer cleanup()
+
+	costingService := service.NewCostingService(settingsRepo, chatRepo)
+	apiHandler := handler.NewAPIHandler(costingService)
+	apiHandler.Register(mux)
+
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		// Простейший healthcheck для проверки доступности сервиса.
 		w.WriteHeader(http.StatusOK)

@@ -1,9 +1,9 @@
 :root {
-  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  font-family: "Manrope", "Inter", "Segoe UI", sans-serif;
   line-height: 1.5;
   font-weight: 400;
-  color: #0f1b3d;
-  background-color: #f4f5ff;
+  color: #0f2e62;
+  background-color: #f4f8ff;
 }
 
 * {
@@ -14,7 +14,7 @@
 
 body {
   min-height: 100vh;
-  background: #f4f5ff;
+  background: #f4f8ff;
 }
 
 a {

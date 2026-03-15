@@ -14,6 +14,37 @@ import AuthCallback from "./pages/AuthCallback.jsx";
 import Panel from "./pages/Panel.jsx";
 import { checkAuthStatus } from "./utils/yandexAuth.js";
 
+function CasePreview() {
+  return (
+    <div className="case-preview">
+      <div className="case-preview__window">
+        <div className="case-preview__topbar">
+          <span className="case-preview__dot" />
+          <span className="case-preview__dot" />
+          <span className="case-preview__dot" />
+        </div>
+        <div className="case-preview__layout">
+          <div className="case-preview__sidebar">
+            <div className="case-preview__pill case-preview__pill--active" />
+            <div className="case-preview__pill" />
+            <div className="case-preview__pill" />
+          </div>
+          <div className="case-preview__content">
+            <div className="case-preview__line case-preview__line--lg" />
+            <div className="case-preview__line" />
+            <div className="case-preview__line case-preview__line--short" />
+            <div className="case-preview__table">
+              <div className="case-preview__row" />
+              <div className="case-preview__row" />
+              <div className="case-preview__row" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const handleAuthClose = useCallback(() => setIsAuthOpen(false), []);
