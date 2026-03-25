@@ -1,8 +1,7 @@
-const getAPIBase = () => import.meta.env.VITE_API_URL || "";
+import { authFetch } from "./yandexAuth.js";
 
 const request = async (path, options = {}) => {
-  const response = await fetch(`${getAPIBase()}${path}`, {
-    credentials: "include",
+  const response = await authFetch(path, {
     headers: {
       "Content-Type": "application/json",
       ...(options.headers || {}),

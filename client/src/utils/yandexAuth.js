@@ -2,6 +2,55 @@ const AUTH_RETURN_TO_KEY = "poshivon.auth.returnTo";
 
 const getApiBase = () => import.meta.env.VITE_API_URL || "";
 
+const parseErrorCode = async (response) => {
+  try {
+    const payload = await response.clone().json();
+    return payload?.error || null;
+  } catch {
+    return null;
+  }
+};
+
+const shouldRefreshAuth = (status, errorCode) =>
+  status === 401 &&
+  ["access_cookie_missing", "access_expired", "access_mismatch"].includes(errorCode);
+
+export const refreshAuthSession = async () => {
+  const apiBase = getApiBase();
+  const response = await fetch(`${apiBase}/auth/refresh`, {
+    method: "POST",
+    credentials: "include",
+  });
+  return response.ok;
+};
+
+export const authFetch = async (path, options = {}, retryOnAuth = true) => {
+  const apiBase = getApiBase();
+  const response = await fetch(`${apiBase}${path}`, {
+    credentials: "include",
+    ...options,
+  });
+
+  if (!retryOnAuth) {
+    return response;
+  }
+
+  const errorCode = await parseErrorCode(response);
+  if (!shouldRefreshAuth(response.status, errorCode)) {
+    return response;
+  }
+
+  const refreshed = await refreshAuthSession();
+  if (!refreshed) {
+    return response;
+  }
+
+  return fetch(`${apiBase}${path}`, {
+    credentials: "include",
+    ...options,
+  });
+};
+
 const normalizeRedirectUri = (value) => {
   if (!value) {
     return value;
@@ -84,7 +133,7 @@ export const buildYandexAuthUrl = () => {
   );
 
   const params = new URLSearchParams({
-    response_type: "token",
+    response_type: "code",
     client_id: clientId,
     redirect_uri: redirectUri,
   });
@@ -101,19 +150,15 @@ export const getRedirectUri = () =>
   );
 
 export const checkAuthStatus = async () => {
-  const apiBase = getApiBase();
-  const response = await fetch(`${apiBase}/auth/status`, {
+  const response = await authFetch("/auth/status", {
     method: "GET",
-    credentials: "include",
   });
   return response.ok;
 };
 
 export const fetchAuthProfile = async () => {
-  const apiBase = getApiBase();
-  const response = await fetch(`${apiBase}/auth/me`, {
+  const response = await authFetch("/auth/me", {
     method: "GET",
-    credentials: "include",
   });
   if (!response.ok) {
     throw new Error("profile_failed");
@@ -122,11 +167,9 @@ export const fetchAuthProfile = async () => {
 };
 
 export const logout = async () => {
-  const apiBase = getApiBase();
-  const response = await fetch(`${apiBase}/auth/logout`, {
+  const response = await authFetch("/auth/logout", {
     method: "POST",
-    credentials: "include",
-  });
+  }, false);
   if (!response.ok) {
     throw new Error("logout_failed");
   }
