@@ -4,17 +4,93 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"time"
 
 	"github.com/RoGogDBD/PoshivOn/internal/service"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
-type PostgresRepository struct {
-	db *sql.DB
+type userModel struct {
+	ID        string    `gorm:"column:id;primaryKey"`
+	CreatedAt time.Time `gorm:"column:created_at"`
 }
 
-func NewPostgresRepository(db *sql.DB) *PostgresRepository {
+func (userModel) TableName() string {
+	return "users"
+}
+
+type userSettingsModel struct {
+	UserID           string         `gorm:"column:user_id;primaryKey"`
+	BasePrices       string         `gorm:"column:base_prices"`
+	SurchargePercent string         `gorm:"column:surcharge_percent"`
+	BatchDiscounts   string         `gorm:"column:batch_discounts"`
+	PricingRules     sql.NullString `gorm:"column:pricing_rules"`
+	Garments         sql.NullString `gorm:"column:garments"`
+	Operations       sql.NullString `gorm:"column:operations"`
+	Materials        sql.NullString `gorm:"column:materials"`
+	Urgency          sql.NullString `gorm:"column:urgency"`
+	MarketBands      sql.NullString `gorm:"column:market_bands"`
+	UpdatedAt        time.Time      `gorm:"column:updated_at"`
+}
+
+func (userSettingsModel) TableName() string {
+	return "user_settings"
+}
+
+type chatModel struct {
+	UserID    string     `gorm:"column:user_id;primaryKey"`
+	ID        string     `gorm:"column:id;primaryKey"`
+	Title     string     `gorm:"column:title"`
+	CreatedAt time.Time  `gorm:"column:created_at"`
+	UpdatedAt time.Time  `gorm:"column:updated_at"`
+	DeletedAt *time.Time `gorm:"column:deleted_at"`
+	DeletedBy *string    `gorm:"column:deleted_by"`
+}
+
+func (chatModel) TableName() string {
+	return "chats"
+}
+
+type calculationModel struct {
+	ID                int64     `gorm:"column:id;primaryKey"`
+	UserID            string    `gorm:"column:user_id"`
+	ChatID            string    `gorm:"column:chat_id"`
+	GarmentType       string    `gorm:"column:garment_type"`
+	MaterialType      string    `gorm:"column:material_type"`
+	Urgency           string    `gorm:"column:urgency"`
+	MarketStatus      string    `gorm:"column:market_status"`
+	Quantity          int       `gorm:"column:quantity"`
+	PricePerUnit      int64     `gorm:"column:price_per_unit"`
+	Subtotal          int64     `gorm:"column:subtotal"`
+	DiscountPercent   int64     `gorm:"column:discount_percent"`
+	DiscountAmount    int64     `gorm:"column:discount_amount"`
+	Total             int64     `gorm:"column:total"`
+	AppliedOperations string    `gorm:"column:applied_operations"`
+	MaterialLines     string    `gorm:"column:material_lines"`
+	OrderSnapshot     string    `gorm:"column:order_snapshot"`
+	Breakdown         string    `gorm:"column:breakdown"`
+	CreatedAt         time.Time `gorm:"column:created_at"`
+}
+
+func (calculationModel) TableName() string {
+	return "calculations"
+}
+
+type chatListRow struct {
+	ID                string    `gorm:"column:id"`
+	Title             string    `gorm:"column:title"`
+	CreatedAt         time.Time `gorm:"column:created_at"`
+	UpdatedAt         time.Time `gorm:"column:updated_at"`
+	CalculationsCount int       `gorm:"column:calculations_count"`
+}
+
+type PostgresRepository struct {
+	db *gorm.DB
+}
+
+func NewPostgresRepository(db *gorm.DB) *PostgresRepository {
 	return &PostgresRepository{db: db}
 }
 
@@ -60,125 +136,91 @@ func (r *PostgresRepository) UpsertSettings(ctx context.Context, userID string, 
 		return fmt.Errorf("marshal market bands: %w", err)
 	}
 
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
-	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
+	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := upsertUser(tx, userID); err != nil {
+			return err
 		}
-	}()
 
-	_, err = tx.ExecContext(ctx,
-		`INSERT INTO users(id) VALUES (?) ON DUPLICATE KEY UPDATE id = VALUES(id)`,
-		userID,
-	)
-	if err != nil {
-		return fmt.Errorf("upsert user: %w", err)
-	}
+		record := userSettingsModel{
+			UserID:           userID,
+			BasePrices:       string(legacyBasePricesJSON),
+			SurchargePercent: string(legacySurchargeJSON),
+			BatchDiscounts:   string(discountsJSON),
+			PricingRules:     sql.NullString{String: string(pricingRulesJSON), Valid: true},
+			Garments:         sql.NullString{String: string(garmentsJSON), Valid: true},
+			Operations:       sql.NullString{String: string(operationsJSON), Valid: true},
+			Materials:        sql.NullString{String: string(materialsJSON), Valid: true},
+			Urgency:          sql.NullString{String: string(urgencyJSON), Valid: true},
+			MarketBands:      sql.NullString{String: string(marketBandsJSON), Valid: true},
+			UpdatedAt:        time.Now().UTC(),
+		}
 
-	_, err = tx.ExecContext(ctx, `
-		INSERT INTO user_settings(
-			user_id,
-			base_prices,
-			surcharge_percent,
-			batch_discounts,
-			pricing_rules,
-			garments,
-			operations,
-			materials,
-			urgency,
-			market_bands,
-			updated_at
-		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP())
-		ON DUPLICATE KEY UPDATE
-			base_prices = VALUES(base_prices),
-			surcharge_percent = VALUES(surcharge_percent),
-			batch_discounts = VALUES(batch_discounts),
-			pricing_rules = VALUES(pricing_rules),
-			garments = VALUES(garments),
-			operations = VALUES(operations),
-			materials = VALUES(materials),
-			urgency = VALUES(urgency),
-			market_bands = VALUES(market_bands),
-			updated_at = UTC_TIMESTAMP()
-	`, userID, string(legacyBasePricesJSON), string(legacySurchargeJSON), string(discountsJSON), string(pricingRulesJSON), string(garmentsJSON), string(operationsJSON), string(materialsJSON), string(urgencyJSON), string(marketBandsJSON))
+		return tx.Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "user_id"}},
+			DoUpdates: clause.Assignments(map[string]any{
+				"base_prices":       record.BasePrices,
+				"surcharge_percent": record.SurchargePercent,
+				"batch_discounts":   record.BatchDiscounts,
+				"pricing_rules":     record.PricingRules,
+				"garments":          record.Garments,
+				"operations":        record.Operations,
+				"materials":         record.Materials,
+				"urgency":           record.Urgency,
+				"market_bands":      record.MarketBands,
+				"updated_at":        record.UpdatedAt,
+			}),
+		}).Create(&record).Error
+	})
 	if err != nil {
 		return fmt.Errorf("upsert user settings: %w", err)
 	}
 
-	if commitErr := tx.Commit(); commitErr != nil {
-		return fmt.Errorf("commit tx: %w", commitErr)
-	}
 	return nil
 }
 
 func (r *PostgresRepository) GetSettings(ctx context.Context, userID string) (service.UserSettings, error) {
-	var (
-		pricingRulesRaw sql.NullString
-		garmentsRaw     sql.NullString
-		operationsRaw   sql.NullString
-		materialsRaw    sql.NullString
-		discountsRaw    sql.NullString
-		urgencyRaw      sql.NullString
-		marketBandsRaw  sql.NullString
-	)
-
-	err := r.db.QueryRowContext(ctx, `
-		SELECT pricing_rules, garments, operations, materials, batch_discounts, urgency, market_bands
-		FROM user_settings
-		WHERE user_id = ?
-	`, userID).Scan(
-		&pricingRulesRaw,
-		&garmentsRaw,
-		&operationsRaw,
-		&materialsRaw,
-		&discountsRaw,
-		&urgencyRaw,
-		&marketBandsRaw,
-	)
+	var record userSettingsModel
+	err := r.db.WithContext(ctx).Where("user_id = ?", userID).First(&record).Error
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if err == gorm.ErrRecordNotFound {
 			return service.UserSettings{}, fmt.Errorf("settings for user %q not found: %w", userID, service.ErrNotFound)
 		}
 		return service.UserSettings{}, fmt.Errorf("query settings: %w", err)
 	}
 
 	settings := service.DefaultUserSettings()
-	if pricingRulesRaw.Valid && pricingRulesRaw.String != "" {
-		if err := json.Unmarshal([]byte(pricingRulesRaw.String), &settings.PricingRules); err != nil {
+	if record.PricingRules.Valid && record.PricingRules.String != "" {
+		if err := json.Unmarshal([]byte(record.PricingRules.String), &settings.PricingRules); err != nil {
 			return service.UserSettings{}, fmt.Errorf("decode pricing rules: %w", err)
 		}
 	}
-	if garmentsRaw.Valid && garmentsRaw.String != "" {
-		if err := json.Unmarshal([]byte(garmentsRaw.String), &settings.Garments); err != nil {
+	if record.Garments.Valid && record.Garments.String != "" {
+		if err := json.Unmarshal([]byte(record.Garments.String), &settings.Garments); err != nil {
 			return service.UserSettings{}, fmt.Errorf("decode garments: %w", err)
 		}
 	}
-	if operationsRaw.Valid && operationsRaw.String != "" {
-		if err := json.Unmarshal([]byte(operationsRaw.String), &settings.Operations); err != nil {
+	if record.Operations.Valid && record.Operations.String != "" {
+		if err := json.Unmarshal([]byte(record.Operations.String), &settings.Operations); err != nil {
 			return service.UserSettings{}, fmt.Errorf("decode operations: %w", err)
 		}
 	}
-	if materialsRaw.Valid && materialsRaw.String != "" {
-		if err := json.Unmarshal([]byte(materialsRaw.String), &settings.Materials); err != nil {
+	if record.Materials.Valid && record.Materials.String != "" {
+		if err := json.Unmarshal([]byte(record.Materials.String), &settings.Materials); err != nil {
 			return service.UserSettings{}, fmt.Errorf("decode materials: %w", err)
 		}
 	}
-	if discountsRaw.Valid && discountsRaw.String != "" {
-		if err := json.Unmarshal([]byte(discountsRaw.String), &settings.BatchDiscounts); err != nil {
+	if record.BatchDiscounts != "" {
+		if err := json.Unmarshal([]byte(record.BatchDiscounts), &settings.BatchDiscounts); err != nil {
 			return service.UserSettings{}, fmt.Errorf("decode batch discounts: %w", err)
 		}
 	}
-	if urgencyRaw.Valid && urgencyRaw.String != "" {
-		if err := json.Unmarshal([]byte(urgencyRaw.String), &settings.Urgency); err != nil {
+	if record.Urgency.Valid && record.Urgency.String != "" {
+		if err := json.Unmarshal([]byte(record.Urgency.String), &settings.Urgency); err != nil {
 			return service.UserSettings{}, fmt.Errorf("decode urgency: %w", err)
 		}
 	}
-	if marketBandsRaw.Valid && marketBandsRaw.String != "" {
-		if err := json.Unmarshal([]byte(marketBandsRaw.String), &settings.MarketBands); err != nil {
+	if record.MarketBands.Valid && record.MarketBands.String != "" {
+		if err := json.Unmarshal([]byte(record.MarketBands.String), &settings.MarketBands); err != nil {
 			return service.UserSettings{}, fmt.Errorf("decode market bands: %w", err)
 		}
 	}
@@ -187,88 +229,89 @@ func (r *PostgresRepository) GetSettings(ctx context.Context, userID string) (se
 }
 
 func (r *PostgresRepository) CreateChat(ctx context.Context, chat service.Chat) (service.Chat, error) {
-	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO chats(user_id, id, title, created_at, updated_at, deleted_at, deleted_by)
-		VALUES (?, ?, ?, ?, ?, NULL, NULL)
-	`, chat.UserID, chat.ID, chat.Title, chat.CreatedAt, chat.UpdatedAt)
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := upsertUser(tx, chat.UserID); err != nil {
+			return err
+		}
+		record := chatModel{
+			UserID:    chat.UserID,
+			ID:        chat.ID,
+			Title:     chat.Title,
+			CreatedAt: chat.CreatedAt,
+			UpdatedAt: chat.UpdatedAt,
+		}
+		return tx.Create(&record).Error
+	})
 	if err != nil {
 		return service.Chat{}, fmt.Errorf("insert chat: %w", err)
 	}
+
 	return chat, nil
 }
 
 func (r *PostgresRepository) ListChats(ctx context.Context, userID string) ([]service.Chat, error) {
-	rows, err := r.db.QueryContext(ctx, `
-		SELECT
-			c.id,
-			c.title,
-			c.created_at,
-			c.updated_at,
-			COUNT(calc.id) AS calculations_count
-		FROM chats c
-		LEFT JOIN calculations calc
-			ON calc.user_id = c.user_id AND calc.chat_id = c.id
-		WHERE c.user_id = ? AND c.deleted_at IS NULL
-		GROUP BY c.user_id, c.id, c.title, c.created_at, c.updated_at
-		ORDER BY c.updated_at DESC, c.created_at DESC
-	`, userID)
+	var rows []chatListRow
+	err := r.db.WithContext(ctx).
+		Table("chats AS c").
+		Select("c.id, c.title, c.created_at, c.updated_at, COUNT(calc.id) AS calculations_count").
+		Joins("LEFT JOIN calculations calc ON calc.user_id = c.user_id AND calc.chat_id = c.id").
+		Where("c.user_id = ? AND c.deleted_at IS NULL", userID).
+		Group("c.user_id, c.id, c.title, c.created_at, c.updated_at").
+		Order("c.updated_at DESC, c.created_at DESC").
+		Scan(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("query chats: %w", err)
 	}
-	defer rows.Close()
 
-	items := make([]service.Chat, 0, 16)
-	for rows.Next() {
-		var item service.Chat
-		item.UserID = userID
-		if err := rows.Scan(
-			&item.ID,
-			&item.Title,
-			&item.CreatedAt,
-			&item.UpdatedAt,
-			&item.CalculationsCount,
-		); err != nil {
-			return nil, fmt.Errorf("scan chat: %w", err)
-		}
-		items = append(items, item)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate chats: %w", err)
+	items := make([]service.Chat, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, service.Chat{
+			UserID:            userID,
+			ID:                row.ID,
+			Title:             row.Title,
+			CreatedAt:         row.CreatedAt,
+			UpdatedAt:         row.UpdatedAt,
+			CalculationsCount: row.CalculationsCount,
+		})
 	}
 
 	return items, nil
 }
 
 func (r *PostgresRepository) DeleteChat(ctx context.Context, userID, chatID, deletedBy string, hard bool) error {
+	query := r.db.WithContext(ctx).Model(&chatModel{}).Where("user_id = ? AND id = ?", userID, chatID)
+	var result *gorm.DB
 	if hard {
-		result, err := r.db.ExecContext(ctx, `DELETE FROM chats WHERE user_id = ? AND id = ?`, userID, chatID)
-		if err != nil {
-			return fmt.Errorf("delete chat permanently: %w", err)
+		result = query.Delete(&chatModel{})
+		if result.Error != nil {
+			return fmt.Errorf("delete chat permanently: %w", result.Error)
 		}
-		return ensureAffected(result, chatID)
+		return ensureAffected(result.RowsAffected, chatID)
 	}
 
-	result, err := r.db.ExecContext(ctx, `
-		UPDATE chats
-		SET deleted_at = UTC_TIMESTAMP(), deleted_by = ?
-		WHERE user_id = ? AND id = ? AND deleted_at IS NULL
-	`, deletedBy, userID, chatID)
-	if err != nil {
-		return fmt.Errorf("soft delete chat: %w", err)
+	now := time.Now().UTC()
+	result = query.Updates(map[string]any{
+		"deleted_at": now,
+		"deleted_by": deletedBy,
+	})
+	if result.Error != nil {
+		return fmt.Errorf("soft delete chat: %w", result.Error)
 	}
-	return ensureAffected(result, chatID)
+	return ensureAffected(result.RowsAffected, chatID)
 }
 
 func (r *PostgresRepository) RestoreChat(ctx context.Context, userID, chatID string) error {
-	result, err := r.db.ExecContext(ctx, `
-		UPDATE chats
-		SET deleted_at = NULL, deleted_by = NULL
-		WHERE user_id = ? AND id = ?
-	`, userID, chatID)
-	if err != nil {
-		return fmt.Errorf("restore chat: %w", err)
+	result := r.db.WithContext(ctx).
+		Model(&chatModel{}).
+		Where("user_id = ? AND id = ?", userID, chatID).
+		Updates(map[string]any{
+			"deleted_at": nil,
+			"deleted_by": nil,
+		})
+	if result.Error != nil {
+		return fmt.Errorf("restore chat: %w", result.Error)
 	}
-	return ensureAffected(result, chatID)
+	return ensureAffected(result.RowsAffected, chatID)
 }
 
 func (r *PostgresRepository) AppendCalculation(ctx context.Context, result service.CalculationResult) error {
@@ -313,167 +356,116 @@ func (r *PostgresRepository) AppendCalculation(ctx context.Context, result servi
 		return fmt.Errorf("marshal breakdown: %w", err)
 	}
 
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
-	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
+	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := upsertUser(tx, result.UserID); err != nil {
+			return err
 		}
-	}()
 
-	_, err = tx.ExecContext(ctx, `
-		INSERT INTO users(id) VALUES (?)
-		ON DUPLICATE KEY UPDATE id = VALUES(id)
-	`, result.UserID)
+		chat := chatModel{
+			UserID:    result.UserID,
+			ID:        result.ChatID,
+			Title:     "Новый чат",
+			CreatedAt: result.CreatedAt,
+			UpdatedAt: result.CreatedAt,
+		}
+		if err := tx.Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "user_id"}, {Name: "id"}},
+			DoUpdates: clause.Assignments(map[string]any{
+				"updated_at": result.CreatedAt,
+				"deleted_at": nil,
+				"deleted_by": nil,
+			}),
+		}).Create(&chat).Error; err != nil {
+			return fmt.Errorf("upsert chat: %w", err)
+		}
+
+		record := calculationModel{
+			UserID:            result.UserID,
+			ChatID:            result.ChatID,
+			GarmentType:       result.GarmentType,
+			MaterialType:      result.MaterialType,
+			Urgency:           result.Urgency,
+			MarketStatus:      result.MarketStatus,
+			Quantity:          result.Quantity,
+			PricePerUnit:      result.PricePerUnit,
+			Subtotal:          result.Subtotal,
+			DiscountPercent:   result.DiscountPercent,
+			DiscountAmount:    result.DiscountAmount,
+			Total:             result.Total,
+			AppliedOperations: string(appliedOperationsJSON),
+			MaterialLines:     string(materialLinesJSON),
+			OrderSnapshot:     string(orderSnapshotJSON),
+			Breakdown:         string(breakdownJSON),
+			CreatedAt:         result.CreatedAt,
+		}
+
+		if err := tx.Create(&record).Error; err != nil {
+			return fmt.Errorf("insert calculation: %w", err)
+		}
+
+		if err := tx.Model(&chatModel{}).
+			Where("user_id = ? AND id = ?", result.UserID, result.ChatID).
+			Updates(map[string]any{
+				"updated_at": result.CreatedAt,
+				"deleted_at": nil,
+				"deleted_by": nil,
+			}).Error; err != nil {
+			return fmt.Errorf("update chat timestamp: %w", err)
+		}
+
+		return nil
+	})
 	if err != nil {
-		return fmt.Errorf("upsert user: %w", err)
+		return err
 	}
 
-	_, err = tx.ExecContext(ctx, `
-		INSERT INTO chats(user_id, id, title, created_at, updated_at, deleted_at, deleted_by)
-		VALUES (?, ?, ?, ?, ?, NULL, NULL)
-		ON DUPLICATE KEY UPDATE updated_at = VALUES(updated_at), deleted_at = NULL, deleted_by = NULL
-	`, result.UserID, result.ChatID, "Новый чат", result.CreatedAt, result.CreatedAt)
-	if err != nil {
-		return fmt.Errorf("upsert chat: %w", err)
-	}
-
-	_, err = tx.ExecContext(ctx, `
-		INSERT INTO calculations(
-			user_id,
-			chat_id,
-			garment_type,
-			material_type,
-			urgency,
-			market_status,
-			quantity,
-			price_per_unit,
-			subtotal,
-			discount_percent,
-			discount_amount,
-			total,
-			applied_operations,
-			material_lines,
-			order_snapshot,
-			breakdown,
-			created_at
-		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`,
-		result.UserID,
-		result.ChatID,
-		result.GarmentType,
-		result.MaterialType,
-		result.Urgency,
-		result.MarketStatus,
-		result.Quantity,
-		result.PricePerUnit,
-		result.Subtotal,
-		result.DiscountPercent,
-		result.DiscountAmount,
-		result.Total,
-		string(appliedOperationsJSON),
-		string(materialLinesJSON),
-		string(orderSnapshotJSON),
-		string(breakdownJSON),
-		result.CreatedAt,
-	)
-	if err != nil {
-		return fmt.Errorf("insert calculation: %w", err)
-	}
-
-	_, err = tx.ExecContext(ctx, `
-		UPDATE chats
-		SET updated_at = ?, deleted_at = NULL, deleted_by = NULL
-		WHERE user_id = ? AND id = ?
-	`, result.CreatedAt, result.UserID, result.ChatID)
-	if err != nil {
-		return fmt.Errorf("update chat timestamp: %w", err)
-	}
-
-	if commitErr := tx.Commit(); commitErr != nil {
-		return fmt.Errorf("commit tx: %w", commitErr)
-	}
 	return nil
 }
 
 func (r *PostgresRepository) ListCalculations(ctx context.Context, userID, chatID string) ([]service.CalculationResult, error) {
-	rows, err := r.db.QueryContext(ctx, `
-		SELECT
-			garment_type,
-			material_type,
-			urgency,
-			market_status,
-			quantity,
-			price_per_unit,
-			subtotal,
-			discount_percent,
-			discount_amount,
-			total,
-			applied_operations,
-			material_lines,
-			order_snapshot,
-			breakdown,
-			created_at
-		FROM calculations
-		WHERE user_id = ? AND chat_id = ?
-		ORDER BY created_at ASC
-	`, userID, chatID)
+	var rows []calculationModel
+	err := r.db.WithContext(ctx).
+		Where("user_id = ? AND chat_id = ?", userID, chatID).
+		Order("created_at ASC").
+		Find(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("query calculations: %w", err)
 	}
-	defer rows.Close()
 
-	items := make([]service.CalculationResult, 0, 16)
-	for rows.Next() {
-		var (
-			item             service.CalculationResult
-			appliedRaw       string
-			materialLinesRaw string
-			orderSnapshotRaw string
-			breakdownRaw     string
-		)
-		if err := rows.Scan(
-			&item.GarmentType,
-			&item.MaterialType,
-			&item.Urgency,
-			&item.MarketStatus,
-			&item.Quantity,
-			&item.PricePerUnit,
-			&item.Subtotal,
-			&item.DiscountPercent,
-			&item.DiscountAmount,
-			&item.Total,
-			&appliedRaw,
-			&materialLinesRaw,
-			&orderSnapshotRaw,
-			&breakdownRaw,
-			&item.CreatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan calculation: %w", err)
+	items := make([]service.CalculationResult, 0, len(rows))
+	for _, row := range rows {
+		item := service.CalculationResult{
+			UserID:          userID,
+			ChatID:          chatID,
+			GarmentType:     row.GarmentType,
+			MaterialType:    row.MaterialType,
+			Urgency:         row.Urgency,
+			MarketStatus:    row.MarketStatus,
+			Quantity:        row.Quantity,
+			PricePerUnit:    row.PricePerUnit,
+			Subtotal:        row.Subtotal,
+			DiscountPercent: row.DiscountPercent,
+			DiscountAmount:  row.DiscountAmount,
+			Total:           row.Total,
+			CreatedAt:       row.CreatedAt,
 		}
 
-		if err := json.Unmarshal([]byte(appliedRaw), &item.AppliedOperations); err != nil {
+		if err := json.Unmarshal([]byte(row.AppliedOperations), &item.AppliedOperations); err != nil {
 			return nil, fmt.Errorf("decode applied operations: %w", err)
 		}
-		if err := json.Unmarshal([]byte(materialLinesRaw), &item.MaterialLines); err != nil {
+		if err := json.Unmarshal([]byte(row.MaterialLines), &item.MaterialLines); err != nil {
 			return nil, fmt.Errorf("decode material lines: %w", err)
 		}
-		if err := decodeOrderSnapshot(orderSnapshotRaw, &item); err != nil {
+		if err := decodeOrderSnapshot(row.OrderSnapshot, &item); err != nil {
 			return nil, err
 		}
-		if err := decodeBreakdown(breakdownRaw, &item); err != nil {
+		if err := decodeBreakdown(row.Breakdown, &item); err != nil {
 			return nil, err
 		}
-		item.UserID = userID
-		item.ChatID = chatID
+
 		items = append(items, item)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate calculations: %w", err)
-	}
+
 	return items, nil
 }
 
@@ -537,13 +529,16 @@ func decodeBreakdown(raw string, item *service.CalculationResult) error {
 	return nil
 }
 
-func ensureAffected(result sql.Result, chatID string) error {
-	affected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("rows affected: %w", err)
-	}
+func ensureAffected(affected int64, chatID string) error {
 	if affected == 0 {
 		return fmt.Errorf("chat %q not found: %w", chatID, service.ErrNotFound)
 	}
 	return nil
+}
+
+func upsertUser(tx *gorm.DB, userID string) error {
+	return tx.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "id"}},
+		DoNothing: true,
+	}).Create(&userModel{ID: userID}).Error
 }

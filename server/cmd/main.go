@@ -102,13 +102,18 @@ func buildRepositories(cfg *config.Config) (
 		repo := repository.NewMemoryRepository()
 		return repo, repo, repo, func() {}, nil
 	case "postgres", "mysql", "mariadb":
-		dbConn, err := db.Open(cfg)
+		dbConn, err := db.OpenGORM(cfg)
 		if err != nil {
 			return nil, nil, nil, nil, fmt.Errorf("open sql connection: %w", err)
 		}
 
 		repo := repository.NewPostgresRepository(dbConn)
-		return repo, repo, repo, func() { _ = dbConn.Close() }, nil
+		return repo, repo, repo, func() {
+			sqlDB, err := dbConn.DB()
+			if err == nil {
+				_ = sqlDB.Close()
+			}
+		}, nil
 	default:
 		return nil, nil, nil, nil, fmt.Errorf("неподдерживаемый APP_STORAGE=%q", cfg.Storage)
 	}

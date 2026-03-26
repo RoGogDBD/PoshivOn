@@ -6,6 +6,8 @@ import (
 	"net/url"
 
 	_ "github.com/go-sql-driver/mysql"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
 
 	"github.com/RoGogDBD/PoshivOn/internal/config"
 )
@@ -23,6 +25,30 @@ func Open(cfg *config.Config) (*sql.DB, error) {
 
 	if err := db.Ping(); err != nil {
 		_ = db.Close()
+		return nil, err
+	}
+
+	return db, nil
+}
+
+func OpenGORM(cfg *config.Config) (*gorm.DB, error) {
+	dsn := cfg.DatabaseURL
+	if dsn == "" {
+		dsn = buildDSN(cfg)
+	}
+
+	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	if err != nil {
+		return nil, err
+	}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, err
+	}
+
+	if err := sqlDB.Ping(); err != nil {
+		_ = sqlDB.Close()
 		return nil, err
 	}
 
