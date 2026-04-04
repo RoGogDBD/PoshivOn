@@ -1,0 +1,51 @@
+services:
+  app:
+    # Сервис приложения.
+    build:
+      context: ./server
+    container_name: poshivon_app
+    environment:
+      # Конфигурация приложения.
+      APP_HOST: 0.0.0.0
+      APP_PORT: "8080"
+      # Данные подключения к БД (на потом).
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_NAME: poshivon
+      DB_USER: poshivon
+      DB_PASSWORD: poshivon
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    # Frontend на React + Vite.
+    build:
+      context: ./client
+    container_name: poshivon_web
+    ports:
+      - "5173:80"
+
+  db:
+    # Контейнер с MariaDB.
+    image: mariadb:11.4
+    container_name: poshivon_db
+    environment:
+      MARIADB_ROOT_PASSWORD: root
+      MARIADB_DATABASE: poshivon
+      MARIADB_USER: poshivon
+      MARIADB_PASSWORD: poshivon
+    ports:
+      - "3306:3306"
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mariadb-admin", "ping", "-h", "localhost", "-u", "root", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mariadb_data:

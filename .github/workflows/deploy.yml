@@ -1,0 +1,250 @@
+name: Deploy on tag
+
+on:
+  push:
+    tags:
+      - "*"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set image metadata
+        id: meta
+        run: |
+          owner=$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')
+          echo "owner=$owner" >> "$GITHUB_OUTPUT"
+          echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./server
+          file: ./server/Dockerfile
+          push: true
+          tags: ghcr.io/${{ steps.meta.outputs.owner }}/poshivon-app:${{ steps.meta.outputs.tag }}
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./client
+          file: ./client/Dockerfile
+          push: true
+          tags: ghcr.io/${{ steps.meta.outputs.owner }}/poshivon-web:${{ steps.meta.outputs.tag }}
+          build-args: |
+            VITE_YA_CLIENT_ID=${{ secrets.VITE_YA_CLIENT_ID }}
+            VITE_YA_REDIRECT_URI=${{ secrets.VITE_YA_REDIRECT_URI }}
+
+      - name: Create remote directory
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            set -e
+            whoami
+            pwd
+            id
+            ls -ld /srv || true
+            mkdir -p /srv/poshivon/nginx /srv/poshivon/certs || sudo mkdir -p /srv/poshivon/nginx /srv/poshivon/certs
+
+      - name: Upload docker-compose
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          source: docker-compose.prod.yml
+          target: /srv/poshivon
+
+      - name: Deploy
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          IMAGE_OWNER: ${{ steps.meta.outputs.owner }}
+          IMAGE_TAG: ${{ steps.meta.outputs.tag }}
+          APP_STORAGE: mysql
+          APP_HOST: 0.0.0.0
+          APP_PORT: ${{ secrets.APP_PORT }}
+          LOG_LEVEL: ${{ secrets.LOG_LEVEL }}
+          CORS_ALLOWED_ORIGINS: ${{ secrets.CORS_ALLOWED_ORIGINS }}
+          COOKIE_SECURE: ${{ secrets.COOKIE_SECURE }}
+          COOKIE_SAMESITE: ${{ secrets.COOKIE_SAMESITE }}
+          COOKIE_DOMAIN: ${{ secrets.COOKIE_DOMAIN }}
+          YANDEX_CLIENT_ID: ${{ secrets.VITE_YA_CLIENT_ID }}
+          YANDEX_CLIENT_SECRET: ${{ secrets.VITE_YA_CLIENT_SECRET }}
+          YANDEX_REDIRECT_URI: ${{ secrets.VITE_YA_REDIRECT_URI }}
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_ROOT_PASSWORD: ${{ secrets.DB_ROOT_PASSWORD }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          TLS_FULLCHAIN: ${{ secrets.TLS_FULLCHAIN }}
+          TLS_PRIVATE_KEY: ${{ secrets.TLS_PRIVATE_KEY }}
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          envs: IMAGE_OWNER,IMAGE_TAG,APP_STORAGE,APP_HOST,APP_PORT,LOG_LEVEL,CORS_ALLOWED_ORIGINS,COOKIE_SECURE,COOKIE_SAMESITE,COOKIE_DOMAIN,YANDEX_CLIENT_ID,YANDEX_CLIENT_SECRET,YANDEX_REDIRECT_URI,DB_HOST,DB_PORT,DB_NAME,DB_USER,DB_PASSWORD,DB_ROOT_PASSWORD,GHCR_USERNAME,GHCR_TOKEN,TLS_FULLCHAIN,TLS_PRIVATE_KEY
+          script: |
+            set -euo pipefail
+            umask 077
+            cat > /srv/poshivon/nginx/default.conf <<'EOF'
+            server {
+              listen 80;
+              server_name poshivon.ru www.poshivon.ru;
+              return 301 https://$host$request_uri;
+            }
+
+            server {
+              listen 443 ssl;
+              server_name poshivon.ru www.poshivon.ru;
+
+              ssl_certificate /etc/nginx/certs/fullchain.pem;
+              ssl_certificate_key /etc/nginx/certs/privkey.pem;
+              ssl_protocols TLSv1.2 TLSv1.3;
+              ssl_prefer_server_ciphers off;
+              add_header X-Robots-Tag "noindex, nofollow, noarchive, nosnippet" always;
+
+              location / {
+                proxy_pass http://web:80;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+              }
+
+              location = /auth {
+                proxy_pass http://web:80;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+              }
+
+              location = /auth/ {
+                proxy_pass http://web:80;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+              }
+
+              location = /auth/status {
+                proxy_pass http://app:8080;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+              }
+
+              location = /auth/me {
+                proxy_pass http://app:8080;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+              }
+
+              location = /auth/logout {
+                proxy_pass http://app:8080;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+              }
+
+              location = /auth/yandex {
+                proxy_pass http://app:8080;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+              }
+
+              location = /auth/yandex/code {
+                proxy_pass http://app:8080;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+              }
+
+              location /health {
+                proxy_pass http://app:8080;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+              }
+
+              location /api/ {
+                proxy_pass http://app:8080;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+              }
+            }
+            EOF
+            cat > /srv/poshivon/certs/fullchain.pem <<EOF
+            ${TLS_FULLCHAIN}
+            EOF
+            cat > /srv/poshivon/certs/privkey.pem <<EOF
+            ${TLS_PRIVATE_KEY}
+            EOF
+            cat > /srv/poshivon/.env <<EOF
+            IMAGE_OWNER=${IMAGE_OWNER}
+            IMAGE_TAG=${IMAGE_TAG}
+            APP_STORAGE=${APP_STORAGE}
+            APP_HOST=${APP_HOST}
+            APP_PORT=${APP_PORT}
+            LOG_LEVEL=${LOG_LEVEL}
+            CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
+            COOKIE_SECURE=${COOKIE_SECURE}
+            COOKIE_SAMESITE=${COOKIE_SAMESITE}
+            COOKIE_DOMAIN=${COOKIE_DOMAIN}
+            YANDEX_CLIENT_ID=${YANDEX_CLIENT_ID}
+            YANDEX_CLIENT_SECRET=${YANDEX_CLIENT_SECRET}
+            YANDEX_REDIRECT_URI=${YANDEX_REDIRECT_URI}
+            DB_HOST=${DB_HOST}
+            DB_PORT=${DB_PORT}
+            DB_NAME=${DB_NAME}
+            DB_USER=${DB_USER}
+            DB_PASSWORD=${DB_PASSWORD}
+            DB_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
+            EOF
+            docker login ghcr.io -u "${GHCR_USERNAME}" -p "${GHCR_TOKEN}"
+            docker compose --env-file /srv/poshivon/.env -f /srv/poshivon/docker-compose.prod.yml pull
+            docker compose --env-file /srv/poshivon/.env -f /srv/poshivon/docker-compose.prod.yml up -d db
+            for i in $(seq 1 30); do
+              if docker inspect -f '{{.State.Health.Status}}' poshivon_db 2>/dev/null | grep -q healthy; then
+                break
+              fi
+              sleep 2
+            done
+            docker exec -e DB_USER -e DB_PASSWORD -e DB_NAME poshivon_db /bin/sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" -h 127.0.0.1 -e "DROP USER IF EXISTS '\''$DB_USER'\''@'\''localhost'\''; DROP USER IF EXISTS '\''$DB_USER'\''@'\''127.0.0.1'\''; DROP USER IF EXISTS '\''$DB_USER'\''@'\''172.18.0.%'\''; DROP USER IF EXISTS '\''$DB_USER'\''@'\''%'\''; CREATE USER '\''$DB_USER'\''@'\''%'\'' IDENTIFIED BY '\''$DB_PASSWORD'\''; ALTER USER '\''$DB_USER'\''@'\''%'\'' IDENTIFIED BY '\''$DB_PASSWORD'\''; GRANT ALL PRIVILEGES ON \`$DB_NAME\`.* TO '\''$DB_USER'\''@'\''%'\''; FLUSH PRIVILEGES;"'
+            docker compose --env-file /srv/poshivon/.env -f /srv/poshivon/docker-compose.prod.yml up -d app web proxy
