@@ -24,6 +24,7 @@ type BatchDiscount struct {
 }
 
 type PricingRules struct {
+	CalculatorMode            string  `json:"calculator_mode"`
 	LaborMinuteRate           int64   `json:"labor_minute_rate"`
 	PayrollTaxesPercent       float64 `json:"payroll_taxes_percent"`
 	OverheadPercent           float64 `json:"overhead_percent"`
@@ -41,11 +42,13 @@ type PricingRules struct {
 type GarmentConfig struct {
 	BaseMinutes     int     `json:"base_minutes"`
 	ComplexityCoeff float64 `json:"complexity_coeff"`
+	QuickPrice      int64   `json:"quick_price"`
 }
 
 type OperationConfig struct {
-	AdditionalMinutes         int   `json:"additional_minutes"`
-	AdditionalMaterialPerUnit int64 `json:"additional_material_per_unit"`
+	AdditionalMinutes         int     `json:"additional_minutes"`
+	AdditionalMaterialPerUnit int64   `json:"additional_material_per_unit"`
+	QuickPercent              float64 `json:"quick_percent"`
 }
 
 type MaterialConfig struct {
@@ -110,6 +113,7 @@ type MaterialLine struct {
 type CalculationResult struct {
 	UserID                  string             `json:"user_id"`
 	ChatID                  string             `json:"chat_id"`
+	CalculationMode         string             `json:"calculation_mode"`
 	GarmentType             string             `json:"garment_type"`
 	MaterialType            string             `json:"material_type"`
 	Urgency                 string             `json:"urgency"`
@@ -181,6 +185,11 @@ type CostingService struct {
 	calcRepo     ChatCalculationRepository
 }
 
+const (
+	calculatorModeMasterpiece = "masterpiece"
+	calculatorModeQuick       = "quick"
+)
+
 func NewCostingService(
 	settingsRepo UserSettingsRepository,
 	chatRepo ChatRepository,
@@ -196,6 +205,7 @@ func NewCostingService(
 func DefaultUserSettings() UserSettings {
 	return UserSettings{
 		PricingRules: PricingRules{
+			CalculatorMode:            calculatorModeMasterpiece,
 			LaborMinuteRate:           18,
 			PayrollTaxesPercent:       30,
 			OverheadPercent:           18,
@@ -210,20 +220,20 @@ func DefaultUserSettings() UserSettings {
 			DefaultConsumablesPerUnit: 90,
 		},
 		Garments: map[string]GarmentConfig{
-			"Пиджак":  {BaseMinutes: 260, ComplexityCoeff: 1.60},
-			"Юбка":    {BaseMinutes: 90, ComplexityCoeff: 1.00},
-			"Рубашка": {BaseMinutes: 140, ComplexityCoeff: 1.15},
-			"Платье":  {BaseMinutes: 180, ComplexityCoeff: 1.30},
+			"Пиджак":  {BaseMinutes: 260, ComplexityCoeff: 1.60, QuickPrice: 7000},
+			"Юбка":    {BaseMinutes: 90, ComplexityCoeff: 1.00, QuickPrice: 3200},
+			"Рубашка": {BaseMinutes: 140, ComplexityCoeff: 1.15, QuickPrice: 4200},
+			"Платье":  {BaseMinutes: 180, ComplexityCoeff: 1.30, QuickPrice: 5600},
 		},
 		Operations: map[string]OperationConfig{
-			"Карман накладной":       {AdditionalMinutes: 15, AdditionalMaterialPerUnit: 80},
-			"Карман прорезной":       {AdditionalMinutes: 25, AdditionalMaterialPerUnit: 120},
-			"Подклад":                {AdditionalMinutes: 35, AdditionalMaterialPerUnit: 350},
-			"Потайная молния":        {AdditionalMinutes: 12, AdditionalMaterialPerUnit: 120},
-			"Воротник":               {AdditionalMinutes: 20, AdditionalMaterialPerUnit: 90},
-			"Манжеты":                {AdditionalMinutes: 15, AdditionalMaterialPerUnit: 70},
-			"Шлица":                  {AdditionalMinutes: 18, AdditionalMaterialPerUnit: 50},
-			"Декоративная отстрочка": {AdditionalMinutes: 18, AdditionalMaterialPerUnit: 0},
+			"Карман накладной":       {AdditionalMinutes: 15, AdditionalMaterialPerUnit: 80, QuickPercent: 8},
+			"Карман прорезной":       {AdditionalMinutes: 25, AdditionalMaterialPerUnit: 120, QuickPercent: 12},
+			"Подклад":                {AdditionalMinutes: 35, AdditionalMaterialPerUnit: 350, QuickPercent: 15},
+			"Потайная молния":        {AdditionalMinutes: 12, AdditionalMaterialPerUnit: 120, QuickPercent: 6},
+			"Воротник":               {AdditionalMinutes: 20, AdditionalMaterialPerUnit: 90, QuickPercent: 10},
+			"Манжеты":                {AdditionalMinutes: 15, AdditionalMaterialPerUnit: 70, QuickPercent: 8},
+			"Шлица":                  {AdditionalMinutes: 18, AdditionalMaterialPerUnit: 50, QuickPercent: 7},
+			"Декоративная отстрочка": {AdditionalMinutes: 18, AdditionalMaterialPerUnit: 0, QuickPercent: 5},
 		},
 		Materials: map[string]MaterialConfig{
 			"Хлопок": {
@@ -409,10 +419,14 @@ func (s *CostingService) CalculateInChat(ctx context.Context, userID, chatID str
 		return CalculationResult{}, fmt.Errorf("get settings for calculation: %w", err)
 	}
 	settings = normalizeSettings(settings)
+	calculationMode := normalizeCalculatorMode(settings.PricingRules.CalculatorMode)
 
 	garment, ok := settings.Garments[order.GarmentType]
 	if !ok {
 		return CalculationResult{}, fmt.Errorf("unknown garment type %q: %w", order.GarmentType, ErrInvalidArgument)
+	}
+	if calculationMode == calculatorModeQuick {
+		return s.calculateQuickInChat(ctx, userID, chatID, order, settings, garment)
 	}
 
 	materialName := strings.TrimSpace(order.MaterialType)
@@ -517,6 +531,7 @@ func (s *CostingService) CalculateInChat(ctx context.Context, userID, chatID str
 	result := CalculationResult{
 		UserID:                  userID,
 		ChatID:                  chatID,
+		CalculationMode:         calculationMode,
 		GarmentType:             order.GarmentType,
 		MaterialType:            materialName,
 		Urgency:                 urgencyName,
@@ -581,6 +596,9 @@ func validateSettings(settings UserSettings) error {
 	if settings.PricingRules.LaborMinuteRate <= 0 {
 		return fmt.Errorf("labor minute rate should be positive: %w", ErrInvalidArgument)
 	}
+	if mode := normalizeCalculatorMode(settings.PricingRules.CalculatorMode); mode == "" {
+		return fmt.Errorf("calculator mode should be valid: %w", ErrInvalidArgument)
+	}
 	if settings.PricingRules.MarginPercent < 0 || settings.PricingRules.MinMarginPercent < 0 {
 		return fmt.Errorf("margin should be non-negative: %w", ErrInvalidArgument)
 	}
@@ -593,6 +611,9 @@ func validateSettings(settings UserSettings) error {
 		}
 		if garment.ComplexityCoeff <= 0 {
 			return fmt.Errorf("garment coefficient should be positive for %q: %w", name, ErrInvalidArgument)
+		}
+		if garment.QuickPrice < 0 {
+			return fmt.Errorf("garment quick price should be non-negative for %q: %w", name, ErrInvalidArgument)
 		}
 	}
 	for name, material := range settings.Materials {
@@ -609,6 +630,9 @@ func validateSettings(settings UserSettings) error {
 		}
 		if op.AdditionalMinutes < 0 || op.AdditionalMaterialPerUnit < 0 {
 			return fmt.Errorf("operation values should be non-negative for %q: %w", name, ErrInvalidArgument)
+		}
+		if op.QuickPercent < 0 {
+			return fmt.Errorf("operation quick percent should be non-negative for %q: %w", name, ErrInvalidArgument)
 		}
 	}
 	for _, tier := range settings.BatchDiscounts {
@@ -673,8 +697,85 @@ func normalizeSettings(settings UserSettings) UserSettings {
 	if normalized.PricingRules.ChildCoefficient <= 0 {
 		normalized.PricingRules.ChildCoefficient = defaults.PricingRules.ChildCoefficient
 	}
+	normalized.PricingRules.CalculatorMode = normalizeCalculatorMode(normalized.PricingRules.CalculatorMode)
 
 	return normalized
+}
+
+func (s *CostingService) calculateQuickInChat(
+	ctx context.Context,
+	userID string,
+	chatID string,
+	order OrderInput,
+	settings UserSettings,
+	garment GarmentConfig,
+) (CalculationResult, error) {
+	if garment.QuickPrice <= 0 {
+		return CalculationResult{}, fmt.Errorf("quick price should be positive for %q: %w", order.GarmentType, ErrInvalidArgument)
+	}
+
+	operationCounts := normalizeOperationCounts(order)
+	appliedOperations := make([]AppliedOperation, 0, len(operationCounts))
+	totalQuickPercent := 0.0
+	for name, count := range operationCounts {
+		cfg, exists := settings.Operations[name]
+		if !exists {
+			return CalculationResult{}, fmt.Errorf("unknown operation %q: %w", name, ErrInvalidArgument)
+		}
+		appliedPercent := cfg.QuickPercent * float64(count)
+		totalQuickPercent += appliedPercent
+		appliedOperations = append(appliedOperations, AppliedOperation{
+			Name:                   name,
+			Count:                  count,
+			AdditionalMaterialCost: percentOf(garment.QuickPrice, appliedPercent),
+		})
+	}
+	sort.Slice(appliedOperations, func(i, j int) bool {
+		return appliedOperations[i].Name < appliedOperations[j].Name
+	})
+
+	priceBeforeDiscount := garment.QuickPrice + percentOf(garment.QuickPrice, totalQuickPercent)
+	subtotal := priceBeforeDiscount * int64(order.Quantity)
+	discount := pickDiscount(settings.BatchDiscounts, order.Quantity)
+	discountAmount := percentOf(subtotal, discount.Percent)
+	total := subtotal - discountAmount
+	pricePerUnit := int64(math.Round(float64(total) / float64(order.Quantity)))
+
+	result := CalculationResult{
+		UserID:                 userID,
+		ChatID:                 chatID,
+		CalculationMode:        calculatorModeQuick,
+		GarmentType:            order.GarmentType,
+		Quantity:               order.Quantity,
+		Comment:                strings.TrimSpace(order.Comment),
+		PriceBeforeDiscount:    priceBeforeDiscount,
+		MinAllowedPricePerUnit: garment.QuickPrice,
+		PricePerUnit:           pricePerUnit,
+		Subtotal:               subtotal,
+		DiscountPercent:        int64(discount.Percent),
+		DiscountAmount:         discountAmount,
+		Total:                  total,
+		MarketStatus:           "unknown",
+		AppliedOperations:      appliedOperations,
+		CreatedAt:              time.Now().UTC(),
+	}
+
+	if err := s.calcRepo.AppendCalculation(ctx, result); err != nil {
+		return CalculationResult{}, fmt.Errorf("save calculation: %w", err)
+	}
+
+	return result, nil
+}
+
+func normalizeCalculatorMode(mode string) string {
+	switch strings.TrimSpace(mode) {
+	case "", calculatorModeMasterpiece:
+		return calculatorModeMasterpiece
+	case calculatorModeQuick:
+		return calculatorModeQuick
+	default:
+		return ""
+	}
 }
 
 func newChatID() string {

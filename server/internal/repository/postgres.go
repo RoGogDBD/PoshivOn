@@ -324,13 +324,14 @@ func (r *PostgresRepository) AppendCalculation(ctx context.Context, result servi
 		return fmt.Errorf("marshal material lines: %w", err)
 	}
 	orderSnapshotJSON, err := json.Marshal(map[string]any{
-		"garment_type":   result.GarmentType,
-		"material_type":  result.MaterialType,
-		"urgency":        result.Urgency,
-		"market_segment": result.MarketSegment,
-		"quantity":       result.Quantity,
-		"fittings":       result.Fittings,
-		"comment":        result.Comment,
+		"calculation_mode": result.CalculationMode,
+		"garment_type":     result.GarmentType,
+		"material_type":    result.MaterialType,
+		"urgency":          result.Urgency,
+		"market_segment":   result.MarketSegment,
+		"quantity":         result.Quantity,
+		"fittings":         result.Fittings,
+		"comment":          result.Comment,
 	})
 	if err != nil {
 		return fmt.Errorf("marshal order snapshot: %w", err)
@@ -471,9 +472,10 @@ func (r *PostgresRepository) ListCalculations(ctx context.Context, userID, chatI
 
 func decodeOrderSnapshot(raw string, item *service.CalculationResult) error {
 	var payload struct {
-		MarketSegment string `json:"market_segment"`
-		Fittings      int    `json:"fittings"`
-		Comment       string `json:"comment"`
+		CalculationMode string `json:"calculation_mode"`
+		MarketSegment   string `json:"market_segment"`
+		Fittings        int    `json:"fittings"`
+		Comment         string `json:"comment"`
 	}
 	if raw == "" {
 		return nil
@@ -481,6 +483,7 @@ func decodeOrderSnapshot(raw string, item *service.CalculationResult) error {
 	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
 		return fmt.Errorf("decode order snapshot: %w", err)
 	}
+	item.CalculationMode = payload.CalculationMode
 	item.MarketSegment = payload.MarketSegment
 	item.Fittings = payload.Fittings
 	item.Comment = payload.Comment

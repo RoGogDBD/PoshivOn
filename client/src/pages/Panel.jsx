@@ -10,8 +10,22 @@ import {
   saveUserSettings,
 } from "../utils/panelApi.js";
 
+const calculatorModes = [
+  {
+    value: "masterpiece",
+    label: "Шедевр",
+    description: "Полная калькуляция по минутам, материалам, срочности и рынку.",
+  },
+  {
+    value: "quick",
+    label: "По быстрому",
+    description: "Простой расчет: изделие, усложнения и скидка от количества.",
+  },
+];
+
 const defaultSettings = {
   pricing_rules: {
+    calculator_mode: "masterpiece",
     labor_minute_rate: 18,
     payroll_taxes_percent: 30,
     overhead_percent: 18,
@@ -26,18 +40,18 @@ const defaultSettings = {
     default_consumables_per_unit: 90,
   },
   garments: {
-    "Пиджак": { base_minutes: 260, complexity_coeff: 1.6 },
-    "Юбка": { base_minutes: 90, complexity_coeff: 1 },
-    "Рубашка": { base_minutes: 140, complexity_coeff: 1.15 },
-    "Платье": { base_minutes: 180, complexity_coeff: 1.3 },
+    "Пиджак": { base_minutes: 260, complexity_coeff: 1.6, quick_price: 7000 },
+    "Юбка": { base_minutes: 90, complexity_coeff: 1, quick_price: 3200 },
+    "Рубашка": { base_minutes: 140, complexity_coeff: 1.15, quick_price: 4200 },
+    "Платье": { base_minutes: 180, complexity_coeff: 1.3, quick_price: 5600 },
   },
   operations: {
-    "Карман накладной": { additional_minutes: 15, additional_material_per_unit: 80 },
-    "Карман прорезной": { additional_minutes: 25, additional_material_per_unit: 120 },
-    Подклад: { additional_minutes: 35, additional_material_per_unit: 350 },
-    "Потайная молния": { additional_minutes: 12, additional_material_per_unit: 120 },
-    Воротник: { additional_minutes: 20, additional_material_per_unit: 90 },
-    Манжеты: { additional_minutes: 15, additional_material_per_unit: 70 },
+    "Карман накладной": { additional_minutes: 15, additional_material_per_unit: 80, quick_percent: 8 },
+    "Карман прорезной": { additional_minutes: 25, additional_material_per_unit: 120, quick_percent: 12 },
+    Подклад: { additional_minutes: 35, additional_material_per_unit: 350, quick_percent: 15 },
+    "Потайная молния": { additional_minutes: 12, additional_material_per_unit: 120, quick_percent: 6 },
+    Воротник: { additional_minutes: 20, additional_material_per_unit: 90, quick_percent: 10 },
+    Манжеты: { additional_minutes: 15, additional_material_per_unit: 70, quick_percent: 8 },
   },
   materials: {
     Хлопок: {
@@ -266,6 +280,8 @@ const Panel = () => {
   const operationOptions = useMemo(() => Object.keys(settings.operations).sort((a, b) => a.localeCompare(b)), [settings.operations]);
   const marketOptions = useMemo(() => Object.keys(settings.market_bands).sort((a, b) => a.localeCompare(b)), [settings.market_bands]);
   const activeChat = chats.find((chat) => chat.id === activeChatID) || null;
+  const calculatorMode = normalizeCalculatorMode(settings.pricing_rules?.calculator_mode);
+  const isQuickCalculator = calculatorMode === "quick";
   const totalHistoryAmount = useMemo(
     () => history.reduce((sum, item) => sum + (Number(item.total) || 0), 0),
     [history]
@@ -285,6 +301,16 @@ const Panel = () => {
       pricing_rules: {
         ...current.pricing_rules,
         [key]: Number(value) || 0,
+      },
+    }));
+  };
+
+  const handleCalculatorModeChange = (value) => {
+    setSettings((current) => ({
+      ...current,
+      pricing_rules: {
+        ...current.pricing_rules,
+        calculator_mode: normalizeCalculatorMode(value),
       },
     }));
   };
@@ -450,13 +476,13 @@ const Panel = () => {
     try {
       const payload = {
         garment_type: orderForm.garment_type,
-        material_type: orderForm.material_type,
-        urgency: orderForm.urgency,
-        market_segment: orderForm.market_segment,
+        material_type: isQuickCalculator ? "" : orderForm.material_type,
+        urgency: isQuickCalculator ? "" : orderForm.urgency,
+        market_segment: isQuickCalculator ? "" : orderForm.market_segment,
         quantity: Number(orderForm.quantity) || 0,
-        fittings: Number(orderForm.fittings) || 0,
-        is_custom_figure: Boolean(orderForm.is_custom_figure),
-        is_child: Boolean(orderForm.is_child),
+        fittings: isQuickCalculator ? 0 : Number(orderForm.fittings) || 0,
+        is_custom_figure: isQuickCalculator ? false : Boolean(orderForm.is_custom_figure),
+        is_child: isQuickCalculator ? false : Boolean(orderForm.is_child),
         comment: orderForm.comment,
         operation_counts: Object.fromEntries(
           Object.entries(orderForm.operation_counts).filter(([, count]) => Number(count) > 0)
@@ -560,134 +586,173 @@ const Panel = () => {
             <h2>Модель расчёта</h2>
             <form className="panel-form" onSubmit={handleSaveSettings}>
               <div className="panel-form__block">
-                <h3>Общие правила</h3>
-                <div className="panel-form__grid panel-form__grid--compact">
-                  {Object.entries(settings.pricing_rules).map(([key, value]) => (
-                    <label className="panel-form__row" key={key}>
-                      <span>{ruleLabels[key] || key}</span>
-                      <input type="number" step="0.01" min="0" value={value} onChange={(event) => handleRuleChange(key, event.target.value)} />
-                    </label>
+                <h3>Режим</h3>
+                <div className="panel-mode-switch">
+                  {calculatorModes.map((mode) => (
+                    <button
+                      key={mode.value}
+                      className={`panel-mode-switch__item ${calculatorMode === mode.value ? "panel-mode-switch__item--active" : ""}`}
+                      type="button"
+                      onClick={() => handleCalculatorModeChange(mode.value)}
+                    >
+                      <strong>{mode.label}</strong>
+                      <span>{mode.description}</span>
+                    </button>
                   ))}
                 </div>
               </div>
 
-              <div className="panel-form__block">
-                <h3>Изделия</h3>
-                <div className="panel-settings-table">
-                  {Object.entries(settings.garments).map(([name, item]) => (
-                    <div className="panel-settings-table__row" key={name}>
-                      <strong>{name}</strong>
-                      <label className="panel-form__row">
-                        <span>База, мин</span>
-                        <input type="number" min="0" value={item.base_minutes} onChange={(event) => handleGarmentChange(name, "base_minutes", event.target.value)} />
-                      </label>
-                      <label className="panel-form__row">
-                        <span>Коэфф.</span>
-                        <input type="number" step="0.01" min="0" value={item.complexity_coeff} onChange={(event) => handleGarmentChange(name, "complexity_coeff", event.target.value)} />
-                      </label>
+              {isQuickCalculator ? (
+                <>
+                  <div className="panel-form__block">
+                    <h3>Изделия</h3>
+                    <div className="panel-settings-table">
+                      {Object.entries(settings.garments).map(([name, item]) => (
+                        <div className="panel-settings-table__row panel-settings-table__row--compact" key={name}>
+                          <strong>{name}</strong>
+                          <label className="panel-form__row">
+                            <span>Мин. цена / шт</span>
+                            <input type="number" min="0" value={item.quick_price} onChange={(event) => handleGarmentChange(name, "quick_price", event.target.value)} />
+                          </label>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              </div>
+                  </div>
 
-              <div className="panel-form__block">
-                <h3>Операции</h3>
-                <div className="panel-settings-table">
-                  {Object.entries(settings.operations).map(([name, item]) => (
-                    <div className="panel-settings-table__row" key={name}>
-                      <strong>{name}</strong>
-                      <label className="panel-form__row">
-                        <span>Минуты</span>
-                        <input type="number" min="0" value={item.additional_minutes} onChange={(event) => handleOperationSettingChange(name, "additional_minutes", event.target.value)} />
-                      </label>
-                      <label className="panel-form__row">
-                        <span>Материалы/шт</span>
-                        <input type="number" min="0" value={item.additional_material_per_unit} onChange={(event) => handleOperationSettingChange(name, "additional_material_per_unit", event.target.value)} />
-                      </label>
+                  <div className="panel-form__block">
+                    <h3>Усложнения</h3>
+                    <div className="panel-settings-table">
+                      {Object.entries(settings.operations).map(([name, item]) => (
+                        <div className="panel-settings-table__row panel-settings-table__row--compact" key={name}>
+                          <strong>{name}</strong>
+                          <label className="panel-form__row">
+                            <span>Надбавка, %</span>
+                            <input type="number" step="0.01" min="0" value={item.quick_percent} onChange={(event) => handleOperationSettingChange(name, "quick_percent", event.target.value)} />
+                          </label>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              </div>
+                  </div>
 
-              <div className="panel-form__block">
-                <h3>Материалы</h3>
-                <div className="panel-settings-stack">
-                  {Object.entries(settings.materials).map(([name, item]) => (
-                    <div className="panel-settings-card" key={name}>
-                      <div className="panel-settings-card__header">
-                        <strong>{name}</strong>
-                      </div>
-                      <div className="panel-form__grid panel-form__grid--compact">
-                        {Object.entries(item).map(([key, value]) => (
+                  <DiscountsBlock settings={settings} handleDiscountChange={handleDiscountChange} />
+                </>
+              ) : (
+                <>
+                  <div className="panel-form__block">
+                    <h3>Общие правила</h3>
+                    <div className="panel-form__grid panel-form__grid--compact">
+                      {Object.entries(settings.pricing_rules)
+                        .filter(([key]) => key !== "calculator_mode")
+                        .map(([key, value]) => (
                           <label className="panel-form__row" key={key}>
-                            <span>{materialLabels[key] || key}</span>
-                            <input type="number" step="0.01" min="0" value={value} onChange={(event) => handleMaterialChange(name, key, event.target.value)} />
+                            <span>{ruleLabels[key] || key}</span>
+                            <input type="number" step="0.01" min="0" value={value} onChange={(event) => handleRuleChange(key, event.target.value)} />
                           </label>
                         ))}
-                      </div>
                     </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="panel-form__block">
-                <h3>Скидки по партиям</h3>
-                {settings.batch_discounts.map((discount, index) => (
-                  <div className="panel-form__grid panel-form__grid--compact" key={`${discount.min_qty}-${discount.max_qty}-${index}`}>
-                    <label className="panel-form__row">
-                      <span>От</span>
-                      <input type="number" min="1" value={discount.min_qty} onChange={(event) => handleDiscountChange(index, "min_qty", event.target.value)} />
-                    </label>
-                    <label className="panel-form__row">
-                      <span>До</span>
-                      <input type="number" min="1" value={discount.max_qty} onChange={(event) => handleDiscountChange(index, "max_qty", event.target.value)} />
-                    </label>
-                    <label className="panel-form__row">
-                      <span>Скидка, %</span>
-                      <input type="number" step="0.01" min="0" max="100" value={discount.percent} onChange={(event) => handleDiscountChange(index, "percent", event.target.value)} />
-                    </label>
                   </div>
-                ))}
-              </div>
 
-              <div className="panel-form__block">
-                <h3>Срочность</h3>
-                <div className="panel-form__grid panel-form__grid--compact">
-                  {Object.entries(settings.urgency).map(([name, item]) => (
-                    <label className="panel-form__row" key={name}>
-                      <span>{name}</span>
-                      <input type="number" step="0.01" min="0" value={item.percent} onChange={(event) => handleUrgencyChange(name, event.target.value)} />
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              <div className="panel-form__block">
-                <h3>Рынок</h3>
-                <div className="panel-settings-stack">
-                  {Object.entries(settings.market_bands).map(([name, item]) => (
-                    <div className="panel-settings-card" key={name}>
-                      <div className="panel-settings-card__header">
-                        <strong>{name}</strong>
-                      </div>
-                      <div className="panel-form__grid panel-form__grid--compact">
-                        <label className="panel-form__row">
-                          <span>Мин</span>
-                          <input type="number" min="0" value={item.min_price_per_unit} onChange={(event) => handleMarketBandChange(name, "min_price_per_unit", event.target.value)} />
-                        </label>
-                        <label className="panel-form__row">
-                          <span>Средняя</span>
-                          <input type="number" min="0" value={item.average_price_per_unit} onChange={(event) => handleMarketBandChange(name, "average_price_per_unit", event.target.value)} />
-                        </label>
-                        <label className="panel-form__row">
-                          <span>Макс</span>
-                          <input type="number" min="0" value={item.max_price_per_unit} onChange={(event) => handleMarketBandChange(name, "max_price_per_unit", event.target.value)} />
-                        </label>
-                      </div>
+                  <div className="panel-form__block">
+                    <h3>Изделия</h3>
+                    <div className="panel-settings-table">
+                      {Object.entries(settings.garments).map(([name, item]) => (
+                        <div className="panel-settings-table__row" key={name}>
+                          <strong>{name}</strong>
+                          <label className="panel-form__row">
+                            <span>База, мин</span>
+                            <input type="number" min="0" value={item.base_minutes} onChange={(event) => handleGarmentChange(name, "base_minutes", event.target.value)} />
+                          </label>
+                          <label className="panel-form__row">
+                            <span>Коэфф.</span>
+                            <input type="number" step="0.01" min="0" value={item.complexity_coeff} onChange={(event) => handleGarmentChange(name, "complexity_coeff", event.target.value)} />
+                          </label>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              </div>
+                  </div>
+
+                  <div className="panel-form__block">
+                    <h3>Операции</h3>
+                    <div className="panel-settings-table">
+                      {Object.entries(settings.operations).map(([name, item]) => (
+                        <div className="panel-settings-table__row" key={name}>
+                          <strong>{name}</strong>
+                          <label className="panel-form__row">
+                            <span>Минуты</span>
+                            <input type="number" min="0" value={item.additional_minutes} onChange={(event) => handleOperationSettingChange(name, "additional_minutes", event.target.value)} />
+                          </label>
+                          <label className="panel-form__row">
+                            <span>Материалы/шт</span>
+                            <input type="number" min="0" value={item.additional_material_per_unit} onChange={(event) => handleOperationSettingChange(name, "additional_material_per_unit", event.target.value)} />
+                          </label>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="panel-form__block">
+                    <h3>Материалы</h3>
+                    <div className="panel-settings-stack">
+                      {Object.entries(settings.materials).map(([name, item]) => (
+                        <div className="panel-settings-card" key={name}>
+                          <div className="panel-settings-card__header">
+                            <strong>{name}</strong>
+                          </div>
+                          <div className="panel-form__grid panel-form__grid--compact">
+                            {Object.entries(item).map(([key, value]) => (
+                              <label className="panel-form__row" key={key}>
+                                <span>{materialLabels[key] || key}</span>
+                                <input type="number" step="0.01" min="0" value={value} onChange={(event) => handleMaterialChange(name, key, event.target.value)} />
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <DiscountsBlock settings={settings} handleDiscountChange={handleDiscountChange} />
+
+                  <div className="panel-form__block">
+                    <h3>Срочность</h3>
+                    <div className="panel-form__grid panel-form__grid--compact">
+                      {Object.entries(settings.urgency).map(([name, item]) => (
+                        <label className="panel-form__row" key={name}>
+                          <span>{name}</span>
+                          <input type="number" step="0.01" min="0" value={item.percent} onChange={(event) => handleUrgencyChange(name, event.target.value)} />
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="panel-form__block">
+                    <h3>Рынок</h3>
+                    <div className="panel-settings-stack">
+                      {Object.entries(settings.market_bands).map(([name, item]) => (
+                        <div className="panel-settings-card" key={name}>
+                          <div className="panel-settings-card__header">
+                            <strong>{name}</strong>
+                          </div>
+                          <div className="panel-form__grid panel-form__grid--compact">
+                            <label className="panel-form__row">
+                              <span>Мин</span>
+                              <input type="number" min="0" value={item.min_price_per_unit} onChange={(event) => handleMarketBandChange(name, "min_price_per_unit", event.target.value)} />
+                            </label>
+                            <label className="panel-form__row">
+                              <span>Средняя</span>
+                              <input type="number" min="0" value={item.average_price_per_unit} onChange={(event) => handleMarketBandChange(name, "average_price_per_unit", event.target.value)} />
+                            </label>
+                            <label className="panel-form__row">
+                              <span>Макс</span>
+                              <input type="number" min="0" value={item.max_price_per_unit} onChange={(event) => handleMarketBandChange(name, "max_price_per_unit", event.target.value)} />
+                            </label>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
 
               <div className="panel-form__footer">
                 <button className="panel__theme-toggle" type="submit" disabled={isSavingSettings}>
@@ -744,50 +809,60 @@ const Panel = () => {
                           ))}
                         </select>
                       </label>
-                      <label className="panel-form__row">
-                        <span>Материал</span>
-                        <select value={orderForm.material_type} onChange={(event) => handleOrderChange("material_type", event.target.value)}>
-                          {materialOptions.map((name) => (
-                            <option key={name} value={name}>{name}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="panel-form__row">
-                        <span>Срочность</span>
-                        <select value={orderForm.urgency} onChange={(event) => handleOrderChange("urgency", event.target.value)}>
-                          {urgencyOptions.map((name) => (
-                            <option key={name} value={name}>{name}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="panel-form__row">
-                        <span>Сегмент рынка</span>
-                        <select value={orderForm.market_segment} onChange={(event) => handleOrderChange("market_segment", event.target.value)}>
-                          {marketOptions.map((name) => (
-                            <option key={name} value={name}>{name}</option>
-                          ))}
-                        </select>
-                      </label>
+                      {isQuickCalculator ? null : (
+                        <label className="panel-form__row">
+                          <span>Материал</span>
+                          <select value={orderForm.material_type} onChange={(event) => handleOrderChange("material_type", event.target.value)}>
+                            {materialOptions.map((name) => (
+                              <option key={name} value={name}>{name}</option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
+                      {isQuickCalculator ? null : (
+                        <label className="panel-form__row">
+                          <span>Срочность</span>
+                          <select value={orderForm.urgency} onChange={(event) => handleOrderChange("urgency", event.target.value)}>
+                            {urgencyOptions.map((name) => (
+                              <option key={name} value={name}>{name}</option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
+                      {isQuickCalculator ? null : (
+                        <label className="panel-form__row">
+                          <span>Сегмент рынка</span>
+                          <select value={orderForm.market_segment} onChange={(event) => handleOrderChange("market_segment", event.target.value)}>
+                            {marketOptions.map((name) => (
+                              <option key={name} value={name}>{name}</option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
                       <label className="panel-form__row">
                         <span>Размер партии</span>
                         <input type="number" min="1" value={orderForm.quantity} onChange={(event) => handleOrderChange("quantity", Number(event.target.value) || 0)} />
                       </label>
-                      <label className="panel-form__row">
-                        <span>Примерки</span>
-                        <input type="number" min="0" value={orderForm.fittings} onChange={(event) => handleOrderChange("fittings", Number(event.target.value) || 0)} />
-                      </label>
+                      {isQuickCalculator ? null : (
+                        <label className="panel-form__row">
+                          <span>Примерки</span>
+                          <input type="number" min="0" value={orderForm.fittings} onChange={(event) => handleOrderChange("fittings", Number(event.target.value) || 0)} />
+                        </label>
+                      )}
                     </div>
 
-                    <div className="panel-form__grid panel-form__grid--compact panel-form__grid--toggles">
-                      <label className="panel-form__toggle">
-                        <input type="checkbox" checked={orderForm.is_custom_figure} onChange={(event) => handleOrderChange("is_custom_figure", event.target.checked)} />
-                        <span>Нестандартная фигура</span>
-                      </label>
-                      <label className="panel-form__toggle">
-                        <input type="checkbox" checked={orderForm.is_child} onChange={(event) => handleOrderChange("is_child", event.target.checked)} />
-                        <span>Детское изделие</span>
-                      </label>
-                    </div>
+                    {isQuickCalculator ? null : (
+                      <div className="panel-form__grid panel-form__grid--compact panel-form__grid--toggles">
+                        <label className="panel-form__toggle">
+                          <input type="checkbox" checked={orderForm.is_custom_figure} onChange={(event) => handleOrderChange("is_custom_figure", event.target.checked)} />
+                          <span>Нестандартная фигура</span>
+                        </label>
+                        <label className="panel-form__toggle">
+                          <input type="checkbox" checked={orderForm.is_child} onChange={(event) => handleOrderChange("is_child", event.target.checked)} />
+                          <span>Детское изделие</span>
+                        </label>
+                      </div>
+                    )}
 
                     <label className="panel-form__row">
                       <span>Комментарий</span>
@@ -795,11 +870,11 @@ const Panel = () => {
                     </label>
 
                     <div className="panel-form__block">
-                      <h3>Усложняющие операции</h3>
+                      <h3>{isQuickCalculator ? "Усложнения" : "Усложняющие операции"}</h3>
                       <div className="panel-form__grid panel-form__grid--compact">
                         {operationOptions.map((name) => (
                           <label className="panel-form__row" key={name}>
-                            <span>{name}</span>
+                            <span>{isQuickCalculator ? `${name} (${formatPercent(settings.operations[name]?.quick_percent)}%)` : name}</span>
                             <input type="number" min="0" value={orderForm.operation_counts[name] || 0} onChange={(event) => handleOperationCountChange(name, event.target.value)} />
                           </label>
                         ))}
@@ -824,42 +899,74 @@ const Panel = () => {
                 {historyStatus === "error" ? <p className="panel__notice">Не удалось загрузить историю расчётов.</p> : null}
                 {historyStatus !== "loading" && history.length === 0 ? <p className="panel__empty">В этом чате пока нет расчётов.</p> : null}
                 <div className="panel-history">
-                  {history.map((item, index) => (
-                    <article className="panel-history__item" key={`${item.created_at}-${index}`}>
-                      <div className="panel-history__head">
-                        <div>
-                          <strong>{item.garment_type}</strong>
-                          <span>{item.material_type} · {item.urgency}</span>
-                        </div>
-                        <span>{new Date(item.created_at).toLocaleString("ru-RU")}</span>
-                      </div>
-                      <div className="panel-history__stats">
-                        <span>Партия: {item.quantity}</span>
-                        <span>За единицу: {formatMoney(item.price_per_unit)} ₽</span>
-                        <span>Итого: {formatMoney(item.total)} ₽</span>
-                        <span className={`panel-history__badge panel-history__badge--${item.market_status || "unknown"}`}>
-                          {marketStatusLabel(item.market_status)}
-                        </span>
-                      </div>
-                      <div className="panel-history__breakdown">
-                        <span>Труд: {formatMoney(item.labor_cost_per_unit)} ₽</span>
-                        <span>Материалы: {formatMoney(item.materials_cost_per_unit)} ₽</span>
-                        <span>Расходники: {formatMoney(item.consumables_cost_per_unit)} ₽</span>
-                        <span>Накладные: {formatMoney(item.overhead_cost_per_unit)} ₽</span>
-                        <span>Риск: {formatMoney(item.risk_reserve_per_unit)} ₽</span>
-                        <span>Себестоимость: {formatMoney(item.cost_price_per_unit)} ₽</span>
-                      </div>
-                      <ul className="panel-history__list">
-                        {item.applied_operations?.length > 0 ? item.applied_operations.map((operation) => (
-                          <li key={`${item.created_at}-${operation.name}`}>
-                            {operation.name} × {operation.count}: +{operation.additional_minutes} мин, +{formatMoney(operation.additional_material_cost)} ₽
-                          </li>
-                        )) : <li>Дополнительных операций нет.</li>}
-                        <li>Скидка: {item.discount_percent}% ({formatMoney(item.discount_amount)} ₽)</li>
-                        <li>Минуты: база {item.base_minutes_per_unit}, операции {item.operation_minutes_per_unit}, примерки {item.fitting_minutes_per_unit}, итог {item.adjusted_minutes_per_unit}</li>
-                      </ul>
-                    </article>
-                  ))}
+                  {history.map((item, index) => {
+                    const itemMode = normalizeCalculatorMode(item.calculation_mode || calculatorMode);
+                    return (
+                      <article className="panel-history__item" key={`${item.created_at}-${index}`}>
+                        {itemMode === "quick" ? (
+                          <>
+                            <div className="panel-history__head">
+                              <div>
+                                <strong>{item.garment_type}</strong>
+                                <span>Быстрый расчет</span>
+                              </div>
+                              <span>{new Date(item.created_at).toLocaleString("ru-RU")}</span>
+                            </div>
+                            <div className="panel-history__stats">
+                              <span>Партия: {item.quantity}</span>
+                              <span>База: {formatMoney(item.min_allowed_price_per_unit)} ₽</span>
+                              <span>За единицу: {formatMoney(item.price_per_unit)} ₽</span>
+                              <span>Итого: {formatMoney(item.total)} ₽</span>
+                            </div>
+                            <ul className="panel-history__list">
+                              {item.applied_operations?.length > 0 ? item.applied_operations.map((operation) => (
+                                <li key={`${item.created_at}-${operation.name}`}>
+                                  {operation.name} × {operation.count}: +{formatMoney(operation.additional_material_cost)} ₽
+                                </li>
+                              )) : <li>Усложнений нет.</li>}
+                              <li>До скидки: {formatMoney(item.price_before_discount_per_unit)} ₽ за единицу</li>
+                              <li>Скидка: {item.discount_percent}% ({formatMoney(item.discount_amount)} ₽)</li>
+                            </ul>
+                          </>
+                        ) : (
+                          <>
+                            <div className="panel-history__head">
+                              <div>
+                                <strong>{item.garment_type}</strong>
+                                <span>{item.material_type} · {item.urgency}</span>
+                              </div>
+                              <span>{new Date(item.created_at).toLocaleString("ru-RU")}</span>
+                            </div>
+                            <div className="panel-history__stats">
+                              <span>Партия: {item.quantity}</span>
+                              <span>За единицу: {formatMoney(item.price_per_unit)} ₽</span>
+                              <span>Итого: {formatMoney(item.total)} ₽</span>
+                              <span className={`panel-history__badge panel-history__badge--${item.market_status || "unknown"}`}>
+                                {marketStatusLabel(item.market_status)}
+                              </span>
+                            </div>
+                            <div className="panel-history__breakdown">
+                              <span>Труд: {formatMoney(item.labor_cost_per_unit)} ₽</span>
+                              <span>Материалы: {formatMoney(item.materials_cost_per_unit)} ₽</span>
+                              <span>Расходники: {formatMoney(item.consumables_cost_per_unit)} ₽</span>
+                              <span>Накладные: {formatMoney(item.overhead_cost_per_unit)} ₽</span>
+                              <span>Риск: {formatMoney(item.risk_reserve_per_unit)} ₽</span>
+                              <span>Себестоимость: {formatMoney(item.cost_price_per_unit)} ₽</span>
+                            </div>
+                            <ul className="panel-history__list">
+                              {item.applied_operations?.length > 0 ? item.applied_operations.map((operation) => (
+                                <li key={`${item.created_at}-${operation.name}`}>
+                                  {operation.name} × {operation.count}: +{operation.additional_minutes} мин, +{formatMoney(operation.additional_material_cost)} ₽
+                                </li>
+                              )) : <li>Дополнительных операций нет.</li>}
+                              <li>Скидка: {item.discount_percent}% ({formatMoney(item.discount_amount)} ₽)</li>
+                              <li>Минуты: база {item.base_minutes_per_unit}, операции {item.operation_minutes_per_unit}, примерки {item.fitting_minutes_per_unit}, итог {item.adjusted_minutes_per_unit}</li>
+                            </ul>
+                          </>
+                        )}
+                      </article>
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -869,6 +976,28 @@ const Panel = () => {
     </div>
   );
 };
+
+const DiscountsBlock = ({ settings, handleDiscountChange }) => (
+  <div className="panel-form__block">
+    <h3>Скидки по партиям</h3>
+    {settings.batch_discounts.map((discount, index) => (
+      <div className="panel-form__grid panel-form__grid--compact" key={`${discount.min_qty}-${discount.max_qty}-${index}`}>
+        <label className="panel-form__row">
+          <span>От</span>
+          <input type="number" min="1" value={discount.min_qty} onChange={(event) => handleDiscountChange(index, "min_qty", event.target.value)} />
+        </label>
+        <label className="panel-form__row">
+          <span>До</span>
+          <input type="number" min="1" value={discount.max_qty} onChange={(event) => handleDiscountChange(index, "max_qty", event.target.value)} />
+        </label>
+        <label className="panel-form__row">
+          <span>Скидка, %</span>
+          <input type="number" step="0.01" min="0" max="100" value={discount.percent} onChange={(event) => handleDiscountChange(index, "percent", event.target.value)} />
+        </label>
+      </div>
+    ))}
+  </div>
+);
 
 const normalizeSettings = (settings) => ({
   pricing_rules: { ...defaultSettings.pricing_rules, ...(settings?.pricing_rules || {}) },
@@ -908,7 +1037,14 @@ const syncOrderForm = (current, settings) => ({
   ),
 });
 
+const normalizeCalculatorMode = (value) => (value === "quick" ? "quick" : "masterpiece");
+
 const formatMoney = (value) => new Intl.NumberFormat("ru-RU").format(Number(value) || 0);
+
+const formatPercent = (value) => {
+  const amount = Number(value) || 0;
+  return Number.isInteger(amount) ? amount : amount.toFixed(2);
+};
 
 const marketStatusLabel = (status) => {
   switch (status) {

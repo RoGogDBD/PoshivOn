@@ -247,3 +247,47 @@ func TestCostingService_CalculateInChat_UnknownOperation(t *testing.T) {
 		t.Fatalf("error = %v, want ErrInvalidArgument", err)
 	}
 }
+
+func TestCostingService_CalculateInChat_QuickMode(t *testing.T) {
+	t.Parallel()
+
+	settings := DefaultUserSettings()
+	settings.PricingRules.CalculatorMode = calculatorModeQuick
+	settings.Garments = map[string]GarmentConfig{
+		"Худи": {BaseMinutes: 1, ComplexityCoeff: 1, QuickPrice: 3000},
+	}
+	settings.Operations = map[string]OperationConfig{
+		"Капюшон": {AdditionalMinutes: 0, AdditionalMaterialPerUnit: 0, QuickPercent: 10},
+		"Карманы": {AdditionalMinutes: 0, AdditionalMaterialPerUnit: 0, QuickPercent: 5},
+	}
+	settings.BatchDiscounts = []BatchDiscount{
+		{MinQty: 1, MaxQty: 9, Percent: 0},
+		{MinQty: 10, MaxQty: 100, Percent: 10},
+	}
+
+	repo := &settingsRepoStub{settings: map[string]UserSettings{"u-1": settings}}
+	chatRepo := &chatRepoStub{}
+	svc := NewCostingService(repo, chatRepo, chatRepo)
+
+	result, err := svc.CalculateInChat(context.Background(), "u-1", "chat-1", OrderInput{
+		GarmentType:     "Худи",
+		Quantity:        10,
+		OperationCounts: map[string]int{"Капюшон": 1, "Карманы": 2},
+	})
+	if err != nil {
+		t.Fatalf("CalculateInChat() error = %v", err)
+	}
+
+	if result.CalculationMode != calculatorModeQuick {
+		t.Fatalf("calculation mode = %q, want %q", result.CalculationMode, calculatorModeQuick)
+	}
+	if result.PriceBeforeDiscount != 3600 {
+		t.Fatalf("price before discount = %d, want 3600", result.PriceBeforeDiscount)
+	}
+	if result.Total != 32400 {
+		t.Fatalf("total = %d, want 32400", result.Total)
+	}
+	if len(result.AppliedOperations) != 2 {
+		t.Fatalf("applied operations = %d, want 2", len(result.AppliedOperations))
+	}
+}
