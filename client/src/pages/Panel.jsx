@@ -612,6 +612,18 @@ const Panel = () => {
             Чаты и расчёты
           </button>
           <button
+            className={`panel__link ${activeSection === "analysis" ? "panel__link--active" : ""}`}
+            type="button"
+            onClick={() => setActiveSection("analysis")}
+          >
+            <span className="flex items-center justify-between gap-3">
+              <span>Анализ изображений</span>
+              <span className="rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] [background:rgba(255,255,255,0.12)] [border-color:rgba(255,255,255,0.18)]">
+                AI
+              </span>
+            </span>
+          </button>
+          <button
             className={`panel__link ${activeSection === "settings" ? "panel__link--active" : ""}`}
             type="button"
             onClick={() => setActiveSection("settings")}
@@ -659,7 +671,16 @@ const Panel = () => {
           </article>
         </section>
 
-        {activeSection === "settings" ? (
+        {activeSection === "analysis" ? (
+          <AnalysisUploadCard
+            analysisImage={analysisImage}
+            analysisNotice={analysisNotice}
+            analysisPreviewURL={analysisPreviewURL}
+            imageInputRef={imageInputRef}
+            onClear={handleAnalysisImageClear}
+            onSelect={handleAnalysisImageSelect}
+          />
+        ) : activeSection === "settings" ? (
           <section className="panel-settings rounded-[32px] border p-5 shadow-[0_28px_80px_var(--settings-shell-shadow)] backdrop-blur-xl [background:var(--settings-shell-bg)] [border-color:var(--settings-shell-border)] sm:p-7">
             <div className="mb-6 flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
               <div className="max-w-3xl">
@@ -1026,15 +1047,6 @@ const Panel = () => {
                 )}
               </div>
 
-              <AnalysisUploadCard
-                analysisImage={analysisImage}
-                analysisNotice={analysisNotice}
-                analysisPreviewURL={analysisPreviewURL}
-                imageInputRef={imageInputRef}
-                onClear={handleAnalysisImageClear}
-                onSelect={handleAnalysisImageSelect}
-              />
-
               <div className="panel__card">
                 <h2>История расчётов</h2>
                 {historyStatus === "loading" ? <p>Загружаем историю...</p> : null}
@@ -1156,9 +1168,14 @@ const AnalysisUploadCard = ({
   <section className={uploadCardClass}>
     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
       <div>
-        <span className="inline-flex rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-[color:var(--panel-accent)] [background:color-mix(in_oklab,var(--panel-accent)_10%,transparent)] [border-color:color-mix(in_oklab,var(--panel-accent)_18%,var(--panel-border))]">
-          Анализ изображения
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="inline-flex rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-[color:var(--panel-accent)] [background:color-mix(in_oklab,var(--panel-accent)_10%,transparent)] [border-color:color-mix(in_oklab,var(--panel-accent)_18%,var(--panel-border))]">
+            Анализ изображения
+          </span>
+          <span className="inline-flex -rotate-2 rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-[0.22em] text-white shadow-[0_10px_24px_rgba(15,23,42,0.16)] [background:linear-gradient(135deg,#111827_0%,#334155_100%)] [border-color:rgba(255,255,255,0.12)]">
+            AI
+          </span>
+        </div>
         <h2 className="mt-4 text-[26px] font-semibold tracking-[-0.03em] text-[color:var(--panel-text)]">Загрузите фото изделия</h2>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-[color:color-mix(in_oklab,var(--panel-text)_62%,white)]">
           Подготовили фронтовый блок для будущего анализа изображения. Сейчас он принимает файл, показывает превью и хранит его локально в браузере без отправки на сервер.
