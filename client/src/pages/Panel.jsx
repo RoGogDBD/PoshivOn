@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { checkAuthStatus, fetchAuthProfile, logout } from "../utils/yandexAuth.js";
 import {
   calculateInChat,
@@ -167,6 +167,9 @@ const SettingsField = ({ label, children, className = "" }) => (
 
 const SettingsNumberInput = (props) => <input className={settingsInputClass} type="number" {...props} />;
 
+const uploadCardClass =
+  "rounded-[28px] border p-5 shadow-[0_20px_55px_rgba(15,23,42,0.08)] backdrop-blur-xl [background:color-mix(in_oklab,var(--panel-card)_94%,white)] [border-color:var(--panel-border)] sm:p-6";
+
 const Panel = () => {
   const [status, setStatus] = useState("checking");
   const [profile, setProfile] = useState(null);
@@ -186,6 +189,10 @@ const Panel = () => {
   const [isCreatingChat, setIsCreatingChat] = useState(false);
   const [isCalculating, setIsCalculating] = useState(false);
   const [isDeletingChatID, setIsDeletingChatID] = useState("");
+  const [analysisImage, setAnalysisImage] = useState(null);
+  const [analysisPreviewURL, setAnalysisPreviewURL] = useState("");
+  const [analysisNotice, setAnalysisNotice] = useState("");
+  const imageInputRef = useRef(null);
 
   const userID = profile?.login || "";
 
@@ -276,6 +283,20 @@ const Panel = () => {
       isActive = false;
     };
   }, [userID]);
+
+  useEffect(() => {
+    if (!analysisImage) {
+      setAnalysisPreviewURL("");
+      return;
+    }
+
+    const nextURL = URL.createObjectURL(analysisImage);
+    setAnalysisPreviewURL(nextURL);
+
+    return () => {
+      URL.revokeObjectURL(nextURL);
+    };
+  }, [analysisImage]);
 
   useEffect(() => {
     if (!userID || !activeChatID) {
@@ -486,6 +507,30 @@ const Panel = () => {
 
   const handleOrderChange = (key, value) => {
     setOrderForm((current) => ({ ...current, [key]: value }));
+  };
+
+  const handleAnalysisImageSelect = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      setAnalysisNotice("Поддерживаются только изображения.");
+      event.target.value = "";
+      return;
+    }
+
+    setAnalysisImage(file);
+    setAnalysisNotice("Изображение загружено локально и готово к анализу после подключения API.");
+  };
+
+  const handleAnalysisImageClear = () => {
+    setAnalysisImage(null);
+    setAnalysisNotice("");
+    if (imageInputRef.current) {
+      imageInputRef.current.value = "";
+    }
   };
 
   const handleOperationCountChange = (name, value) => {
@@ -981,6 +1026,15 @@ const Panel = () => {
                 )}
               </div>
 
+              <AnalysisUploadCard
+                analysisImage={analysisImage}
+                analysisNotice={analysisNotice}
+                analysisPreviewURL={analysisPreviewURL}
+                imageInputRef={imageInputRef}
+                onClear={handleAnalysisImageClear}
+                onSelect={handleAnalysisImageSelect}
+              />
+
               <div className="panel__card">
                 <h2>История расчётов</h2>
                 {historyStatus === "loading" ? <p>Загружаем историю...</p> : null}
@@ -1091,6 +1145,116 @@ const DiscountsBlock = ({ settings, handleDiscountChange }) => (
   </SettingsSection>
 );
 
+const AnalysisUploadCard = ({
+  analysisImage,
+  analysisNotice,
+  analysisPreviewURL,
+  imageInputRef,
+  onClear,
+  onSelect,
+}) => (
+  <section className={uploadCardClass}>
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+      <div>
+        <span className="inline-flex rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-[color:var(--panel-accent)] [background:color-mix(in_oklab,var(--panel-accent)_10%,transparent)] [border-color:color-mix(in_oklab,var(--panel-accent)_18%,var(--panel-border))]">
+          Анализ изображения
+        </span>
+        <h2 className="mt-4 text-[26px] font-semibold tracking-[-0.03em] text-[color:var(--panel-text)]">Загрузите фото изделия</h2>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-[color:color-mix(in_oklab,var(--panel-text)_62%,white)]">
+          Подготовили фронтовый блок для будущего анализа изображения. Сейчас он принимает файл, показывает превью и хранит его локально в браузере без отправки на сервер.
+        </p>
+      </div>
+      <div className="rounded-[22px] border px-4 py-3 text-sm [background:color-mix(in_oklab,var(--panel-card)_76%,white)] [border-color:var(--panel-border)]">
+        <span className="block text-[11px] font-semibold uppercase tracking-[0.18em] text-[color:color-mix(in_oklab,var(--panel-text)_55%,white)]">Статус</span>
+        <strong className="mt-1 block text-[color:var(--panel-text)]">{analysisImage ? "Файл готов" : "Ожидает загрузку"}</strong>
+      </div>
+    </div>
+
+    <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,420px)]">
+      <div className="rounded-[26px] border border-dashed p-5 [background:color-mix(in_oklab,var(--panel-card)_74%,white)] [border-color:color-mix(in_oklab,var(--panel-accent)_18%,var(--panel-border))]">
+        <input
+          ref={imageInputRef}
+          className="hidden"
+          type="file"
+          accept="image/*"
+          onChange={onSelect}
+        />
+        <div className="flex flex-col gap-4">
+          <div className="flex size-14 items-center justify-center rounded-2xl border text-2xl [background:color-mix(in_oklab,var(--panel-accent)_8%,white)] [border-color:color-mix(in_oklab,var(--panel-accent)_18%,var(--panel-border))]">
+            <span aria-hidden="true">+</span>
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold tracking-[-0.02em] text-[color:var(--panel-text)]">Выбор изображения</h3>
+            <p className="mt-2 text-sm leading-6 text-[color:color-mix(in_oklab,var(--panel-text)_62%,white)]">
+              Поддерживаются фото, сканы и референсы. Подходят `JPG`, `PNG`, `WEBP` и другие браузерные форматы.
+            </p>
+          </div>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <button
+              className="inline-flex min-h-11 items-center justify-center rounded-2xl border px-4 text-sm font-semibold text-white transition hover:opacity-95 [background:var(--panel-accent)] [border-color:color-mix(in_oklab,var(--panel-accent)_85%,black)]"
+              type="button"
+              onClick={() => imageInputRef.current?.click()}
+            >
+              Выбрать файл
+            </button>
+            <button
+              className="inline-flex min-h-11 items-center justify-center rounded-2xl border px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 [background:color-mix(in_oklab,var(--panel-card)_88%,white)] [border-color:var(--panel-border)] text-[color:var(--panel-text)]"
+              type="button"
+              onClick={onClear}
+              disabled={!analysisImage}
+            >
+              Очистить
+            </button>
+          </div>
+          {analysisImage ? (
+            <div className="grid gap-3 rounded-[22px] border p-4 [background:color-mix(in_oklab,var(--panel-card)_88%,white)] [border-color:var(--panel-border)] sm:grid-cols-3">
+              <div>
+                <span className="block text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:color-mix(in_oklab,var(--panel-text)_55%,white)]">Файл</span>
+                <strong className="mt-1 block break-words text-sm text-[color:var(--panel-text)]">{analysisImage.name}</strong>
+              </div>
+              <div>
+                <span className="block text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:color-mix(in_oklab,var(--panel-text)_55%,white)]">Размер</span>
+                <strong className="mt-1 block text-sm text-[color:var(--panel-text)]">{formatFileSize(analysisImage.size)}</strong>
+              </div>
+              <div>
+                <span className="block text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:color-mix(in_oklab,var(--panel-text)_55%,white)]">Тип</span>
+                <strong className="mt-1 block text-sm text-[color:var(--panel-text)]">{analysisImage.type || "image/*"}</strong>
+              </div>
+            </div>
+          ) : null}
+          {analysisNotice ? <p className="text-sm leading-6 text-[color:color-mix(in_oklab,var(--panel-text)_68%,white)]">{analysisNotice}</p> : null}
+        </div>
+      </div>
+
+      <div className="rounded-[26px] border p-4 [background:color-mix(in_oklab,var(--panel-card)_82%,white)] [border-color:var(--panel-border)]">
+        {analysisPreviewURL ? (
+          <div className="grid gap-4">
+            <div className="overflow-hidden rounded-[22px] border [border-color:var(--panel-border)]">
+              <img className="aspect-[4/5] w-full object-cover" src={analysisPreviewURL} alt="Превью загруженного изображения для анализа" />
+            </div>
+            <div className="rounded-[20px] border p-4 [background:color-mix(in_oklab,var(--panel-card)_90%,white)] [border-color:var(--panel-border)]">
+              <strong className="block text-sm font-semibold text-[color:var(--panel-text)]">Следующий шаг</strong>
+              <p className="mt-2 text-sm leading-6 text-[color:color-mix(in_oklab,var(--panel-text)_62%,white)]">
+                Когда появится API анализа, этот файл можно будет отправлять вместе с параметрами заказа или в отдельный сценарий распознавания.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="flex h-full min-h-[320px] flex-col items-center justify-center rounded-[22px] border border-dashed px-6 text-center [background:color-mix(in_oklab,var(--panel-card)_90%,white)] [border-color:color-mix(in_oklab,var(--panel-accent)_16%,var(--panel-border))]">
+            <div className="flex size-16 items-center justify-center rounded-full [background:color-mix(in_oklab,var(--panel-accent)_10%,white)] text-2xl text-[color:var(--panel-accent)]">
+              <span aria-hidden="true">◌</span>
+            </div>
+            <h3 className="mt-5 text-lg font-semibold tracking-[-0.02em] text-[color:var(--panel-text)]">Превью появится здесь</h3>
+            <p className="mt-2 max-w-sm text-sm leading-6 text-[color:color-mix(in_oklab,var(--panel-text)_62%,white)]">
+              После выбора файла пользователь сразу увидит изображение и сможет проверить, что загружен нужный референс.
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  </section>
+);
+
 const normalizeSettings = (settings) => ({
   pricing_rules: { ...defaultSettings.pricing_rules, ...(settings?.pricing_rules || {}) },
   garments: mergeNamedMap(defaultSettings.garments, settings?.garments),
@@ -1136,6 +1300,17 @@ const formatMoney = (value) => new Intl.NumberFormat("ru-RU").format(Number(valu
 const formatPercent = (value) => {
   const amount = Number(value) || 0;
   return Number.isInteger(amount) ? amount : amount.toFixed(2);
+};
+
+const formatFileSize = (value) => {
+  const size = Number(value) || 0;
+  if (size < 1024) {
+    return `${size} B`;
+  }
+  if (size < 1024 * 1024) {
+    return `${(size / 1024).toFixed(1)} KB`;
+  }
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 };
 
 const marketStatusLabel = (status) => {
