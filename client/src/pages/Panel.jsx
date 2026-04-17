@@ -134,6 +134,39 @@ const createDefaultOrderForm = (settings = defaultSettings) => ({
   operation_counts: Object.fromEntries(Object.keys(settings.operations).map((name) => [name, 0])),
 });
 
+const settingsSectionClass =
+  "rounded-[28px] border p-5 shadow-[0_20px_55px_var(--settings-card-shadow)] backdrop-blur-xl [background:var(--settings-card-bg)] [border-color:var(--settings-card-border)] sm:p-6";
+
+const settingsInsetClass =
+  "rounded-[24px] border p-4 shadow-[0_16px_40px_var(--settings-card-shadow)] backdrop-blur-xl [background:color-mix(in_oklab,var(--settings-card-bg)_86%,transparent)] [border-color:var(--settings-card-border)]";
+
+const settingsInputClass =
+  "h-11 w-full rounded-2xl border px-4 text-sm font-medium text-[color:var(--settings-text)] outline-none transition [background:var(--settings-input-bg)] [border-color:var(--settings-input-border)] shadow-[inset_0_1px_0_var(--settings-input-shadow)] placeholder:text-[color:var(--settings-subtle)] focus:border-[color:var(--settings-accent)] focus:ring-4 focus:ring-[color:var(--settings-focus)]";
+
+const settingsModeButtonBaseClass =
+  "group flex h-full flex-col gap-2 rounded-[24px] border p-5 text-left transition duration-200 [border-color:var(--settings-card-border)] [background:color-mix(in_oklab,var(--settings-card-bg)_92%,transparent)] hover:-translate-y-0.5 hover:[border-color:color-mix(in_oklab,var(--settings-accent)_18%,var(--settings-card-border))] hover:shadow-[0_18px_40px_var(--settings-card-shadow)]";
+
+const SettingsSection = ({ title, description, children }) => (
+  <section className={settingsSectionClass}>
+    <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+      <div className="max-w-3xl">
+        <h3 className="text-lg font-semibold tracking-[-0.02em] text-[color:var(--settings-text)]">{title}</h3>
+        {description ? <p className="mt-1 text-sm leading-6 text-[color:var(--settings-muted)]">{description}</p> : null}
+      </div>
+    </div>
+    {children}
+  </section>
+);
+
+const SettingsField = ({ label, children, className = "" }) => (
+  <label className={`flex min-w-0 flex-col gap-2 ${className}`}>
+    <span className="text-sm font-medium leading-5 text-[color:var(--settings-muted)]">{label}</span>
+    {children}
+  </label>
+);
+
+const SettingsNumberInput = (props) => <input className={settingsInputClass} type="number" {...props} />;
+
 const Panel = () => {
   const [status, setStatus] = useState("checking");
   const [profile, setProfile] = useState(null);
@@ -582,183 +615,238 @@ const Panel = () => {
         </section>
 
         {activeSection === "settings" ? (
-          <section className="panel__card panel__card--settings">
-            <h2>Модель расчёта</h2>
-            <form className="panel-form" onSubmit={handleSaveSettings}>
-              <div className="panel-form__block">
-                <h3>Режим</h3>
-                <div className="panel-mode-switch">
-                  {calculatorModes.map((mode) => (
-                    <button
-                      key={mode.value}
-                      className={`panel-mode-switch__item ${calculatorMode === mode.value ? "panel-mode-switch__item--active" : ""}`}
-                      type="button"
-                      onClick={() => handleCalculatorModeChange(mode.value)}
-                    >
-                      <strong>{mode.label}</strong>
-                      <span>{mode.description}</span>
-                    </button>
-                  ))}
-                </div>
+          <section className="panel-settings rounded-[32px] border p-5 shadow-[0_28px_80px_var(--settings-shell-shadow)] backdrop-blur-xl [background:var(--settings-shell-bg)] [border-color:var(--settings-shell-border)] sm:p-7">
+            <div className="mb-6 flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+              <div className="max-w-3xl">
+                <span className="inline-flex rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-[color:var(--settings-muted)] [background:var(--settings-accent-soft)] [border-color:var(--settings-card-border)]">
+                  Настройка модели
+                </span>
+                <h2 className="mt-4 text-[30px] font-semibold tracking-[-0.04em] text-[color:var(--settings-text)] sm:text-[38px]">
+                  Модель расчёта
+                </h2>
+                <p className="mt-3 max-w-2xl text-sm leading-6 text-[color:var(--settings-muted)] sm:text-[15px]">
+                  Спокойная рабочая панель без жесткого белого фона: параметры сгруппированы по смыслу, а все поля читаются на мягких матовых поверхностях.
+                </p>
               </div>
+              <div className={`${settingsInsetClass} grid min-w-[220px] gap-2 self-start lg:max-w-[260px]`}>
+                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--settings-subtle)]">Активный режим</span>
+                <strong className="text-xl font-semibold tracking-[-0.03em] text-[color:var(--settings-text)]">
+                  {calculatorModes.find((mode) => mode.value === calculatorMode)?.label || "Шедевр"}
+                </strong>
+                <p className="text-sm leading-6 text-[color:var(--settings-muted)]">
+                  {isQuickCalculator
+                    ? "Быстрый тарифный режим для чернового просчёта без детальной себестоимости."
+                    : "Полная модель с минутами, материалами, срочностью, скидками и рыночными диапазонами."}
+                </p>
+              </div>
+            </div>
+
+            <form className="space-y-5" onSubmit={handleSaveSettings}>
+              <SettingsSection
+                title="Режим расчёта"
+                description="Выберите логику калькулятора. Карточки переключения собраны как отдельные поверхности, чтобы активное состояние читалось без резкого контраста."
+              >
+                <div className="grid gap-4 lg:grid-cols-2">
+                  {calculatorModes.map((mode) => {
+                    const isActive = calculatorMode === mode.value;
+                    return (
+                      <button
+                        key={mode.value}
+                        className={`${settingsModeButtonBaseClass} ${
+                          isActive
+                            ? "translate-y-[-1px] [background:color-mix(in_oklab,var(--settings-accent)_10%,var(--settings-card-bg))] [border-color:color-mix(in_oklab,var(--settings-accent)_22%,var(--settings-card-border))] shadow-[0_22px_44px_var(--settings-card-shadow)]"
+                            : ""
+                        }`}
+                        type="button"
+                        onClick={() => handleCalculatorModeChange(mode.value)}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <strong className="text-base font-semibold tracking-[-0.02em] text-[color:var(--settings-text)]">{mode.label}</strong>
+                          <span
+                            aria-hidden="true"
+                            className={`size-3 rounded-full border ${
+                              isActive
+                                ? "[background:var(--settings-accent)] [border-color:var(--settings-accent)]"
+                                : "[background:transparent] [border-color:var(--settings-input-border)]"
+                            }`}
+                          />
+                        </div>
+                        <span className="text-sm leading-6 text-[color:var(--settings-muted)]">{mode.description}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </SettingsSection>
 
               {isQuickCalculator ? (
                 <>
-                  <div className="panel-form__block">
-                    <h3>Изделия</h3>
-                    <div className="panel-settings-table">
+                  <SettingsSection title="Изделия" description="Базовая стоимость за единицу для быстрого расчёта.">
+                    <div className="grid gap-4">
                       {Object.entries(settings.garments).map(([name, item]) => (
-                        <div className="panel-settings-table__row panel-settings-table__row--compact" key={name}>
-                          <strong>{name}</strong>
-                          <label className="panel-form__row">
-                            <span>Мин. цена / шт</span>
-                            <input type="number" min="0" value={item.quick_price} onChange={(event) => handleGarmentChange(name, "quick_price", event.target.value)} />
-                          </label>
+                        <div
+                          className="grid gap-4 rounded-[24px] border p-4 [background:color-mix(in_oklab,var(--settings-card-bg)_90%,transparent)] [border-color:var(--settings-card-border)] md:grid-cols-[minmax(0,1fr)_minmax(220px,280px)] md:items-end"
+                          key={name}
+                        >
+                          <div>
+                            <strong className="text-base font-semibold tracking-[-0.02em] text-[color:var(--settings-text)]">{name}</strong>
+                            <p className="mt-1 text-sm text-[color:var(--settings-muted)]">Фиксированная минимальная цена на единицу изделия.</p>
+                          </div>
+                          <SettingsField label="Мин. цена / шт">
+                            <SettingsNumberInput min="0" value={item.quick_price} onChange={(event) => handleGarmentChange(name, "quick_price", event.target.value)} />
+                          </SettingsField>
                         </div>
                       ))}
                     </div>
-                  </div>
+                  </SettingsSection>
 
-                  <div className="panel-form__block">
-                    <h3>Усложнения</h3>
-                    <div className="panel-settings-table">
+                  <SettingsSection title="Усложнения" description="Процентные надбавки, которые добавляются к базовой цене в быстром режиме.">
+                    <div className="grid gap-4">
                       {Object.entries(settings.operations).map(([name, item]) => (
-                        <div className="panel-settings-table__row panel-settings-table__row--compact" key={name}>
-                          <strong>{name}</strong>
-                          <label className="panel-form__row">
-                            <span>Надбавка, %</span>
-                            <input type="number" step="0.01" min="0" value={item.quick_percent} onChange={(event) => handleOperationSettingChange(name, "quick_percent", event.target.value)} />
-                          </label>
+                        <div
+                          className="grid gap-4 rounded-[24px] border p-4 [background:color-mix(in_oklab,var(--settings-card-bg)_90%,transparent)] [border-color:var(--settings-card-border)] md:grid-cols-[minmax(0,1fr)_minmax(220px,280px)] md:items-end"
+                          key={name}
+                        >
+                          <div>
+                            <strong className="text-base font-semibold tracking-[-0.02em] text-[color:var(--settings-text)]">{name}</strong>
+                            <p className="mt-1 text-sm text-[color:var(--settings-muted)]">Добавка к цене за дополнительную сложность.</p>
+                          </div>
+                          <SettingsField label="Надбавка, %">
+                            <SettingsNumberInput step="0.01" min="0" value={item.quick_percent} onChange={(event) => handleOperationSettingChange(name, "quick_percent", event.target.value)} />
+                          </SettingsField>
                         </div>
                       ))}
                     </div>
-                  </div>
+                  </SettingsSection>
 
                   <DiscountsBlock settings={settings} handleDiscountChange={handleDiscountChange} />
                 </>
               ) : (
                 <>
-                  <div className="panel-form__block">
-                    <h3>Общие правила</h3>
-                    <div className="panel-form__grid panel-form__grid--compact">
+                  <SettingsSection title="Общие правила" description="Базовые коэффициенты и ставки, влияющие на расчёт себестоимости и цены.">
+                    <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
                       {Object.entries(settings.pricing_rules)
                         .filter(([key]) => key !== "calculator_mode")
                         .map(([key, value]) => (
-                          <label className="panel-form__row" key={key}>
-                            <span>{ruleLabels[key] || key}</span>
-                            <input type="number" step="0.01" min="0" value={value} onChange={(event) => handleRuleChange(key, event.target.value)} />
-                          </label>
+                          <div key={key} className={settingsInsetClass}>
+                            <SettingsField label={ruleLabels[key] || key}>
+                              <SettingsNumberInput step="0.01" min="0" value={value} onChange={(event) => handleRuleChange(key, event.target.value)} />
+                            </SettingsField>
+                          </div>
                         ))}
                     </div>
-                  </div>
+                  </SettingsSection>
 
-                  <div className="panel-form__block">
-                    <h3>Изделия</h3>
-                    <div className="panel-settings-table">
+                  <SettingsSection title="Изделия" description="База в минутах и коэффициент сложности по каждому виду изделия.">
+                    <div className="grid gap-4">
                       {Object.entries(settings.garments).map(([name, item]) => (
-                        <div className="panel-settings-table__row" key={name}>
-                          <strong>{name}</strong>
-                          <label className="panel-form__row">
-                            <span>База, мин</span>
-                            <input type="number" min="0" value={item.base_minutes} onChange={(event) => handleGarmentChange(name, "base_minutes", event.target.value)} />
-                          </label>
-                          <label className="panel-form__row">
-                            <span>Коэфф.</span>
-                            <input type="number" step="0.01" min="0" value={item.complexity_coeff} onChange={(event) => handleGarmentChange(name, "complexity_coeff", event.target.value)} />
-                          </label>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="panel-form__block">
-                    <h3>Операции</h3>
-                    <div className="panel-settings-table">
-                      {Object.entries(settings.operations).map(([name, item]) => (
-                        <div className="panel-settings-table__row" key={name}>
-                          <strong>{name}</strong>
-                          <label className="panel-form__row">
-                            <span>Минуты</span>
-                            <input type="number" min="0" value={item.additional_minutes} onChange={(event) => handleOperationSettingChange(name, "additional_minutes", event.target.value)} />
-                          </label>
-                          <label className="panel-form__row">
-                            <span>Материалы/шт</span>
-                            <input type="number" min="0" value={item.additional_material_per_unit} onChange={(event) => handleOperationSettingChange(name, "additional_material_per_unit", event.target.value)} />
-                          </label>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="panel-form__block">
-                    <h3>Материалы</h3>
-                    <div className="panel-settings-stack">
-                      {Object.entries(settings.materials).map(([name, item]) => (
-                        <div className="panel-settings-card" key={name}>
-                          <div className="panel-settings-card__header">
-                            <strong>{name}</strong>
+                        <div
+                          className="grid gap-4 rounded-[24px] border p-4 [background:color-mix(in_oklab,var(--settings-card-bg)_90%,transparent)] [border-color:var(--settings-card-border)] xl:grid-cols-[minmax(0,1fr)_minmax(180px,220px)_minmax(180px,220px)] xl:items-end"
+                          key={name}
+                        >
+                          <div>
+                            <strong className="text-base font-semibold tracking-[-0.02em] text-[color:var(--settings-text)]">{name}</strong>
+                            <p className="mt-1 text-sm text-[color:var(--settings-muted)]">Параметры расчёта для этого типа изделия.</p>
                           </div>
-                          <div className="panel-form__grid panel-form__grid--compact">
+                          <SettingsField label="База, мин">
+                            <SettingsNumberInput min="0" value={item.base_minutes} onChange={(event) => handleGarmentChange(name, "base_minutes", event.target.value)} />
+                          </SettingsField>
+                          <SettingsField label="Коэфф.">
+                            <SettingsNumberInput step="0.01" min="0" value={item.complexity_coeff} onChange={(event) => handleGarmentChange(name, "complexity_coeff", event.target.value)} />
+                          </SettingsField>
+                        </div>
+                      ))}
+                    </div>
+                  </SettingsSection>
+
+                  <SettingsSection title="Операции" description="Дополнительные минуты и материалы, увеличивающие стоимость единицы.">
+                    <div className="grid gap-4">
+                      {Object.entries(settings.operations).map(([name, item]) => (
+                        <div
+                          className="grid gap-4 rounded-[24px] border p-4 [background:color-mix(in_oklab,var(--settings-card-bg)_90%,transparent)] [border-color:var(--settings-card-border)] xl:grid-cols-[minmax(0,1fr)_minmax(180px,220px)_minmax(180px,220px)] xl:items-end"
+                          key={name}
+                        >
+                          <div>
+                            <strong className="text-base font-semibold tracking-[-0.02em] text-[color:var(--settings-text)]">{name}</strong>
+                            <p className="mt-1 text-sm text-[color:var(--settings-muted)]">Норма времени и материалов на одну дополнительную операцию.</p>
+                          </div>
+                          <SettingsField label="Минуты">
+                            <SettingsNumberInput min="0" value={item.additional_minutes} onChange={(event) => handleOperationSettingChange(name, "additional_minutes", event.target.value)} />
+                          </SettingsField>
+                          <SettingsField label="Материалы / шт">
+                            <SettingsNumberInput min="0" value={item.additional_material_per_unit} onChange={(event) => handleOperationSettingChange(name, "additional_material_per_unit", event.target.value)} />
+                          </SettingsField>
+                        </div>
+                      ))}
+                    </div>
+                  </SettingsSection>
+
+                  <SettingsSection title="Материалы" description="Токены затрат по тканям и комплектующим с разбиением по каждой категории.">
+                    <div className="grid gap-4 xl:grid-cols-2">
+                      {Object.entries(settings.materials).map(([name, item]) => (
+                        <div className={settingsSectionClass} key={name}>
+                          <div className="mb-4">
+                            <strong className="text-base font-semibold tracking-[-0.02em] text-[color:var(--settings-text)]">{name}</strong>
+                          </div>
+                          <div className="grid gap-4 md:grid-cols-2">
                             {Object.entries(item).map(([key, value]) => (
-                              <label className="panel-form__row" key={key}>
-                                <span>{materialLabels[key] || key}</span>
-                                <input type="number" step="0.01" min="0" value={value} onChange={(event) => handleMaterialChange(name, key, event.target.value)} />
-                              </label>
+                              <SettingsField key={key} label={materialLabels[key] || key}>
+                                <SettingsNumberInput step="0.01" min="0" value={value} onChange={(event) => handleMaterialChange(name, key, event.target.value)} />
+                              </SettingsField>
                             ))}
                           </div>
                         </div>
                       ))}
                     </div>
-                  </div>
+                  </SettingsSection>
 
                   <DiscountsBlock settings={settings} handleDiscountChange={handleDiscountChange} />
 
-                  <div className="panel-form__block">
-                    <h3>Срочность</h3>
-                    <div className="panel-form__grid panel-form__grid--compact">
+                  <SettingsSection title="Срочность" description="Процентная надбавка к цене в зависимости от срока выполнения.">
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                       {Object.entries(settings.urgency).map(([name, item]) => (
-                        <label className="panel-form__row" key={name}>
-                          <span>{name}</span>
-                          <input type="number" step="0.01" min="0" value={item.percent} onChange={(event) => handleUrgencyChange(name, event.target.value)} />
-                        </label>
+                        <div key={name} className={settingsInsetClass}>
+                          <SettingsField label={name}>
+                            <SettingsNumberInput step="0.01" min="0" value={item.percent} onChange={(event) => handleUrgencyChange(name, event.target.value)} />
+                          </SettingsField>
+                        </div>
                       ))}
                     </div>
-                  </div>
+                  </SettingsSection>
 
-                  <div className="panel-form__block">
-                    <h3>Рынок</h3>
-                    <div className="panel-settings-stack">
+                  <SettingsSection title="Рынок" description="Нижняя, средняя и верхняя граница цены для проверки попадания в сегмент.">
+                    <div className="grid gap-4 xl:grid-cols-3">
                       {Object.entries(settings.market_bands).map(([name, item]) => (
-                        <div className="panel-settings-card" key={name}>
-                          <div className="panel-settings-card__header">
-                            <strong>{name}</strong>
+                        <div className={settingsSectionClass} key={name}>
+                          <div className="mb-4">
+                            <strong className="text-base font-semibold tracking-[-0.02em] text-[color:var(--settings-text)]">{name}</strong>
                           </div>
-                          <div className="panel-form__grid panel-form__grid--compact">
-                            <label className="panel-form__row">
-                              <span>Мин</span>
-                              <input type="number" min="0" value={item.min_price_per_unit} onChange={(event) => handleMarketBandChange(name, "min_price_per_unit", event.target.value)} />
-                            </label>
-                            <label className="panel-form__row">
-                              <span>Средняя</span>
-                              <input type="number" min="0" value={item.average_price_per_unit} onChange={(event) => handleMarketBandChange(name, "average_price_per_unit", event.target.value)} />
-                            </label>
-                            <label className="panel-form__row">
-                              <span>Макс</span>
-                              <input type="number" min="0" value={item.max_price_per_unit} onChange={(event) => handleMarketBandChange(name, "max_price_per_unit", event.target.value)} />
-                            </label>
+                          <div className="grid gap-4">
+                            <SettingsField label="Мин">
+                              <SettingsNumberInput min="0" value={item.min_price_per_unit} onChange={(event) => handleMarketBandChange(name, "min_price_per_unit", event.target.value)} />
+                            </SettingsField>
+                            <SettingsField label="Средняя">
+                              <SettingsNumberInput min="0" value={item.average_price_per_unit} onChange={(event) => handleMarketBandChange(name, "average_price_per_unit", event.target.value)} />
+                            </SettingsField>
+                            <SettingsField label="Макс">
+                              <SettingsNumberInput min="0" value={item.max_price_per_unit} onChange={(event) => handleMarketBandChange(name, "max_price_per_unit", event.target.value)} />
+                            </SettingsField>
                           </div>
                         </div>
                       ))}
                     </div>
-                  </div>
+                  </SettingsSection>
                 </>
               )}
 
-              <div className="panel-form__footer">
-                <button className="panel__theme-toggle" type="submit" disabled={isSavingSettings}>
-                  {isSavingSettings ? "Сохраняем..." : "Сохранить"}
+              <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
+                <button
+                  className="inline-flex min-h-12 items-center justify-center rounded-2xl border px-5 text-sm font-semibold text-white transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60 [background:var(--settings-accent)] [border-color:color-mix(in_oklab,var(--settings-accent)_90%,black)] shadow-[0_16px_30px_var(--settings-card-shadow)]"
+                  type="submit"
+                  disabled={isSavingSettings}
+                >
+                  {isSavingSettings ? "Сохраняем..." : "Сохранить изменения"}
                 </button>
-                {settingsNotice ? <p className="panel__notice">{settingsNotice}</p> : null}
+                {settingsNotice ? <p className="text-sm leading-6 text-[color:var(--settings-muted)]">{settingsNotice}</p> : null}
               </div>
             </form>
           </section>
@@ -978,25 +1066,29 @@ const Panel = () => {
 };
 
 const DiscountsBlock = ({ settings, handleDiscountChange }) => (
-  <div className="panel-form__block">
-    <h3>Скидки по партиям</h3>
-    {settings.batch_discounts.map((discount, index) => (
-      <div className="panel-form__grid panel-form__grid--compact" key={`${discount.min_qty}-${discount.max_qty}-${index}`}>
-        <label className="panel-form__row">
-          <span>От</span>
-          <input type="number" min="1" value={discount.min_qty} onChange={(event) => handleDiscountChange(index, "min_qty", event.target.value)} />
-        </label>
-        <label className="panel-form__row">
-          <span>До</span>
-          <input type="number" min="1" value={discount.max_qty} onChange={(event) => handleDiscountChange(index, "max_qty", event.target.value)} />
-        </label>
-        <label className="panel-form__row">
-          <span>Скидка, %</span>
-          <input type="number" step="0.01" min="0" max="100" value={discount.percent} onChange={(event) => handleDiscountChange(index, "percent", event.target.value)} />
-        </label>
-      </div>
-    ))}
-  </div>
+  <SettingsSection
+    title="Скидки по партиям"
+    description="Диапазоны количества и процент скидки для автоматического уменьшения цены на крупные заказы."
+  >
+    <div className="grid gap-4">
+      {settings.batch_discounts.map((discount, index) => (
+        <div
+          className="grid gap-4 rounded-[24px] border p-4 [background:color-mix(in_oklab,var(--settings-card-bg)_90%,transparent)] [border-color:var(--settings-card-border)] md:grid-cols-3"
+          key={`${discount.min_qty}-${discount.max_qty}-${index}`}
+        >
+          <SettingsField label="От">
+            <SettingsNumberInput min="1" value={discount.min_qty} onChange={(event) => handleDiscountChange(index, "min_qty", event.target.value)} />
+          </SettingsField>
+          <SettingsField label="До">
+            <SettingsNumberInput min="1" value={discount.max_qty} onChange={(event) => handleDiscountChange(index, "max_qty", event.target.value)} />
+          </SettingsField>
+          <SettingsField label="Скидка, %">
+            <SettingsNumberInput step="0.01" min="0" max="100" value={discount.percent} onChange={(event) => handleDiscountChange(index, "percent", event.target.value)} />
+          </SettingsField>
+        </div>
+      ))}
+    </div>
+  </SettingsSection>
 );
 
 const normalizeSettings = (settings) => ({
