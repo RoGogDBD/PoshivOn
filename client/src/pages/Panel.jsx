@@ -582,7 +582,7 @@ const Panel = () => {
         </section>
 
         {activeSection === "settings" ? (
-          <section className="panel__card">
+          <section className="panel__card panel__card--settings">
             <h2>Модель расчёта</h2>
             <form className="panel-form" onSubmit={handleSaveSettings}>
               <div className="panel-form__block">
