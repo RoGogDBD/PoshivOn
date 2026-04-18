@@ -8,36 +8,48 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 )
 
-type ImageAnalysisInput struct {
-	ImageDataURL  string `json:"image_data_url"`
-	GarmentType   string `json:"garment_type"`
-	MaterialType  string `json:"material_type"`
-	MarketSegment string `json:"market_segment"`
-	Urgency       string `json:"urgency"`
-	Quantity      int    `json:"quantity"`
-	Comment       string `json:"comment"`
+type MarketFeedbackInput struct {
+	GarmentType     string         `json:"garment_type"`
+	MaterialType    string         `json:"material_type"`
+	MarketSegment   string         `json:"market_segment"`
+	Urgency         string         `json:"urgency"`
+	Quantity        int            `json:"quantity"`
+	Fittings        int            `json:"fittings"`
+	IsCustomFigure  bool           `json:"is_custom_figure"`
+	IsChild         bool           `json:"is_child"`
+	Comment         string         `json:"comment"`
+	OperationCounts map[string]int `json:"operation_counts,omitempty"`
 }
 
-type ImageAnalysisResult struct {
-	Model                    string   `json:"model"`
-	ProductSummary           string   `json:"product_summary"`
-	SuggestedMarketSegment   string   `json:"suggested_market_segment"`
-	EstimatedUnitPriceMinRUB int64    `json:"estimated_unit_price_min_rub"`
-	EstimatedUnitPriceMidRUB int64    `json:"estimated_unit_price_mid_rub"`
-	EstimatedUnitPriceMaxRUB int64    `json:"estimated_unit_price_max_rub"`
-	EstimatedTotalMinRUB     int64    `json:"estimated_total_min_rub"`
-	EstimatedTotalMidRUB     int64    `json:"estimated_total_mid_rub"`
-	EstimatedTotalMaxRUB     int64    `json:"estimated_total_max_rub"`
-	Confidence               string   `json:"confidence"`
-	Factors                  []string `json:"factors"`
-	Assumptions              []string `json:"assumptions"`
-	Reasoning                string   `json:"reasoning"`
-	Disclaimer               string   `json:"disclaimer"`
+type MarketFeedbackBand struct {
+	Label      string `json:"label"`
+	MinRUB     int64  `json:"min_rub"`
+	AverageRUB int64  `json:"average_rub"`
+	MaxRUB     int64  `json:"max_rub"`
+}
+
+type MarketFeedbackResult struct {
+	Model                    string              `json:"model"`
+	ScenarioSummary          string              `json:"scenario_summary"`
+	SuggestedMarketSegment   string              `json:"suggested_market_segment"`
+	EstimatedUnitPriceMinRUB int64               `json:"estimated_unit_price_min_rub"`
+	EstimatedUnitPriceMidRUB int64               `json:"estimated_unit_price_mid_rub"`
+	EstimatedUnitPriceMaxRUB int64               `json:"estimated_unit_price_max_rub"`
+	EstimatedTotalMinRUB     int64               `json:"estimated_total_min_rub"`
+	EstimatedTotalMidRUB     int64               `json:"estimated_total_mid_rub"`
+	EstimatedTotalMaxRUB     int64               `json:"estimated_total_max_rub"`
+	SelectedMarketBand       *MarketFeedbackBand `json:"selected_market_band,omitempty"`
+	PricePosition            string              `json:"price_position"`
+	Confidence               string              `json:"confidence"`
+	KeyDrivers               []string            `json:"key_drivers"`
+	Risks                    []string            `json:"risks"`
+	Recommendations          []string            `json:"recommendations"`
+	Reasoning                string              `json:"reasoning"`
+	Disclaimer               string              `json:"disclaimer"`
 }
 
 type DeepSeekConfig struct {
@@ -72,17 +84,7 @@ type deepSeekJSONFormat struct {
 
 type deepSeekMessage struct {
 	Role    string `json:"role"`
-	Content any    `json:"content"`
-}
-
-type deepSeekContentPart struct {
-	Type     string               `json:"type"`
-	Text     string               `json:"text,omitempty"`
-	ImageURL *deepSeekImageSource `json:"image_url,omitempty"`
-}
-
-type deepSeekImageSource struct {
-	URL string `json:"url"`
+	Content string `json:"content"`
 }
 
 type deepSeekChatResponse struct {
@@ -98,15 +100,16 @@ type deepSeekChoiceMessage struct {
 	Content string `json:"content"`
 }
 
-type deepSeekImageEstimate struct {
-	ProductSummary           string   `json:"product_summary"`
+type deepSeekFeedbackPayload struct {
+	ScenarioSummary          string   `json:"scenario_summary"`
 	SuggestedMarketSegment   string   `json:"suggested_market_segment"`
 	EstimatedUnitPriceMinRUB int64    `json:"estimated_unit_price_min_rub"`
 	EstimatedUnitPriceMidRUB int64    `json:"estimated_unit_price_mid_rub"`
 	EstimatedUnitPriceMaxRUB int64    `json:"estimated_unit_price_max_rub"`
 	Confidence               string   `json:"confidence"`
-	Factors                  []string `json:"factors"`
-	Assumptions              []string `json:"assumptions"`
+	KeyDrivers               []string `json:"key_drivers"`
+	Risks                    []string `json:"risks"`
+	Recommendations          []string `json:"recommendations"`
 	Reasoning                string   `json:"reasoning"`
 }
 
@@ -153,28 +156,22 @@ func NewDeepSeekClient(cfg DeepSeekConfig) (*DeepSeekClient, error) {
 	}, nil
 }
 
-func (c *DeepSeekClient) AnalyzeGarmentImage(
+func (c *DeepSeekClient) AnalyzeMarketFeedback(
 	ctx context.Context,
-	input ImageAnalysisInput,
+	input MarketFeedbackInput,
 	settings UserSettings,
-) (ImageAnalysisResult, error) {
+) (MarketFeedbackResult, error) {
 	if c == nil {
-		return ImageAnalysisResult{}, fmt.Errorf("deepseek integration is not configured: %w", ErrNotFound)
-	}
-	if strings.TrimSpace(input.ImageDataURL) == "" {
-		return ImageAnalysisResult{}, fmt.Errorf("image_data_url is required: %w", ErrInvalidArgument)
+		return MarketFeedbackResult{}, fmt.Errorf("deepseek integration is not configured: %w", ErrNotFound)
 	}
 	if input.Quantity <= 0 {
-		return ImageAnalysisResult{}, fmt.Errorf("quantity should be positive: %w", ErrInvalidArgument)
-	}
-	if len(input.ImageDataURL) > 12*1024*1024 {
-		return ImageAnalysisResult{}, fmt.Errorf("image is too large for analysis: %w", ErrInvalidArgument)
+		return MarketFeedbackResult{}, fmt.Errorf("quantity should be positive: %w", ErrInvalidArgument)
 	}
 
 	requestBody := deepSeekChatRequest{
 		Model:       c.model,
 		Temperature: 0.2,
-		MaxTokens:   1200,
+		MaxTokens:   1400,
 		Stream:      false,
 		ResponseFormat: deepSeekJSONFormat{
 			Type: "json_object",
@@ -185,32 +182,21 @@ func (c *DeepSeekClient) AnalyzeGarmentImage(
 				Content: buildDeepSeekSystemPrompt(settings),
 			},
 			{
-				Role: "user",
-				Content: []deepSeekContentPart{
-					{
-						Type: "text",
-						Text: buildDeepSeekUserPrompt(input, settings),
-					},
-					{
-						Type: "image_url",
-						ImageURL: &deepSeekImageSource{
-							URL: input.ImageDataURL,
-						},
-					},
-				},
+				Role:    "user",
+				Content: buildDeepSeekUserPrompt(input, settings),
 			},
 		},
 	}
 
 	payload, err := json.Marshal(requestBody)
 	if err != nil {
-		return ImageAnalysisResult{}, fmt.Errorf("marshal deepseek request: %w", err)
+		return MarketFeedbackResult{}, fmt.Errorf("marshal deepseek request: %w", err)
 	}
 
 	var lastErr error
 	backoff := time.Second
 	for attempt := 0; attempt <= c.maxRetries; attempt++ {
-		result, retryable, callErr := c.sendAnalysisRequest(ctx, payload, input.Quantity)
+		result, retryable, callErr := c.sendFeedbackRequest(ctx, payload, input, settings)
 		if callErr == nil {
 			return result, nil
 		}
@@ -223,7 +209,7 @@ func (c *DeepSeekClient) AnalyzeGarmentImage(
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			return ImageAnalysisResult{}, ctx.Err()
+			return MarketFeedbackResult{}, ctx.Err()
 		case <-timer.C:
 		}
 		backoff *= 2
@@ -232,30 +218,31 @@ func (c *DeepSeekClient) AnalyzeGarmentImage(
 		}
 	}
 
-	return ImageAnalysisResult{}, lastErr
+	return MarketFeedbackResult{}, lastErr
 }
 
-func (c *DeepSeekClient) sendAnalysisRequest(
+func (c *DeepSeekClient) sendFeedbackRequest(
 	ctx context.Context,
 	payload []byte,
-	quantity int,
-) (ImageAnalysisResult, bool, error) {
+	input MarketFeedbackInput,
+	settings UserSettings,
+) (MarketFeedbackResult, bool, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.apiURL, bytes.NewReader(payload))
 	if err != nil {
-		return ImageAnalysisResult{}, false, fmt.Errorf("build deepseek request: %w", err)
+		return MarketFeedbackResult{}, false, fmt.Errorf("build deepseek request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return ImageAnalysisResult{}, isRetryableError(err.Error()), fmt.Errorf("deepseek request failed: %w", err)
+		return MarketFeedbackResult{}, isRetryableError(err.Error()), fmt.Errorf("deepseek request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 2*1024*1024))
 	if err != nil {
-		return ImageAnalysisResult{}, false, fmt.Errorf("read deepseek response: %w", err)
+		return MarketFeedbackResult{}, false, fmt.Errorf("read deepseek response: %w", err)
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -263,115 +250,133 @@ func (c *DeepSeekClient) sendAnalysisRequest(
 		if message == "" {
 			message = resp.Status
 		}
-		return ImageAnalysisResult{}, isRetryableStatus(resp.StatusCode), fmt.Errorf("deepseek api request failed: %s", classifyDeepSeekError(resp.StatusCode, message))
+		return MarketFeedbackResult{}, isRetryableStatus(resp.StatusCode), fmt.Errorf("deepseek api request failed: %s", classifyDeepSeekError(resp.StatusCode, message))
 	}
 
 	var completion deepSeekChatResponse
 	if err := json.Unmarshal(body, &completion); err != nil {
-		return ImageAnalysisResult{}, false, fmt.Errorf("parse deepseek response: %w", err)
+		return MarketFeedbackResult{}, false, fmt.Errorf("parse deepseek response: %w", err)
 	}
 	if len(completion.Choices) == 0 {
-		return ImageAnalysisResult{}, false, fmt.Errorf("deepseek api returned no choices")
+		return MarketFeedbackResult{}, false, fmt.Errorf("deepseek api returned no choices")
 	}
 
 	content := strings.TrimSpace(completion.Choices[0].Message.Content)
 	if content == "" {
-		return ImageAnalysisResult{}, false, fmt.Errorf("deepseek api returned empty content")
+		return MarketFeedbackResult{}, false, fmt.Errorf("deepseek api returned empty content")
 	}
 
-	var estimate deepSeekImageEstimate
-	if err := json.Unmarshal([]byte(content), &estimate); err != nil {
-		return ImageAnalysisResult{}, false, fmt.Errorf("parse deepseek estimate json: %w; raw=%s", err, content)
+	var feedback deepSeekFeedbackPayload
+	if err := json.Unmarshal([]byte(content), &feedback); err != nil {
+		return MarketFeedbackResult{}, false, fmt.Errorf("parse deepseek feedback json: %w; raw=%s", err, content)
 	}
 
-	estimate = normalizeImageEstimate(estimate)
-	return ImageAnalysisResult{
+	feedback = normalizeFeedbackPayload(feedback)
+	selectedBand := resolveMarketBand(settings.MarketBands, input.MarketSegment)
+	return MarketFeedbackResult{
 		Model:                    completion.Model,
-		ProductSummary:           estimate.ProductSummary,
-		SuggestedMarketSegment:   estimate.SuggestedMarketSegment,
-		EstimatedUnitPriceMinRUB: estimate.EstimatedUnitPriceMinRUB,
-		EstimatedUnitPriceMidRUB: estimate.EstimatedUnitPriceMidRUB,
-		EstimatedUnitPriceMaxRUB: estimate.EstimatedUnitPriceMaxRUB,
-		EstimatedTotalMinRUB:     estimate.EstimatedUnitPriceMinRUB * int64(quantity),
-		EstimatedTotalMidRUB:     estimate.EstimatedUnitPriceMidRUB * int64(quantity),
-		EstimatedTotalMaxRUB:     estimate.EstimatedUnitPriceMaxRUB * int64(quantity),
-		Confidence:               estimate.Confidence,
-		Factors:                  estimate.Factors,
-		Assumptions:              estimate.Assumptions,
-		Reasoning:                estimate.Reasoning,
-		Disclaimer:               "Оценка построена нейросетью по изображению и факторам, это не коммерческая оферта и не финальный расчёт.",
+		ScenarioSummary:          feedback.ScenarioSummary,
+		SuggestedMarketSegment:   feedback.SuggestedMarketSegment,
+		EstimatedUnitPriceMinRUB: feedback.EstimatedUnitPriceMinRUB,
+		EstimatedUnitPriceMidRUB: feedback.EstimatedUnitPriceMidRUB,
+		EstimatedUnitPriceMaxRUB: feedback.EstimatedUnitPriceMaxRUB,
+		EstimatedTotalMinRUB:     feedback.EstimatedUnitPriceMinRUB * int64(input.Quantity),
+		EstimatedTotalMidRUB:     feedback.EstimatedUnitPriceMidRUB * int64(input.Quantity),
+		EstimatedTotalMaxRUB:     feedback.EstimatedUnitPriceMaxRUB * int64(input.Quantity),
+		SelectedMarketBand:       selectedBand,
+		PricePosition:            detectFeedbackMarketPosition(selectedBand, feedback.EstimatedUnitPriceMidRUB),
+		Confidence:               feedback.Confidence,
+		KeyDrivers:               feedback.KeyDrivers,
+		Risks:                    feedback.Risks,
+		Recommendations:          feedback.Recommendations,
+		Reasoning:                feedback.Reasoning,
+		Disclaimer:               "AI-фидбек опирается на ваши параметры и пользовательские пресеты. Это аналитическая подсказка, а не финальная коммерческая оферта.",
 	}, false, nil
 }
 
 func buildDeepSeekSystemPrompt(settings UserSettings) string {
-	return fmt.Sprintf(
-		`You are a senior garment production estimator for the Russian fashion market.
-You analyze one garment image plus user-provided hints and return a conservative price estimate in Russian rubles.
-Return valid JSON only. Do not wrap in markdown. Do not add any commentary outside JSON.
+	return fmt.Sprintf(`You are a senior garment production and pricing analyst for the Russian apparel market.
+You receive structured production parameters and user pricing presets. Your task is to assess market fit, give a realistic unit-price range in RUB, explain the drivers, outline risks, and recommend next actions.
+Return valid JSON only. Do not wrap in markdown. No prose outside JSON.
 
 Required JSON schema:
 {
-  "product_summary": "short sentence",
+  "scenario_summary": "short Russian summary",
   "suggested_market_segment": "Массмаркет | Средний | Премиум",
   "estimated_unit_price_min_rub": 0,
   "estimated_unit_price_mid_rub": 0,
   "estimated_unit_price_max_rub": 0,
   "confidence": "low | medium | high",
-  "factors": ["factor 1", "factor 2"],
-  "assumptions": ["assumption 1", "assumption 2"],
-  "reasoning": "short paragraph in Russian"
+  "key_drivers": ["driver 1", "driver 2"],
+  "risks": ["risk 1", "risk 2"],
+  "recommendations": ["action 1", "action 2"],
+  "reasoning": "short Russian paragraph"
 }
 
 Rules:
-- Base the estimate on visible construction complexity, silhouette, finishing, probable fabric behavior, mass-production difficulty, urgency, quantity and target market.
-- Respond in Russian.
-- All price fields must be integers in RUB for one unit.
-- estimated_unit_price_min_rub <= estimated_unit_price_mid_rub <= estimated_unit_price_max_rub.
-- If the image is ambiguous, lower confidence and state assumptions explicitly.
+- Respond only in Russian.
+- All price fields are integer RUB per unit.
+- min <= mid <= max.
+- Use the user pricing presets as your source of production logic.
 - Use these user market bands for grounding: %s.
-- If the user selected a market segment, keep the estimate near that segment unless the image strongly contradicts it.`,
-		formatMarketBandsForPrompt(settings.MarketBands),
-	)
+- Take into account quantity, urgency, fittings, custom figure, child product and chosen operations.
+- Keep recommendations practical for RU fashion manufacturing.`, formatMarketBandsForPrompt(settings.MarketBands))
 }
 
-func buildDeepSeekUserPrompt(input ImageAnalysisInput, settings UserSettings) string {
-	return fmt.Sprintf(
-		`Оцени изделие на фото для российского рынка.
+func buildDeepSeekUserPrompt(input MarketFeedbackInput, settings UserSettings) string {
+	return fmt.Sprintf(`Проанализируй параметры производственного расчёта и дай фидбек для рынка РФ.
 
-Факторы:
-- Подсказка по изделию: %s
-- Подсказка по материалу: %s
+Сценарий:
+- Изделие: %s
+- Материал: %s
 - Целевой сегмент: %s
 - Срочность: %s
 - Размер партии: %d
-- Комментарий пользователя: %s
+- Примерки: %d
+- Нестандартная фигура: %t
+- Детское изделие: %t
+- Выбранные операции: %s
+- Комментарий: %s
 
-Доступные пресеты пользователя:
+Пользовательские пресеты:
+- Правила ценообразования: %s
 - Изделия: %s
 - Материалы: %s
 - Срочность: %s
+- Рыночные сегменты: %s
 
-Сначала определи тип изделия и его сложность по изображению, затем оцени диапазон цены за единицу для RU рынка.
-Ответ должен быть только JSON и содержать слово json implicitly by being valid JSON.`,
+Нужно:
+1. Оценить реалистичный диапазон цены за единицу для рынка РФ.
+2. Сказать, попадает ли сценарий в выбранный сегмент или тяготеет к другому.
+3. Назвать ключевые драйверы цены.
+4. Отметить риски и практические рекомендации.
+Ответ только JSON.`,
 		emptyOrUnknown(input.GarmentType),
 		emptyOrUnknown(input.MaterialType),
 		emptyOrUnknown(input.MarketSegment),
 		emptyOrUnknown(input.Urgency),
 		input.Quantity,
+		input.Fittings,
+		input.IsCustomFigure,
+		input.IsChild,
+		formatOperationCountsForPrompt(input.OperationCounts),
 		emptyOrUnknown(strings.TrimSpace(input.Comment)),
+		formatPricingRulesForPrompt(settings.PricingRules),
 		strings.Join(sortedKeysFromGarments(settings.Garments), ", "),
 		strings.Join(sortedKeysFromMaterials(settings.Materials), ", "),
 		strings.Join(sortedKeysFromUrgency(settings.Urgency), ", "),
+		formatMarketBandsForPrompt(settings.MarketBands),
 	)
 }
 
-func normalizeImageEstimate(item deepSeekImageEstimate) deepSeekImageEstimate {
-	item.ProductSummary = strings.TrimSpace(item.ProductSummary)
+func normalizeFeedbackPayload(item deepSeekFeedbackPayload) deepSeekFeedbackPayload {
+	item.ScenarioSummary = strings.TrimSpace(item.ScenarioSummary)
 	item.SuggestedMarketSegment = strings.TrimSpace(item.SuggestedMarketSegment)
 	item.Confidence = normalizeConfidence(item.Confidence)
+	item.KeyDrivers = compactStrings(item.KeyDrivers)
+	item.Risks = compactStrings(item.Risks)
+	item.Recommendations = compactStrings(item.Recommendations)
 	item.Reasoning = strings.TrimSpace(item.Reasoning)
-	item.Factors = compactStrings(item.Factors)
-	item.Assumptions = compactStrings(item.Assumptions)
 
 	if item.EstimatedUnitPriceMinRUB < 0 {
 		item.EstimatedUnitPriceMinRUB = 0
@@ -383,6 +388,36 @@ func normalizeImageEstimate(item deepSeekImageEstimate) deepSeekImageEstimate {
 		item.EstimatedUnitPriceMaxRUB = item.EstimatedUnitPriceMidRUB
 	}
 	return item
+}
+
+func resolveMarketBand(items map[string]MarketBand, name string) *MarketFeedbackBand {
+	key := strings.TrimSpace(name)
+	if key == "" {
+		return nil
+	}
+	band, ok := items[key]
+	if !ok {
+		return nil
+	}
+	return &MarketFeedbackBand{
+		Label:      key,
+		MinRUB:     band.MinPricePerUnit,
+		AverageRUB: band.AveragePricePerUnit,
+		MaxRUB:     band.MaxPricePerUnit,
+	}
+}
+
+func detectFeedbackMarketPosition(band *MarketFeedbackBand, estimatedMid int64) string {
+	if band == nil || estimatedMid <= 0 {
+		return "unknown"
+	}
+	if estimatedMid < band.MinRUB {
+		return "below_market"
+	}
+	if estimatedMid > band.MaxRUB {
+		return "above_market"
+	}
+	return "in_market"
 }
 
 func normalizeConfidence(value string) string {
@@ -412,6 +447,37 @@ func emptyOrUnknown(value string) string {
 		return "не указано"
 	}
 	return strings.TrimSpace(value)
+}
+
+func formatOperationCountsForPrompt(items map[string]int) string {
+	if len(items) == 0 {
+		return "нет"
+	}
+	keys := make([]string, 0, len(items))
+	for key, count := range items {
+		if count > 0 {
+			keys = append(keys, fmt.Sprintf("%s x%d", key, count))
+		}
+	}
+	if len(keys) == 0 {
+		return "нет"
+	}
+	sortStrings(keys)
+	return strings.Join(keys, ", ")
+}
+
+func formatPricingRulesForPrompt(rules PricingRules) string {
+	return fmt.Sprintf(
+		"ставка минуты %d RUB; налоги %.2f%%; накладные %.2f%%; логистика %d RUB/шт; маржа %.2f%%; мин. маржа %.2f%%; включено примерок %d; доп. примерка %d мин",
+		rules.LaborMinuteRate,
+		rules.PayrollTaxesPercent,
+		rules.OverheadPercent,
+		rules.LogisticsCostPerUnit,
+		rules.MarginPercent,
+		rules.MinMarginPercent,
+		rules.IncludedFittings,
+		rules.ExtraFittingMinutes,
+	)
 }
 
 func formatMarketBandsForPrompt(items map[string]MarketBand) string {
@@ -502,19 +568,4 @@ func isRetryableError(message string) bool {
 		strings.Contains(lower, "502") ||
 		strings.Contains(lower, "504") ||
 		strings.Contains(lower, "429")
-}
-
-func ParseConfidenceLabel(value string) string {
-	switch normalizeConfidence(value) {
-	case "high":
-		return "Высокая"
-	case "low":
-		return "Низкая"
-	default:
-		return "Средняя"
-	}
-}
-
-func FormatRub(value int64) string {
-	return strconv.FormatInt(value, 10)
 }

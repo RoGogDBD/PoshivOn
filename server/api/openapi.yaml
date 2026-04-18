@@ -150,7 +150,7 @@ paths:
                       $ref: '#/components/schemas/CalculationResult'
                 required: [items]
 
-  /api/v1/users/{userID}/image-analysis:
+  /api/v1/users/{userID}/market-feedback:
     parameters:
       - in: path
         name: userID
@@ -158,7 +158,7 @@ paths:
         schema:
           type: string
     post:
-      summary: Analyze garment image with DeepSeek and estimate RU-market price
+      summary: Analyze calculation parameters with DeepSeek and estimate RU-market fit
       requestBody:
         required: true
         content:
@@ -166,8 +166,6 @@ paths:
             schema:
               type: object
               properties:
-                image_data_url:
-                  type: string
                 garment_type:
                   type: string
                 material_type:
@@ -178,9 +176,19 @@ paths:
                   type: string
                 quantity:
                   type: integer
+                fittings:
+                  type: integer
+                is_custom_figure:
+                  type: boolean
+                is_child:
+                  type: boolean
+                operation_counts:
+                  type: object
+                  additionalProperties:
+                    type: integer
                 comment:
                   type: string
-              required: [image_data_url, quantity]
+              required: [quantity]
       responses:
         '200':
           description: Image analysis result

@@ -60,8 +60,8 @@ func (h *APIHandler) handleUsers(w http.ResponseWriter, r *http.Request) {
 	case resource == "chats" && len(parts) == 4 && parts[3] == "calculations" && r.Method == http.MethodGet:
 		h.handleListChatCalculations(w, r, userID, parts[2])
 		return
-	case resource == "image-analysis" && len(parts) == 2 && r.Method == http.MethodPost:
-		h.handleAnalyzeImage(w, r, userID)
+	case resource == "market-feedback" && len(parts) == 2 && r.Method == http.MethodPost:
+		h.handleMarketFeedback(w, r, userID)
 		return
 	default:
 		writeAPIError(w, http.StatusNotFound, "route not found")
@@ -163,13 +163,13 @@ func (h *APIHandler) handleListChatCalculations(w http.ResponseWriter, r *http.R
 	writeAPIJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
-func (h *APIHandler) handleAnalyzeImage(w http.ResponseWriter, r *http.Request, userID string) {
+func (h *APIHandler) handleMarketFeedback(w http.ResponseWriter, r *http.Request, userID string) {
 	if h.deepseek == nil {
 		writeAPIError(w, http.StatusServiceUnavailable, "deepseek integration is not configured")
 		return
 	}
 
-	var req service.ImageAnalysisInput
+	var req service.MarketFeedbackInput
 	if err := decodeJSON(r, &req); err != nil {
 		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
@@ -185,7 +185,7 @@ func (h *APIHandler) handleAnalyzeImage(w http.ResponseWriter, r *http.Request, 
 		}
 	}
 
-	result, err := h.deepseek.AnalyzeGarmentImage(r.Context(), req, settings)
+	result, err := h.deepseek.AnalyzeMarketFeedback(r.Context(), req, settings)
 	if err != nil {
 		writeAPIDomainError(w, err)
 		return
