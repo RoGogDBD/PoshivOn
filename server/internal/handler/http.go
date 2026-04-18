@@ -11,11 +11,12 @@ import (
 )
 
 type APIHandler struct {
-	costing *service.CostingService
+	costing  *service.CostingService
+	deepseek *service.DeepSeekClient
 }
 
-func NewAPIHandler(costing *service.CostingService) *APIHandler {
-	return &APIHandler{costing: costing}
+func NewAPIHandler(costing *service.CostingService, deepseek *service.DeepSeekClient) *APIHandler {
+	return &APIHandler{costing: costing, deepseek: deepseek}
 }
 
 func (h *APIHandler) Register(mux *http.ServeMux) {
@@ -58,6 +59,9 @@ func (h *APIHandler) handleUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	case resource == "chats" && len(parts) == 4 && parts[3] == "calculations" && r.Method == http.MethodGet:
 		h.handleListChatCalculations(w, r, userID, parts[2])
+		return
+	case resource == "image-analysis" && len(parts) == 2 && r.Method == http.MethodPost:
+		h.handleAnalyzeImage(w, r, userID)
 		return
 	default:
 		writeAPIError(w, http.StatusNotFound, "route not found")
@@ -159,6 +163,37 @@ func (h *APIHandler) handleListChatCalculations(w http.ResponseWriter, r *http.R
 	writeAPIJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
+func (h *APIHandler) handleAnalyzeImage(w http.ResponseWriter, r *http.Request, userID string) {
+	if h.deepseek == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "deepseek integration is not configured")
+		return
+	}
+
+	var req service.ImageAnalysisInput
+	if err := decodeJSON(r, &req); err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	settings, err := h.costing.GetUserSettings(r.Context(), userID)
+	if err != nil {
+		if errors.Is(err, service.ErrNotFound) {
+			settings = service.DefaultUserSettings()
+		} else {
+			writeAPIDomainError(w, err)
+			return
+		}
+	}
+
+	result, err := h.deepseek.AnalyzeGarmentImage(r.Context(), req, settings)
+	if err != nil {
+		writeAPIDomainError(w, err)
+		return
+	}
+
+	writeAPIJSON(w, http.StatusOK, result)
+}
+
 func splitPath(path string) []string {
 	path = strings.Trim(path, "/")
 	if path == "" {
@@ -198,6 +233,12 @@ func writeAPIDomainError(w http.ResponseWriter, err error) {
 		writeAPIError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, service.ErrNotFound):
 		writeAPIError(w, http.StatusNotFound, err.Error())
+	case strings.Contains(strings.ToLower(err.Error()), "rate_limit_exceeded"):
+		writeAPIError(w, http.StatusTooManyRequests, err.Error())
+	case strings.Contains(strings.ToLower(err.Error()), "service_unavailable"):
+		writeAPIError(w, http.StatusServiceUnavailable, err.Error())
+	case strings.Contains(strings.ToLower(err.Error()), "timeout"):
+		writeAPIError(w, http.StatusGatewayTimeout, err.Error())
 	default:
 		writeAPIError(w, http.StatusInternalServerError, err.Error())
 	}

@@ -44,7 +44,19 @@ func main() {
 	defer cleanup()
 
 	costingService := service.NewCostingService(settingsRepo, chatRepo, calculationRepo)
-	apiHandler := handler.NewAPIHandler(costingService)
+	deepSeekClient, err := service.NewDeepSeekClient(service.DeepSeekConfig{
+		APIKey:        cfg.DeepSeekAPIKey,
+		APIEndpoint:   cfg.DeepSeekAPIEndpoint,
+		Model:         cfg.DeepSeekModel,
+		Timeout:       time.Duration(cfg.DeepSeekTimeoutSec) * time.Second,
+		ConnectTimout: 10 * time.Second,
+		MaxRetries:    cfg.DeepSeekMaxRetries,
+	})
+	if err != nil {
+		log.Fatalf("Ошибка инициализации DeepSeek клиента: %v", err)
+	}
+
+	apiHandler := handler.NewAPIHandler(costingService, deepSeekClient)
 	apiHandler.Register(mux)
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {

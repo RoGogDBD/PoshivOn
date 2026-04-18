@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { checkAuthStatus, fetchAuthProfile, logout } from "../utils/yandexAuth.js";
 import {
+  analyzeImageWithAI,
   calculateInChat,
   createChat,
   deleteChat,
@@ -134,6 +135,15 @@ const createDefaultOrderForm = (settings = defaultSettings) => ({
   operation_counts: Object.fromEntries(Object.keys(settings.operations).map((name) => [name, 0])),
 });
 
+const createDefaultAnalysisForm = (settings = defaultSettings) => ({
+  garment_type: Object.keys(settings.garments)[0] || "",
+  material_type: Object.keys(settings.materials)[0] || "",
+  urgency: Object.keys(settings.urgency)[0] || "Стандарт",
+  market_segment: Object.keys(settings.market_bands)[1] || Object.keys(settings.market_bands)[0] || "",
+  quantity: 1,
+  comment: "",
+});
+
 const settingsSectionClass =
   "rounded-[28px] border p-5 shadow-[0_20px_55px_var(--settings-card-shadow)] backdrop-blur-xl [background:var(--settings-card-bg)] [border-color:var(--settings-card-border)] sm:p-6";
 
@@ -184,6 +194,7 @@ const Panel = () => {
   const [history, setHistory] = useState([]);
   const [historyStatus, setHistoryStatus] = useState("idle");
   const [orderForm, setOrderForm] = useState(createDefaultOrderForm(defaultSettings));
+  const [analysisForm, setAnalysisForm] = useState(createDefaultAnalysisForm(defaultSettings));
   const [calcNotice, setCalcNotice] = useState("");
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [isCreatingChat, setIsCreatingChat] = useState(false);
@@ -192,6 +203,8 @@ const Panel = () => {
   const [analysisImage, setAnalysisImage] = useState(null);
   const [analysisPreviewURL, setAnalysisPreviewURL] = useState("");
   const [analysisNotice, setAnalysisNotice] = useState("");
+  const [analysisResult, setAnalysisResult] = useState(null);
+  const [isAnalyzingImage, setIsAnalyzingImage] = useState(false);
   const imageInputRef = useRef(null);
 
   const userID = profile?.login || "";
@@ -250,6 +263,7 @@ const Panel = () => {
         const nextSettings = normalizeSettings(loaded);
         setSettings(nextSettings);
         setOrderForm((current) => syncOrderForm(current, nextSettings));
+        setAnalysisForm((current) => syncAnalysisForm(current, nextSettings));
       } catch (error) {
         if (!isActive) {
           return;
@@ -509,6 +523,10 @@ const Panel = () => {
     setOrderForm((current) => ({ ...current, [key]: value }));
   };
 
+  const handleAnalysisFormChange = (key, value) => {
+    setAnalysisForm((current) => ({ ...current, [key]: value }));
+  };
+
   const handleAnalysisImageSelect = (event) => {
     const file = event.target.files?.[0];
     if (!file) {
@@ -523,13 +541,47 @@ const Panel = () => {
 
     setAnalysisImage(file);
     setAnalysisNotice("Изображение загружено локально и готово к анализу после подключения API.");
+    setAnalysisResult(null);
   };
 
   const handleAnalysisImageClear = () => {
     setAnalysisImage(null);
     setAnalysisNotice("");
+    setAnalysisResult(null);
     if (imageInputRef.current) {
       imageInputRef.current.value = "";
+    }
+  };
+
+  const handleAnalyzeImage = async () => {
+    if (!userID) {
+      return;
+    }
+    if (!analysisImage) {
+      setAnalysisNotice("Сначала загрузите изображение.");
+      return;
+    }
+
+    setIsAnalyzingImage(true);
+    setAnalysisNotice("");
+    setAnalysisResult(null);
+    try {
+      const imageDataURL = await readFileAsDataURL(analysisImage);
+      const result = await analyzeImageWithAI(userID, {
+        image_data_url: imageDataURL,
+        garment_type: analysisForm.garment_type,
+        material_type: analysisForm.material_type,
+        market_segment: analysisForm.market_segment,
+        urgency: analysisForm.urgency,
+        quantity: Number(analysisForm.quantity) || 1,
+        comment: analysisForm.comment,
+      });
+      setAnalysisResult(result);
+      setAnalysisNotice("AI-оценка получена.");
+    } catch (error) {
+      setAnalysisNotice(mapPanelError(error));
+    } finally {
+      setIsAnalyzingImage(false);
     }
   };
 
@@ -674,11 +726,20 @@ const Panel = () => {
         {activeSection === "analysis" ? (
           <AnalysisUploadCard
             analysisImage={analysisImage}
+            analysisForm={analysisForm}
             analysisNotice={analysisNotice}
             analysisPreviewURL={analysisPreviewURL}
+            analysisResult={analysisResult}
+            garmentOptions={garmentOptions}
             imageInputRef={imageInputRef}
+            isAnalyzingImage={isAnalyzingImage}
+            marketOptions={marketOptions}
+            materialOptions={materialOptions}
+            onAnalyze={handleAnalyzeImage}
             onClear={handleAnalysisImageClear}
+            onFormChange={handleAnalysisFormChange}
             onSelect={handleAnalysisImageSelect}
+            urgencyOptions={urgencyOptions}
           />
         ) : activeSection === "settings" ? (
           <section className="panel-settings rounded-[32px] border p-5 shadow-[0_28px_80px_var(--settings-shell-shadow)] backdrop-blur-xl [background:var(--settings-shell-bg)] [border-color:var(--settings-shell-border)] sm:p-7">
@@ -1159,11 +1220,20 @@ const DiscountsBlock = ({ settings, handleDiscountChange }) => (
 
 const AnalysisUploadCard = ({
   analysisImage,
+  analysisForm,
   analysisNotice,
   analysisPreviewURL,
+  analysisResult,
+  garmentOptions,
   imageInputRef,
+  isAnalyzingImage,
+  marketOptions,
+  materialOptions,
+  onAnalyze,
   onClear,
+  onFormChange,
   onSelect,
+  urgencyOptions,
 }) => (
   <section className={uploadCardClass}>
     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -1269,6 +1339,140 @@ const AnalysisUploadCard = ({
         )}
       </div>
     </div>
+
+    <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
+      <div className="rounded-[26px] border p-5 [background:color-mix(in_oklab,var(--panel-card)_82%,white)] [border-color:var(--panel-border)]">
+        <div className="mb-4">
+          <h3 className="text-lg font-semibold tracking-[-0.02em] text-[color:var(--panel-text)]">Факторы оценки</h3>
+          <p className="mt-2 text-sm leading-6 text-[color:color-mix(in_oklab,var(--panel-text)_62%,white)]">
+            Эти параметры уточняют оценку для RU рынка: сегмент, тираж, срочность и предполагаемый материал.
+          </p>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="grid gap-2">
+            <span className="text-sm font-medium text-[color:var(--panel-text)]">Изделие</span>
+            <select className="h-11 rounded-2xl border px-4 text-sm [background:color-mix(in_oklab,var(--panel-card)_92%,white)] [border-color:var(--panel-border)]" value={analysisForm.garment_type} onChange={(event) => onFormChange("garment_type", event.target.value)}>
+              {garmentOptions.map((name) => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="grid gap-2">
+            <span className="text-sm font-medium text-[color:var(--panel-text)]">Материал</span>
+            <select className="h-11 rounded-2xl border px-4 text-sm [background:color-mix(in_oklab,var(--panel-card)_92%,white)] [border-color:var(--panel-border)]" value={analysisForm.material_type} onChange={(event) => onFormChange("material_type", event.target.value)}>
+              {materialOptions.map((name) => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="grid gap-2">
+            <span className="text-sm font-medium text-[color:var(--panel-text)]">Сегмент рынка</span>
+            <select className="h-11 rounded-2xl border px-4 text-sm [background:color-mix(in_oklab,var(--panel-card)_92%,white)] [border-color:var(--panel-border)]" value={analysisForm.market_segment} onChange={(event) => onFormChange("market_segment", event.target.value)}>
+              {marketOptions.map((name) => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="grid gap-2">
+            <span className="text-sm font-medium text-[color:var(--panel-text)]">Срочность</span>
+            <select className="h-11 rounded-2xl border px-4 text-sm [background:color-mix(in_oklab,var(--panel-card)_92%,white)] [border-color:var(--panel-border)]" value={analysisForm.urgency} onChange={(event) => onFormChange("urgency", event.target.value)}>
+              {urgencyOptions.map((name) => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="grid gap-2 md:col-span-2">
+            <span className="text-sm font-medium text-[color:var(--panel-text)]">Размер партии</span>
+            <input className="h-11 rounded-2xl border px-4 text-sm [background:color-mix(in_oklab,var(--panel-card)_92%,white)] [border-color:var(--panel-border)]" type="number" min="1" value={analysisForm.quantity} onChange={(event) => onFormChange("quantity", Number(event.target.value) || 1)} />
+          </label>
+          <label className="grid gap-2 md:col-span-2">
+            <span className="text-sm font-medium text-[color:var(--panel-text)]">Комментарий для AI</span>
+            <textarea className="min-h-[108px] rounded-[22px] border px-4 py-3 text-sm [background:color-mix(in_oklab,var(--panel-card)_92%,white)] [border-color:var(--panel-border)]" value={analysisForm.comment} onChange={(event) => onFormChange("comment", event.target.value)} placeholder="Например: нужна оценка для российского среднего сегмента, ориентир на малый тираж, важна аккуратная отделка." />
+          </label>
+        </div>
+        <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+          <button className="inline-flex min-h-11 items-center justify-center rounded-2xl border px-5 text-sm font-semibold text-white transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60 [background:linear-gradient(135deg,#0f172a_0%,#334155_100%)] [border-color:rgba(15,23,42,0.2)]" type="button" onClick={onAnalyze} disabled={!analysisImage || isAnalyzingImage}>
+            {isAnalyzingImage ? "Анализируем..." : "Оценить через DeepSeek"}
+          </button>
+          <p className="text-sm leading-6 text-[color:color-mix(in_oklab,var(--panel-text)_62%,white)]">
+            Ключ API остаётся на сервере. На клиент уходит только результат оценки.
+          </p>
+        </div>
+      </div>
+
+      <div className="rounded-[26px] border p-5 [background:color-mix(in_oklab,var(--panel-card)_82%,white)] [border-color:var(--panel-border)]">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-semibold tracking-[-0.02em] text-[color:var(--panel-text)]">Результат оценки</h3>
+            <p className="mt-2 text-sm leading-6 text-[color:color-mix(in_oklab,var(--panel-text)_62%,white)]">
+              DeepSeek вернёт ориентировочный диапазон стоимости по изображению и факторам.
+            </p>
+          </div>
+          {analysisResult ? (
+            <span className="rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] [background:color-mix(in_oklab,var(--panel-accent)_8%,white)] [border-color:color-mix(in_oklab,var(--panel-accent)_18%,var(--panel-border))] text-[color:var(--panel-accent)]">
+              {formatConfidence(analysisResult.confidence)}
+            </span>
+          ) : null}
+        </div>
+
+        {analysisResult ? (
+          <div className="grid gap-4">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-[22px] border p-4 [background:color-mix(in_oklab,var(--panel-card)_92%,white)] [border-color:var(--panel-border)]">
+                <span className="block text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:color-mix(in_oklab,var(--panel-text)_55%,white)]">За единицу</span>
+                <strong className="mt-2 block text-xl text-[color:var(--panel-text)]">{formatMoney(analysisResult.estimated_unit_price_mid_rub)} ₽</strong>
+                <p className="mt-2 text-xs leading-5 text-[color:color-mix(in_oklab,var(--panel-text)_62%,white)]">
+                  Диапазон: {formatMoney(analysisResult.estimated_unit_price_min_rub)} - {formatMoney(analysisResult.estimated_unit_price_max_rub)} ₽
+                </p>
+              </div>
+              <div className="rounded-[22px] border p-4 [background:color-mix(in_oklab,var(--panel-card)_92%,white)] [border-color:var(--panel-border)]">
+                <span className="block text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:color-mix(in_oklab,var(--panel-text)_55%,white)]">За партию</span>
+                <strong className="mt-2 block text-xl text-[color:var(--panel-text)]">{formatMoney(analysisResult.estimated_total_mid_rub)} ₽</strong>
+                <p className="mt-2 text-xs leading-5 text-[color:color-mix(in_oklab,var(--panel-text)_62%,white)]">
+                  Диапазон: {formatMoney(analysisResult.estimated_total_min_rub)} - {formatMoney(analysisResult.estimated_total_max_rub)} ₽
+                </p>
+              </div>
+              <div className="rounded-[22px] border p-4 [background:color-mix(in_oklab,var(--panel-card)_92%,white)] [border-color:var(--panel-border)]">
+                <span className="block text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:color-mix(in_oklab,var(--panel-text)_55%,white)]">Сегмент</span>
+                <strong className="mt-2 block text-xl text-[color:var(--panel-text)]">{analysisResult.suggested_market_segment || "Не указан"}</strong>
+                <p className="mt-2 text-xs leading-5 text-[color:color-mix(in_oklab,var(--panel-text)_62%,white)]">
+                  Модель: {analysisResult.model || "deepseek-chat"}
+                </p>
+              </div>
+            </div>
+            <div className="rounded-[22px] border p-4 [background:color-mix(in_oklab,var(--panel-card)_90%,white)] [border-color:var(--panel-border)]">
+              <strong className="block text-sm font-semibold text-[color:var(--panel-text)]">{analysisResult.product_summary}</strong>
+              <p className="mt-2 text-sm leading-6 text-[color:color-mix(in_oklab,var(--panel-text)_68%,white)]">{analysisResult.reasoning}</p>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="rounded-[22px] border p-4 [background:color-mix(in_oklab,var(--panel-card)_90%,white)] [border-color:var(--panel-border)]">
+                <strong className="block text-sm font-semibold text-[color:var(--panel-text)]">Факторы</strong>
+                <ul className="mt-3 grid gap-2 text-sm leading-6 text-[color:color-mix(in_oklab,var(--panel-text)_68%,white)]">
+                  {(analysisResult.factors || []).map((item, index) => (
+                    <li key={`${item}-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+              <div className="rounded-[22px] border p-4 [background:color-mix(in_oklab,var(--panel-card)_90%,white)] [border-color:var(--panel-border)]">
+                <strong className="block text-sm font-semibold text-[color:var(--panel-text)]">Допущения</strong>
+                <ul className="mt-3 grid gap-2 text-sm leading-6 text-[color:color-mix(in_oklab,var(--panel-text)_68%,white)]">
+                  {(analysisResult.assumptions || []).map((item, index) => (
+                    <li key={`${item}-${index}`}>• {item}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+            <p className="text-xs leading-5 text-[color:color-mix(in_oklab,var(--panel-text)_55%,white)]">{analysisResult.disclaimer}</p>
+          </div>
+        ) : (
+          <div className="flex min-h-[280px] items-center justify-center rounded-[22px] border border-dashed px-6 text-center [background:color-mix(in_oklab,var(--panel-card)_90%,white)] [border-color:color-mix(in_oklab,var(--panel-accent)_16%,var(--panel-border))]">
+            <p className="max-w-sm text-sm leading-6 text-[color:color-mix(in_oklab,var(--panel-text)_62%,white)]">
+              После загрузки изображения и запуска анализа здесь появится ориентировочная стоимость для российского рынка, диапазон по партии и пояснение факторов.
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
   </section>
 );
 
@@ -1310,6 +1514,16 @@ const syncOrderForm = (current, settings) => ({
   ),
 });
 
+const syncAnalysisForm = (current, settings) => ({
+  ...current,
+  garment_type: settings.garments[current.garment_type] ? current.garment_type : Object.keys(settings.garments)[0] || "",
+  material_type: settings.materials[current.material_type] ? current.material_type : Object.keys(settings.materials)[0] || "",
+  urgency: settings.urgency[current.urgency] ? current.urgency : Object.keys(settings.urgency)[0] || "",
+  market_segment: settings.market_bands[current.market_segment] ? current.market_segment : Object.keys(settings.market_bands)[0] || "",
+  quantity: Math.max(1, Number(current.quantity) || 1),
+  comment: current.comment || "",
+});
+
 const normalizeCalculatorMode = (value) => (value === "quick" ? "quick" : "masterpiece");
 
 const formatMoney = (value) => new Intl.NumberFormat("ru-RU").format(Number(value) || 0);
@@ -1329,6 +1543,25 @@ const formatFileSize = (value) => {
   }
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 };
+
+const formatConfidence = (value) => {
+  switch (String(value || "").toLowerCase()) {
+    case "high":
+      return "Высокая";
+    case "low":
+      return "Низкая";
+    default:
+      return "Средняя";
+  }
+};
+
+const readFileAsDataURL = (file) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("Не удалось прочитать изображение."));
+    reader.readAsDataURL(file);
+  });
 
 const marketStatusLabel = (status) => {
   switch (status) {

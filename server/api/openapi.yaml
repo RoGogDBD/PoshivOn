@@ -150,6 +150,47 @@ paths:
                       $ref: '#/components/schemas/CalculationResult'
                 required: [items]
 
+  /api/v1/users/{userID}/image-analysis:
+    parameters:
+      - in: path
+        name: userID
+        required: true
+        schema:
+          type: string
+    post:
+      summary: Analyze garment image with DeepSeek and estimate RU-market price
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                image_data_url:
+                  type: string
+                garment_type:
+                  type: string
+                material_type:
+                  type: string
+                market_segment:
+                  type: string
+                urgency:
+                  type: string
+                quantity:
+                  type: integer
+                comment:
+                  type: string
+              required: [image_data_url, quantity]
+      responses:
+        '200':
+          description: Image analysis result
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          description: DeepSeek rate limit exceeded
+        '503':
+          description: DeepSeek integration unavailable
+
 components:
   schemas:
     BatchDiscount:
