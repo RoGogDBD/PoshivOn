@@ -1391,7 +1391,7 @@ const AnalysisUploadCard = ({
           </label>
         </div>
         <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-          <button className="inline-flex min-h-11 items-center justify-center rounded-2xl border px-5 text-sm font-semibold text-white transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60 [background:linear-gradient(135deg,#0f172a_0%,#334155_100%)] [border-color:rgba(15,23,42,0.2)]" type="button" onClick={onAnalyze} disabled={!analysisImage || isAnalyzingImage}>
+          <button className="inline-flex min-h-11 items-center justify-center rounded-2xl border px-5 text-sm font-semibold text-white transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60 [background:linear-gradient(135deg,#0f172a_0%,#334155_100%)] [border-color:rgba(15,23,42,0.2)]" type="button" onClick={onAnalyze} disabled={isAnalyzingImage}>
             {isAnalyzingImage ? "Анализируем..." : "Оценить через DeepSeek"}
           </button>
           <p className="text-sm leading-6 text-[color:color-mix(in_oklab,var(--panel-text)_62%,white)]">
