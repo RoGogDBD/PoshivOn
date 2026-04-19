@@ -331,6 +331,8 @@ func (r *PostgresRepository) AppendCalculation(ctx context.Context, result servi
 		"market_segment":   result.MarketSegment,
 		"quantity":         result.Quantity,
 		"fittings":         result.Fittings,
+		"is_custom_figure": result.IsCustomFigure,
+		"is_child":         result.IsChild,
 		"comment":          result.Comment,
 	})
 	if err != nil {
@@ -475,6 +477,8 @@ func decodeOrderSnapshot(raw string, item *service.CalculationResult) error {
 		CalculationMode string `json:"calculation_mode"`
 		MarketSegment   string `json:"market_segment"`
 		Fittings        int    `json:"fittings"`
+		IsCustomFigure  bool   `json:"is_custom_figure"`
+		IsChild         bool   `json:"is_child"`
 		Comment         string `json:"comment"`
 	}
 	if raw == "" {
@@ -486,6 +490,8 @@ func decodeOrderSnapshot(raw string, item *service.CalculationResult) error {
 	item.CalculationMode = payload.CalculationMode
 	item.MarketSegment = payload.MarketSegment
 	item.Fittings = payload.Fittings
+	item.IsCustomFigure = payload.IsCustomFigure
+	item.IsChild = payload.IsChild
 	item.Comment = payload.Comment
 	return nil
 }

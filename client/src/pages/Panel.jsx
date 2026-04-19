@@ -135,19 +135,6 @@ const createDefaultOrderForm = (settings = defaultSettings) => ({
   operation_counts: Object.fromEntries(Object.keys(settings.operations).map((name) => [name, 0])),
 });
 
-const createDefaultAnalysisForm = (settings = defaultSettings) => ({
-  garment_type: Object.keys(settings.garments)[0] || "",
-  material_type: Object.keys(settings.materials)[0] || "",
-  urgency: Object.keys(settings.urgency)[0] || "Стандарт",
-  market_segment: Object.keys(settings.market_bands)[1] || Object.keys(settings.market_bands)[0] || "",
-  quantity: 1,
-  fittings: 1,
-  is_custom_figure: false,
-  is_child: false,
-  comment: "",
-  operation_counts: Object.fromEntries(Object.keys(settings.operations).map((name) => [name, 0])),
-});
-
 const settingsSectionClass =
   "rounded-[28px] border p-5 shadow-[0_20px_55px_var(--settings-card-shadow)] backdrop-blur-xl [background:var(--settings-card-bg)] [border-color:var(--settings-card-border)] sm:p-6";
 
@@ -181,9 +168,6 @@ const SettingsField = ({ label, children, className = "" }) => (
 
 const SettingsNumberInput = (props) => <input className={settingsInputClass} type="number" {...props} />;
 
-const analysisCardClass =
-  "rounded-[28px] border p-5 shadow-[0_20px_55px_rgba(15,23,42,0.08)] backdrop-blur-xl [background:color-mix(in_oklab,var(--panel-card)_94%,white)] [border-color:var(--panel-border)] sm:p-6";
-
 const Panel = () => {
   const [status, setStatus] = useState("checking");
   const [profile, setProfile] = useState(null);
@@ -198,15 +182,11 @@ const Panel = () => {
   const [history, setHistory] = useState([]);
   const [historyStatus, setHistoryStatus] = useState("idle");
   const [orderForm, setOrderForm] = useState(createDefaultOrderForm(defaultSettings));
-  const [analysisForm, setAnalysisForm] = useState(createDefaultAnalysisForm(defaultSettings));
   const [calcNotice, setCalcNotice] = useState("");
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [isCreatingChat, setIsCreatingChat] = useState(false);
   const [isCalculating, setIsCalculating] = useState(false);
   const [isDeletingChatID, setIsDeletingChatID] = useState("");
-  const [analysisNotice, setAnalysisNotice] = useState("");
-  const [analysisResult, setAnalysisResult] = useState(null);
-  const [isAnalyzingImage, setIsAnalyzingImage] = useState(false);
 
   const userID = profile?.login || "";
 
@@ -264,7 +244,6 @@ const Panel = () => {
         const nextSettings = normalizeSettings(loaded);
         setSettings(nextSettings);
         setOrderForm((current) => syncOrderForm(current, nextSettings));
-        setAnalysisForm((current) => syncAnalysisForm(current, nextSettings));
       } catch (error) {
         if (!isActive) {
           return;
@@ -510,52 +489,6 @@ const Panel = () => {
     setOrderForm((current) => ({ ...current, [key]: value }));
   };
 
-  const handleAnalysisFormChange = (key, value) => {
-    setAnalysisForm((current) => ({ ...current, [key]: value }));
-  };
-
-  const handleAnalysisOperationCountChange = (name, value) => {
-    setAnalysisForm((current) => ({
-      ...current,
-      operation_counts: {
-        ...current.operation_counts,
-        [name]: Math.max(0, Number(value) || 0),
-      },
-    }));
-  };
-
-  const handleAnalyzeImage = async () => {
-    if (!userID) {
-      return;
-    }
-
-    setIsAnalyzingImage(true);
-    setAnalysisNotice("");
-    setAnalysisResult(null);
-    try {
-      const result = await analyzeMarketWithAI(userID, {
-        garment_type: analysisForm.garment_type,
-        material_type: analysisForm.material_type,
-        market_segment: analysisForm.market_segment,
-        urgency: analysisForm.urgency,
-        quantity: Number(analysisForm.quantity) || 1,
-        fittings: Number(analysisForm.fittings) || 0,
-        is_custom_figure: Boolean(analysisForm.is_custom_figure),
-        is_child: Boolean(analysisForm.is_child),
-        comment: analysisForm.comment,
-        operation_counts: Object.fromEntries(
-          Object.entries(analysisForm.operation_counts || {}).filter(([, count]) => Number(count) > 0)
-        ),
-      });
-      setAnalysisResult(result);
-      setAnalysisNotice("AI-оценка получена.");
-    } catch (error) {
-      setAnalysisNotice(mapPanelError(error));
-    } finally {
-      setIsAnalyzingImage(false);
-    }
-  };
-
   const handleOperationCountChange = (name, value) => {
     setOrderForm((current) => ({
       ...current,
@@ -590,21 +523,34 @@ const Panel = () => {
         ),
       };
       const result = await calculateInChat(userID, activeChatID, payload);
-      setHistory((current) => [...current, result]);
+      let nextResult = result;
+      let nextNotice = `Расчёт выполнен. Итог: ${formatMoney(result.total)} ₽`;
+
+      if (normalizeCalculatorMode(result.calculation_mode) === "masterpiece") {
+        try {
+          const aiFeedback = await analyzeMarketWithAI(userID, buildAIPayloadFromCalculation(result));
+          nextResult = { ...result, ai_feedback: aiFeedback };
+          nextNotice = `${nextNotice}. Оценка DeepSeek добавлена.`;
+        } catch (error) {
+          nextNotice = `${nextNotice}. Оценку DeepSeek получить не удалось: ${mapPanelError(error)}`;
+        }
+      }
+
+      setHistory((current) => [...current, nextResult]);
       setChats((current) =>
         current
           .map((chat) =>
             chat.id === activeChatID
               ? {
                   ...chat,
-                  updated_at: result.created_at,
+                  updated_at: nextResult.created_at,
                   calculations_count: (chat.calculations_count || 0) + 1,
                 }
               : chat
           )
           .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))
       );
-      setCalcNotice(`Расчёт выполнен. Итог: ${formatMoney(result.total)} ₽`);
+      setCalcNotice(nextNotice);
     } catch (error) {
       setCalcNotice(mapPanelError(error));
     } finally {
@@ -633,18 +579,6 @@ const Panel = () => {
             onClick={() => setActiveSection("workspace")}
           >
             Чаты и расчёты
-          </button>
-          <button
-            className={`panel__link ${activeSection === "analysis" ? "panel__link--active" : ""}`}
-            type="button"
-            onClick={() => setActiveSection("analysis")}
-          >
-            <span className="flex items-center justify-between gap-3">
-              <span>Анализ изображений</span>
-              <span className="rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] [background:rgba(255,255,255,0.12)] [border-color:rgba(255,255,255,0.18)]">
-                AI
-              </span>
-            </span>
           </button>
           <button
             className={`panel__link ${activeSection === "settings" ? "panel__link--active" : ""}`}
@@ -694,23 +628,7 @@ const Panel = () => {
           </article>
         </section>
 
-        {activeSection === "analysis" ? (
-          <AnalysisFeedbackCard
-            analysisForm={analysisForm}
-            analysisNotice={analysisNotice}
-            analysisResult={analysisResult}
-            garmentOptions={garmentOptions}
-            isAnalyzingImage={isAnalyzingImage}
-            marketOptions={marketOptions}
-            materialOptions={materialOptions}
-            onAnalyze={handleAnalyzeImage}
-            onFormChange={handleAnalysisFormChange}
-            onOperationCountChange={handleAnalysisOperationCountChange}
-            operationOptions={operationOptions}
-            settings={settings}
-            urgencyOptions={urgencyOptions}
-          />
-        ) : activeSection === "settings" ? (
+        {activeSection === "settings" ? (
           <section className="panel-settings rounded-[32px] border p-5 shadow-[0_28px_80px_var(--settings-shell-shadow)] backdrop-blur-xl [background:var(--settings-shell-bg)] [border-color:var(--settings-shell-border)] sm:p-7">
             <div className="mb-6 flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
               <div className="max-w-3xl">
@@ -1137,7 +1055,7 @@ const Panel = () => {
                               <span>Риск: {formatMoney(item.risk_reserve_per_unit)} ₽</span>
                               <span>Себестоимость: {formatMoney(item.cost_price_per_unit)} ₽</span>
                             </div>
-                            <ul className="panel-history__list">
+                          <ul className="panel-history__list">
                               {item.applied_operations?.length > 0 ? item.applied_operations.map((operation) => (
                                 <li key={`${item.created_at}-${operation.name}`}>
                                   {operation.name} × {operation.count}: +{operation.additional_minutes} мин, +{formatMoney(operation.additional_material_cost)} ₽
@@ -1146,6 +1064,7 @@ const Panel = () => {
                               <li>Скидка: {item.discount_percent}% ({formatMoney(item.discount_amount)} ₽)</li>
                               <li>Минуты: база {item.base_minutes_per_unit}, операции {item.operation_minutes_per_unit}, примерки {item.fitting_minutes_per_unit}, итог {item.adjusted_minutes_per_unit}</li>
                             </ul>
+                            <CalculationAIFeedback feedback={item.ai_feedback} />
                           </>
                         )}
                       </article>
@@ -1187,213 +1106,54 @@ const DiscountsBlock = ({ settings, handleDiscountChange }) => (
   </SettingsSection>
 );
 
-const AnalysisFeedbackCard = ({
-  analysisForm,
-  analysisNotice,
-  analysisResult,
-  garmentOptions,
-  isAnalyzingImage,
-  marketOptions,
-  materialOptions,
-  onAnalyze,
-  onFormChange,
-  onOperationCountChange,
-  operationOptions,
-  settings,
-  urgencyOptions,
-}) => (
-  <section className={analysisCardClass}>
-    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-      <div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="inline-flex rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-[color:var(--panel-accent)] [background:color-mix(in_oklab,var(--panel-accent)_10%,transparent)] [border-color:color-mix(in_oklab,var(--panel-accent)_18%,var(--panel-border))]">
-            Рыночная аналитика
-          </span>
-          <span className="inline-flex -rotate-2 rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-[0.22em] text-white shadow-[0_10px_24px_rgba(15,23,42,0.16)] [background:linear-gradient(135deg,#111827_0%,#334155_100%)] [border-color:rgba(255,255,255,0.12)]">
-            AI
-          </span>
-        </div>
-        <h2 className="mt-4 text-[26px] font-semibold tracking-[-0.03em] text-[color:var(--panel-text)]">Фидбек по сценарию расчёта</h2>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-[color:color-mix(in_oklab,var(--panel-text)_62%,white)]">
-          DeepSeek анализирует ваши параметры расчёта, пользовательские настройки ценообразования и даёт фидбек по RU рынку: диапазон цены, позиционирование, риски и рекомендации.
-        </p>
-      </div>
-      <div className="rounded-[22px] border px-4 py-3 text-sm [background:color-mix(in_oklab,var(--panel-card)_76%,white)] [border-color:var(--panel-border)]">
-        <span className="block text-[11px] font-semibold uppercase tracking-[0.18em] text-[color:color-mix(in_oklab,var(--panel-text)_55%,white)]">Статус</span>
-        <strong className="mt-1 block text-[color:var(--panel-text)]">{analysisResult ? "Фидбек получен" : "Ожидает запуск"}</strong>
-      </div>
-    </div>
+const CalculationAIFeedback = ({ feedback }) => {
+  if (!feedback) {
+    return null;
+  }
 
-    <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
-      <div className="rounded-[26px] border p-5 [background:color-mix(in_oklab,var(--panel-card)_82%,white)] [border-color:var(--panel-border)]">
-        <div className="mb-4">
-          <h3 className="text-lg font-semibold tracking-[-0.02em] text-[color:var(--panel-text)]">Параметры сценария</h3>
-          <p className="mt-2 text-sm leading-6 text-[color:color-mix(in_oklab,var(--panel-text)_62%,white)]">
-            Эти данные и ваши пресеты ценообразования уходят в DeepSeek как текстовый сценарий для рыночной аналитики.
+  return (
+    <div className="mt-4 rounded-[22px] border p-4 [background:color-mix(in_oklab,var(--panel-card)_90%,white)] [border-color:color-mix(in_oklab,var(--panel-accent)_16%,var(--panel-border))]">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <strong className="block text-sm font-semibold text-[color:var(--panel-text)]">Оценка DeepSeek</strong>
+          <p className="mt-1 text-xs leading-5 text-[color:color-mix(in_oklab,var(--panel-text)_62%,white)]">
+            Финальный расчет проверен на попадание в рынок и адекватность цены.
           </p>
         </div>
-        <div className="grid gap-4 md:grid-cols-2">
-          <label className="grid gap-2">
-            <span className="text-sm font-medium text-[color:var(--panel-text)]">Изделие</span>
-            <select className="h-11 rounded-2xl border px-4 text-sm [background:color-mix(in_oklab,var(--panel-card)_92%,white)] [border-color:var(--panel-border)]" value={analysisForm.garment_type} onChange={(event) => onFormChange("garment_type", event.target.value)}>
-              {garmentOptions.map((name) => (
-                <option key={name} value={name}>{name}</option>
-              ))}
-            </select>
-          </label>
-          <label className="grid gap-2">
-            <span className="text-sm font-medium text-[color:var(--panel-text)]">Материал</span>
-            <select className="h-11 rounded-2xl border px-4 text-sm [background:color-mix(in_oklab,var(--panel-card)_92%,white)] [border-color:var(--panel-border)]" value={analysisForm.material_type} onChange={(event) => onFormChange("material_type", event.target.value)}>
-              {materialOptions.map((name) => (
-                <option key={name} value={name}>{name}</option>
-              ))}
-            </select>
-          </label>
-          <label className="grid gap-2">
-            <span className="text-sm font-medium text-[color:var(--panel-text)]">Сегмент рынка</span>
-            <select className="h-11 rounded-2xl border px-4 text-sm [background:color-mix(in_oklab,var(--panel-card)_92%,white)] [border-color:var(--panel-border)]" value={analysisForm.market_segment} onChange={(event) => onFormChange("market_segment", event.target.value)}>
-              {marketOptions.map((name) => (
-                <option key={name} value={name}>{name}</option>
-              ))}
-            </select>
-          </label>
-          <label className="grid gap-2">
-            <span className="text-sm font-medium text-[color:var(--panel-text)]">Срочность</span>
-            <select className="h-11 rounded-2xl border px-4 text-sm [background:color-mix(in_oklab,var(--panel-card)_92%,white)] [border-color:var(--panel-border)]" value={analysisForm.urgency} onChange={(event) => onFormChange("urgency", event.target.value)}>
-              {urgencyOptions.map((name) => (
-                <option key={name} value={name}>{name}</option>
-              ))}
-            </select>
-          </label>
-          <label className="grid gap-2 md:col-span-2">
-            <span className="text-sm font-medium text-[color:var(--panel-text)]">Размер партии</span>
-            <input className="h-11 rounded-2xl border px-4 text-sm [background:color-mix(in_oklab,var(--panel-card)_92%,white)] [border-color:var(--panel-border)]" type="number" min="1" value={analysisForm.quantity} onChange={(event) => onFormChange("quantity", Number(event.target.value) || 1)} />
-          </label>
-          <label className="grid gap-2">
-            <span className="text-sm font-medium text-[color:var(--panel-text)]">Примерки</span>
-            <input className="h-11 rounded-2xl border px-4 text-sm [background:color-mix(in_oklab,var(--panel-card)_92%,white)] [border-color:var(--panel-border)]" type="number" min="0" value={analysisForm.fittings} onChange={(event) => onFormChange("fittings", Number(event.target.value) || 0)} />
-          </label>
-          <div className="grid gap-3">
-            <label className="flex items-center gap-3 rounded-[20px] border px-4 py-3 text-sm [background:color-mix(in_oklab,var(--panel-card)_92%,white)] [border-color:var(--panel-border)]">
-              <input type="checkbox" checked={analysisForm.is_custom_figure} onChange={(event) => onFormChange("is_custom_figure", event.target.checked)} />
-              <span>Нестандартная фигура</span>
-            </label>
-            <label className="flex items-center gap-3 rounded-[20px] border px-4 py-3 text-sm [background:color-mix(in_oklab,var(--panel-card)_92%,white)] [border-color:var(--panel-border)]">
-              <input type="checkbox" checked={analysisForm.is_child} onChange={(event) => onFormChange("is_child", event.target.checked)} />
-              <span>Детское изделие</span>
-            </label>
-          </div>
-          <div className="grid gap-3 md:col-span-2">
-            <span className="text-sm font-medium text-[color:var(--panel-text)]">Усложняющие операции</span>
-            <div className="grid gap-3 md:grid-cols-2">
-              {operationOptions.map((name) => (
-                <label key={name} className="grid gap-2 rounded-[20px] border p-4 [background:color-mix(in_oklab,var(--panel-card)_92%,white)] [border-color:var(--panel-border)]">
-                  <span className="text-sm font-medium text-[color:var(--panel-text)]">{name}</span>
-                  <input className="h-11 rounded-2xl border px-4 text-sm [background:color-mix(in_oklab,var(--panel-card)_96%,white)] [border-color:var(--panel-border)]" type="number" min="0" value={analysisForm.operation_counts?.[name] || 0} onChange={(event) => onOperationCountChange(name, event.target.value)} />
-                </label>
-              ))}
-            </div>
-          </div>
-          <label className="grid gap-2 md:col-span-2">
-            <span className="text-sm font-medium text-[color:var(--panel-text)]">Комментарий для AI</span>
-            <textarea className="min-h-[108px] rounded-[22px] border px-4 py-3 text-sm [background:color-mix(in_oklab,var(--panel-card)_92%,white)] [border-color:var(--panel-border)]" value={analysisForm.comment} onChange={(event) => onFormChange("comment", event.target.value)} placeholder="Например: бренд хочет оставаться в среднем сегменте, но опасается, что выбранные операции вытолкнут цену вверх." />
-          </label>
-        </div>
-        <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-          <button className="inline-flex min-h-11 items-center justify-center rounded-2xl border px-5 text-sm font-semibold text-white transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60 [background:linear-gradient(135deg,#0f172a_0%,#334155_100%)] [border-color:rgba(15,23,42,0.2)]" type="button" onClick={onAnalyze} disabled={isAnalyzingImage}>
-            {isAnalyzingImage ? "Анализируем..." : "Получить AI-фидбек"}
-          </button>
-          <p className="text-sm leading-6 text-[color:color-mix(in_oklab,var(--panel-text)_62%,white)]">
-            Ключ API остаётся на сервере. В модель уходит только текстовое описание сценария.
+        <span className="rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] [background:color-mix(in_oklab,var(--panel-accent)_8%,white)] [border-color:color-mix(in_oklab,var(--panel-accent)_18%,var(--panel-border))] text-[color:var(--panel-accent)]">
+          {formatConfidence(feedback.confidence)}
+        </span>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="rounded-[18px] border p-3 [background:color-mix(in_oklab,var(--panel-card)_94%,white)] [border-color:var(--panel-border)]">
+          <span className="block text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:color-mix(in_oklab,var(--panel-text)_55%,white)]">За единицу</span>
+          <strong className="mt-2 block text-lg text-[color:var(--panel-text)]">{formatMoney(feedback.estimated_unit_price_mid_rub)} ₽</strong>
+          <p className="mt-1 text-xs leading-5 text-[color:color-mix(in_oklab,var(--panel-text)_62%,white)]">
+            {formatMoney(feedback.estimated_unit_price_min_rub)} - {formatMoney(feedback.estimated_unit_price_max_rub)} ₽
           </p>
         </div>
-        {analysisNotice ? <p className="mt-4 text-sm leading-6 text-[color:color-mix(in_oklab,var(--panel-text)_68%,white)]">{analysisNotice}</p> : null}
+        <div className="rounded-[18px] border p-3 [background:color-mix(in_oklab,var(--panel-card)_94%,white)] [border-color:var(--panel-border)]">
+          <span className="block text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:color-mix(in_oklab,var(--panel-text)_55%,white)]">За партию</span>
+          <strong className="mt-2 block text-lg text-[color:var(--panel-text)]">{formatMoney(feedback.estimated_total_mid_rub)} ₽</strong>
+          <p className="mt-1 text-xs leading-5 text-[color:color-mix(in_oklab,var(--panel-text)_62%,white)]">
+            {formatMoney(feedback.estimated_total_min_rub)} - {formatMoney(feedback.estimated_total_max_rub)} ₽
+          </p>
+        </div>
+        <div className="rounded-[18px] border p-3 [background:color-mix(in_oklab,var(--panel-card)_94%,white)] [border-color:var(--panel-border)]">
+          <span className="block text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:color-mix(in_oklab,var(--panel-text)_55%,white)]">Позиция</span>
+          <strong className="mt-2 block text-lg text-[color:var(--panel-text)]">{feedback.suggested_market_segment || "Не указана"}</strong>
+          <p className="mt-1 text-xs leading-5 text-[color:color-mix(in_oklab,var(--panel-text)_62%,white)]">{formatMarketPosition(feedback.price_position)}</p>
+        </div>
       </div>
 
-      <div className="rounded-[26px] border p-5 [background:color-mix(in_oklab,var(--panel-card)_82%,white)] [border-color:var(--panel-border)]">
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <div>
-            <h3 className="text-lg font-semibold tracking-[-0.02em] text-[color:var(--panel-text)]">Результат оценки</h3>
-            <p className="mt-2 text-sm leading-6 text-[color:color-mix(in_oklab,var(--panel-text)_62%,white)]">
-              DeepSeek вернёт диапазон цены, позицию относительно выбранного рынка и практические рекомендации.
-            </p>
-          </div>
-          {analysisResult ? (
-            <span className="rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] [background:color-mix(in_oklab,var(--panel-accent)_8%,white)] [border-color:color-mix(in_oklab,var(--panel-accent)_18%,var(--panel-border))] text-[color:var(--panel-accent)]">
-              {formatConfidence(analysisResult.confidence)}
-            </span>
-          ) : null}
-        </div>
-
-        {analysisResult ? (
-          <div className="grid gap-4">
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-[22px] border p-4 [background:color-mix(in_oklab,var(--panel-card)_92%,white)] [border-color:var(--panel-border)]">
-                <span className="block text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:color-mix(in_oklab,var(--panel-text)_55%,white)]">За единицу</span>
-                <strong className="mt-2 block text-xl text-[color:var(--panel-text)]">{formatMoney(analysisResult.estimated_unit_price_mid_rub)} ₽</strong>
-                <p className="mt-2 text-xs leading-5 text-[color:color-mix(in_oklab,var(--panel-text)_62%,white)]">
-                  Диапазон: {formatMoney(analysisResult.estimated_unit_price_min_rub)} - {formatMoney(analysisResult.estimated_unit_price_max_rub)} ₽
-                </p>
-              </div>
-              <div className="rounded-[22px] border p-4 [background:color-mix(in_oklab,var(--panel-card)_92%,white)] [border-color:var(--panel-border)]">
-                <span className="block text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:color-mix(in_oklab,var(--panel-text)_55%,white)]">За партию</span>
-                <strong className="mt-2 block text-xl text-[color:var(--panel-text)]">{formatMoney(analysisResult.estimated_total_mid_rub)} ₽</strong>
-                <p className="mt-2 text-xs leading-5 text-[color:color-mix(in_oklab,var(--panel-text)_62%,white)]">
-                  Диапазон: {formatMoney(analysisResult.estimated_total_min_rub)} - {formatMoney(analysisResult.estimated_total_max_rub)} ₽
-                </p>
-              </div>
-              <div className="rounded-[22px] border p-4 [background:color-mix(in_oklab,var(--panel-card)_92%,white)] [border-color:var(--panel-border)]">
-                <span className="block text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:color-mix(in_oklab,var(--panel-text)_55%,white)]">Сегмент</span>
-                <strong className="mt-2 block text-xl text-[color:var(--panel-text)]">{analysisResult.suggested_market_segment || "Не указан"}</strong>
-                <p className="mt-2 text-xs leading-5 text-[color:color-mix(in_oklab,var(--panel-text)_62%,white)]">
-                  {formatMarketPosition(analysisResult.price_position)} · {analysisResult.model || "deepseek-chat"}
-                </p>
-              </div>
-            </div>
-            <div className="rounded-[22px] border p-4 [background:color-mix(in_oklab,var(--panel-card)_90%,white)] [border-color:var(--panel-border)]">
-              <strong className="block text-sm font-semibold text-[color:var(--panel-text)]">{analysisResult.scenario_summary}</strong>
-              <p className="mt-2 text-sm leading-6 text-[color:color-mix(in_oklab,var(--panel-text)_68%,white)]">{analysisResult.reasoning}</p>
-            </div>
-            <MarketFeedbackChart analysisResult={analysisResult} />
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="rounded-[22px] border p-4 [background:color-mix(in_oklab,var(--panel-card)_90%,white)] [border-color:var(--panel-border)]">
-                <strong className="block text-sm font-semibold text-[color:var(--panel-text)]">Ключевые драйверы</strong>
-                <ul className="mt-3 grid gap-2 text-sm leading-6 text-[color:color-mix(in_oklab,var(--panel-text)_68%,white)]">
-                  {(analysisResult.key_drivers || []).map((item, index) => (
-                    <li key={`${item}-${index}`}>• {item}</li>
-                  ))}
-                </ul>
-              </div>
-              <div className="rounded-[22px] border p-4 [background:color-mix(in_oklab,var(--panel-card)_90%,white)] [border-color:var(--panel-border)]">
-                <strong className="block text-sm font-semibold text-[color:var(--panel-text)]">Риски</strong>
-                <ul className="mt-3 grid gap-2 text-sm leading-6 text-[color:color-mix(in_oklab,var(--panel-text)_68%,white)]">
-                  {(analysisResult.risks || []).map((item, index) => (
-                    <li key={`${item}-${index}`}>• {item}</li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-            <div className="rounded-[22px] border p-4 [background:color-mix(in_oklab,var(--panel-card)_90%,white)] [border-color:var(--panel-border)]">
-              <strong className="block text-sm font-semibold text-[color:var(--panel-text)]">Что делать дальше</strong>
-              <ul className="mt-3 grid gap-2 text-sm leading-6 text-[color:color-mix(in_oklab,var(--panel-text)_68%,white)]">
-                {(analysisResult.recommendations || []).map((item, index) => (
-                  <li key={`${item}-${index}`}>• {item}</li>
-                ))}
-              </ul>
-            </div>
-            <p className="text-xs leading-5 text-[color:color-mix(in_oklab,var(--panel-text)_55%,white)]">{analysisResult.disclaimer}</p>
-          </div>
-        ) : (
-          <div className="flex min-h-[280px] items-center justify-center rounded-[22px] border border-dashed px-6 text-center [background:color-mix(in_oklab,var(--panel-card)_90%,white)] [border-color:color-mix(in_oklab,var(--panel-accent)_16%,var(--panel-border))]">
-            <p className="max-w-sm text-sm leading-6 text-[color:color-mix(in_oklab,var(--panel-text)_62%,white)]">
-              После запуска анализа здесь появятся ориентировочная стоимость для российского рынка, сравнение с выбранным сегментом и практический фидбек по сценарию.
-            </p>
-          </div>
-        )}
+      <div className="mt-3 rounded-[18px] border p-3 [background:color-mix(in_oklab,var(--panel-card)_94%,white)] [border-color:var(--panel-border)]">
+        <strong className="block text-sm font-semibold text-[color:var(--panel-text)]">{feedback.scenario_summary}</strong>
+        <p className="mt-2 text-sm leading-6 text-[color:color-mix(in_oklab,var(--panel-text)_68%,white)]">{feedback.reasoning}</p>
       </div>
     </div>
-  </section>
-);
+  );
+};
 
 const normalizeSettings = (settings) => ({
   pricing_rules: { ...defaultSettings.pricing_rules, ...(settings?.pricing_rules || {}) },
@@ -1433,20 +1193,33 @@ const syncOrderForm = (current, settings) => ({
   ),
 });
 
-const syncAnalysisForm = (current, settings) => ({
-  ...current,
-  garment_type: settings.garments[current.garment_type] ? current.garment_type : Object.keys(settings.garments)[0] || "",
-  material_type: settings.materials[current.material_type] ? current.material_type : Object.keys(settings.materials)[0] || "",
-  urgency: settings.urgency[current.urgency] ? current.urgency : Object.keys(settings.urgency)[0] || "",
-  market_segment: settings.market_bands[current.market_segment] ? current.market_segment : Object.keys(settings.market_bands)[0] || "",
-  quantity: Math.max(1, Number(current.quantity) || 1),
-  fittings: Math.max(0, Number(current.fittings) || 0),
-  is_custom_figure: Boolean(current.is_custom_figure),
-  is_child: Boolean(current.is_child),
-  comment: current.comment || "",
+const buildAIPayloadFromCalculation = (item) => ({
+  garment_type: item.garment_type,
+  material_type: item.material_type,
+  market_segment: item.market_segment,
+  urgency: item.urgency,
+  quantity: Number(item.quantity) || 0,
+  fittings: Number(item.fittings) || 0,
+  is_custom_figure: Boolean(item.is_custom_figure),
+  is_child: Boolean(item.is_child),
+  comment: item.comment || "",
   operation_counts: Object.fromEntries(
-    Object.keys(settings.operations).map((name) => [name, Number(current.operation_counts?.[name]) || 0])
+    (item.applied_operations || [])
+      .filter((operation) => Number(operation.count) > 0)
+      .map((operation) => [operation.name, Number(operation.count) || 0])
   ),
+  calculation: {
+    calculation_mode: item.calculation_mode,
+    base_price_per_unit_rub: Number(item.min_allowed_price_per_unit) || 0,
+    cost_price_per_unit_rub: Number(item.cost_price_per_unit) || 0,
+    price_before_discount_rub: Number(item.price_before_discount_per_unit) || 0,
+    min_allowed_price_rub: Number(item.min_allowed_price_per_unit) || 0,
+    final_price_per_unit_rub: Number(item.price_per_unit) || 0,
+    final_total_rub: Number(item.total) || 0,
+    discount_percent: Number(item.discount_percent) || 0,
+    discount_amount_rub: Number(item.discount_amount) || 0,
+    market_status: item.market_status || "",
+  },
 });
 
 const normalizeCalculatorMode = (value) => (value === "quick" ? "quick" : "masterpiece");
@@ -1481,83 +1254,6 @@ const formatMarketPosition = (value) => {
       return "Без сравнения";
   }
 };
-
-const MarketFeedbackChart = ({ analysisResult }) => {
-  const benchmark = analysisResult?.selected_market_band;
-  if (!benchmark) {
-    return null;
-  }
-
-  const maxValue = Math.max(
-    Number(analysisResult.estimated_unit_price_max_rub) || 0,
-    Number(benchmark.max_rub) || 0,
-    Number(benchmark.average_rub) || 0,
-    1
-  );
-
-  const toWidth = (value) => `${Math.max(8, Math.round((Number(value) / maxValue) * 100))}%`;
-
-  return (
-    <div className="rounded-[22px] border p-4 [background:color-mix(in_oklab,var(--panel-card)_90%,white)] [border-color:var(--panel-border)]">
-      <div className="mb-4">
-        <strong className="block text-sm font-semibold text-[color:var(--panel-text)]">Сравнение с сегментом {benchmark.label}</strong>
-        <p className="mt-2 text-sm leading-6 text-[color:color-mix(in_oklab,var(--panel-text)_68%,white)]">
-          График показывает, где AI-оценка находится относительно выбранного рыночного диапазона.
-        </p>
-      </div>
-      <div className="grid gap-4">
-        <ChartBar
-          label="AI минимум"
-          value={`${formatMoney(analysisResult.estimated_unit_price_min_rub)} ₽`}
-          width={toWidth(analysisResult.estimated_unit_price_min_rub)}
-          tone="bg-slate-400"
-        />
-        <ChartBar
-          label="AI ориентир"
-          value={`${formatMoney(analysisResult.estimated_unit_price_mid_rub)} ₽`}
-          width={toWidth(analysisResult.estimated_unit_price_mid_rub)}
-          tone="bg-slate-800"
-        />
-        <ChartBar
-          label="AI максимум"
-          value={`${formatMoney(analysisResult.estimated_unit_price_max_rub)} ₽`}
-          width={toWidth(analysisResult.estimated_unit_price_max_rub)}
-          tone="bg-slate-600"
-        />
-        <ChartBar
-          label={`${benchmark.label} минимум`}
-          value={`${formatMoney(benchmark.min_rub)} ₽`}
-          width={toWidth(benchmark.min_rub)}
-          tone="bg-emerald-400"
-        />
-        <ChartBar
-          label={`${benchmark.label} средняя`}
-          value={`${formatMoney(benchmark.average_rub)} ₽`}
-          width={toWidth(benchmark.average_rub)}
-          tone="bg-emerald-600"
-        />
-        <ChartBar
-          label={`${benchmark.label} максимум`}
-          value={`${formatMoney(benchmark.max_rub)} ₽`}
-          width={toWidth(benchmark.max_rub)}
-          tone="bg-emerald-800"
-        />
-      </div>
-    </div>
-  );
-};
-
-const ChartBar = ({ label, value, width, tone }) => (
-  <div className="grid gap-2">
-    <div className="flex items-center justify-between gap-3 text-sm">
-      <span className="text-[color:var(--panel-text)]">{label}</span>
-      <span className="text-[color:color-mix(in_oklab,var(--panel-text)_68%,white)]">{value}</span>
-    </div>
-    <div className="h-3 overflow-hidden rounded-full bg-slate-200/70 dark:bg-slate-800/70">
-      <div className={`h-full rounded-full ${tone}`} style={{ width }} />
-    </div>
-  </div>
-);
 
 const marketStatusLabel = (status) => {
   switch (status) {

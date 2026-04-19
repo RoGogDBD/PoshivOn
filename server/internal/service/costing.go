@@ -120,6 +120,8 @@ type CalculationResult struct {
 	MarketSegment           string             `json:"market_segment"`
 	Quantity                int                `json:"quantity"`
 	Fittings                int                `json:"fittings"`
+	IsCustomFigure          bool               `json:"is_custom_figure"`
+	IsChild                 bool               `json:"is_child"`
 	Comment                 string             `json:"comment"`
 	BaseMinutesPerUnit      int                `json:"base_minutes_per_unit"`
 	OperationMinutesPerUnit int                `json:"operation_minutes_per_unit"`
@@ -538,6 +540,8 @@ func (s *CostingService) CalculateInChat(ctx context.Context, userID, chatID str
 		MarketSegment:           order.MarketSegment,
 		Quantity:                order.Quantity,
 		Fittings:                order.Fittings,
+		IsCustomFigure:          order.IsCustomFigure,
+		IsChild:                 order.IsChild,
 		Comment:                 strings.TrimSpace(order.Comment),
 		BaseMinutesPerUnit:      garment.BaseMinutes,
 		OperationMinutesPerUnit: operationMinutesPerUnit,
@@ -747,6 +751,8 @@ func (s *CostingService) calculateQuickInChat(
 		CalculationMode:        calculatorModeQuick,
 		GarmentType:            order.GarmentType,
 		Quantity:               order.Quantity,
+		IsCustomFigure:         order.IsCustomFigure,
+		IsChild:                order.IsChild,
 		Comment:                strings.TrimSpace(order.Comment),
 		PriceBeforeDiscount:    priceBeforeDiscount,
 		MinAllowedPricePerUnit: garment.QuickPrice,

@@ -13,16 +13,30 @@ import (
 )
 
 type MarketFeedbackInput struct {
-	GarmentType     string         `json:"garment_type"`
-	MaterialType    string         `json:"material_type"`
-	MarketSegment   string         `json:"market_segment"`
-	Urgency         string         `json:"urgency"`
-	Quantity        int            `json:"quantity"`
-	Fittings        int            `json:"fittings"`
-	IsCustomFigure  bool           `json:"is_custom_figure"`
-	IsChild         bool           `json:"is_child"`
-	Comment         string         `json:"comment"`
-	OperationCounts map[string]int `json:"operation_counts,omitempty"`
+	GarmentType     string                          `json:"garment_type"`
+	MaterialType    string                          `json:"material_type"`
+	MarketSegment   string                          `json:"market_segment"`
+	Urgency         string                          `json:"urgency"`
+	Quantity        int                             `json:"quantity"`
+	Fittings        int                             `json:"fittings"`
+	IsCustomFigure  bool                            `json:"is_custom_figure"`
+	IsChild         bool                            `json:"is_child"`
+	Comment         string                          `json:"comment"`
+	OperationCounts map[string]int                  `json:"operation_counts,omitempty"`
+	Calculation     *MarketFeedbackCalculationInput `json:"calculation,omitempty"`
+}
+
+type MarketFeedbackCalculationInput struct {
+	CalculationMode        string `json:"calculation_mode,omitempty"`
+	BasePricePerUnitRUB    int64  `json:"base_price_per_unit_rub,omitempty"`
+	CostPricePerUnitRUB    int64  `json:"cost_price_per_unit_rub,omitempty"`
+	PriceBeforeDiscountRUB int64  `json:"price_before_discount_rub,omitempty"`
+	MinAllowedPriceRUB     int64  `json:"min_allowed_price_rub,omitempty"`
+	FinalPricePerUnitRUB   int64  `json:"final_price_per_unit_rub,omitempty"`
+	FinalTotalRUB          int64  `json:"final_total_rub,omitempty"`
+	DiscountPercent        int64  `json:"discount_percent,omitempty"`
+	DiscountAmountRUB      int64  `json:"discount_amount_rub,omitempty"`
+	MarketStatus           string `json:"market_status,omitempty"`
 }
 
 type MarketFeedbackBand struct {
@@ -296,7 +310,7 @@ func (c *DeepSeekClient) sendFeedbackRequest(
 
 func buildDeepSeekSystemPrompt(settings UserSettings) string {
 	return fmt.Sprintf(`You are a senior garment production and pricing analyst for the Russian apparel market.
-You receive structured production parameters and user pricing presets. Your task is to assess market fit, give a realistic unit-price range in RUB, explain the drivers, outline risks, and recommend next actions.
+You receive structured production parameters, user pricing presets and, when available, the final manual calculation produced by the system. Your task is to assess market fit, give a realistic unit-price range in RUB, explain the drivers, outline risks, and recommend next actions.
 Return valid JSON only. Do not wrap in markdown. No prose outside JSON.
 
 Required JSON schema:
@@ -318,6 +332,7 @@ Rules:
 - All price fields are integer RUB per unit.
 - min <= mid <= max.
 - Use the user pricing presets as your source of production logic.
+- If a completed manual calculation is provided, treat it as the main quote under review and explicitly evaluate whether it is justified by the scenario.
 - Use these user market bands for grounding: %s.
 - Take into account quantity, urgency, fittings, custom figure, child product and chosen operations.
 - Keep recommendations practical for RU fashion manufacturing.`, formatMarketBandsForPrompt(settings.MarketBands))
@@ -345,9 +360,12 @@ func buildDeepSeekUserPrompt(input MarketFeedbackInput, settings UserSettings) s
 - Срочность: %s
 - Рыночные сегменты: %s
 
+Готовый расчет системы:
+%s
+
 Нужно:
 1. Оценить реалистичный диапазон цены за единицу для рынка РФ.
-2. Сказать, попадает ли сценарий в выбранный сегмент или тяготеет к другому.
+2. Сказать, попадает ли готовый расчет в выбранный сегмент или тяготеет к другому.
 3. Назвать ключевые драйверы цены.
 4. Отметить риски и практические рекомендации.
 Ответ только JSON.`,
@@ -366,6 +384,7 @@ func buildDeepSeekUserPrompt(input MarketFeedbackInput, settings UserSettings) s
 		strings.Join(sortedKeysFromMaterials(settings.Materials), ", "),
 		strings.Join(sortedKeysFromUrgency(settings.Urgency), ", "),
 		formatMarketBandsForPrompt(settings.MarketBands),
+		formatCalculationForPrompt(input.Calculation),
 	)
 }
 
@@ -477,6 +496,26 @@ func formatPricingRulesForPrompt(rules PricingRules) string {
 		rules.MinMarginPercent,
 		rules.IncludedFittings,
 		rules.ExtraFittingMinutes,
+	)
+}
+
+func formatCalculationForPrompt(item *MarketFeedbackCalculationInput) string {
+	if item == nil {
+		return "- готовый расчет не передан"
+	}
+
+	return fmt.Sprintf(
+		"- Режим: %s\n- База/минимум за единицу: %d RUB\n- Себестоимость за единицу: %d RUB\n- Цена до скидки за единицу: %d RUB\n- Минимально допустимая цена за единицу: %d RUB\n- Финальная цена за единицу: %d RUB\n- Финальная сумма за партию: %d RUB\n- Скидка: %d%% (%d RUB)\n- Статус относительно рынка по внутренней логике: %s",
+		emptyOrUnknown(item.CalculationMode),
+		item.BasePricePerUnitRUB,
+		item.CostPricePerUnitRUB,
+		item.PriceBeforeDiscountRUB,
+		item.MinAllowedPriceRUB,
+		item.FinalPricePerUnitRUB,
+		item.FinalTotalRUB,
+		item.DiscountPercent,
+		item.DiscountAmountRUB,
+		emptyOrUnknown(item.MarketStatus),
 	)
 }
 
