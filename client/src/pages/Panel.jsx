@@ -1064,7 +1064,7 @@ const Panel = () => {
                               <li>Скидка: {item.discount_percent}% ({formatMoney(item.discount_amount)} ₽)</li>
                               <li>Минуты: база {item.base_minutes_per_unit}, операции {item.operation_minutes_per_unit}, примерки {item.fitting_minutes_per_unit}, итог {item.adjusted_minutes_per_unit}</li>
                             </ul>
-                            <CalculationAIFeedback feedback={item.ai_feedback} />
+                            <CalculationAIFeedback calculation={item} feedback={item.ai_feedback} />
                           </>
                         )}
                       </article>
@@ -1106,10 +1106,28 @@ const DiscountsBlock = ({ settings, handleDiscountChange }) => (
   </SettingsSection>
 );
 
-const CalculationAIFeedback = ({ feedback }) => {
-  if (!feedback) {
+const CalculationAIFeedback = ({ calculation, feedback }) => {
+  if (!feedback || !calculation) {
     return null;
   }
+
+  const finalPricePerUnit = Number(calculation.price_per_unit) || 0;
+  const aiMidPrice = Number(feedback.estimated_unit_price_mid_rub) || 0;
+  const aiMinPrice = Number(feedback.estimated_unit_price_min_rub) || 0;
+  const aiMaxPrice = Number(feedback.estimated_unit_price_max_rub) || 0;
+  const priceDelta = finalPricePerUnit - aiMidPrice;
+  const priceDeltaPercent = aiMidPrice > 0 ? Math.round((priceDelta / aiMidPrice) * 100) : 0;
+  const actualMarketPosition = formatMarketPosition(calculation.market_status);
+  const actualSegmentLabel = calculation.market_status === "in_market"
+    ? calculation.market_segment || feedback.suggested_market_segment || "выбранного сегмента"
+    : feedback.suggested_market_segment || calculation.market_segment || "другого сегмента";
+  const verdict = buildAIVerdict({
+    finalPricePerUnit,
+    aiMidPrice,
+    marketStatus: calculation.market_status,
+    targetSegment: calculation.market_segment,
+    suggestedSegment: feedback.suggested_market_segment,
+  });
 
   return (
     <div className="mt-4 rounded-[22px] border p-4 [background:color-mix(in_oklab,var(--panel-card)_90%,white)] [border-color:color-mix(in_oklab,var(--panel-accent)_16%,var(--panel-border))]">
@@ -1127,30 +1145,58 @@ const CalculationAIFeedback = ({ feedback }) => {
 
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="rounded-[18px] border p-3 [background:color-mix(in_oklab,var(--panel-card)_94%,white)] [border-color:var(--panel-border)]">
-          <span className="block text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:color-mix(in_oklab,var(--panel-text)_55%,white)]">За единицу</span>
-          <strong className="mt-2 block text-lg text-[color:var(--panel-text)]">{formatMoney(feedback.estimated_unit_price_mid_rub)} ₽</strong>
+          <span className="block text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:color-mix(in_oklab,var(--panel-text)_55%,white)]">Ваш расчет</span>
+          <strong className="mt-2 block text-lg text-[color:var(--panel-text)]">{formatMoney(finalPricePerUnit)} ₽</strong>
           <p className="mt-1 text-xs leading-5 text-[color:color-mix(in_oklab,var(--panel-text)_62%,white)]">
-            {formatMoney(feedback.estimated_unit_price_min_rub)} - {formatMoney(feedback.estimated_unit_price_max_rub)} ₽
+            {actualMarketPosition} относительно {actualSegmentLabel}
           </p>
         </div>
         <div className="rounded-[18px] border p-3 [background:color-mix(in_oklab,var(--panel-card)_94%,white)] [border-color:var(--panel-border)]">
-          <span className="block text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:color-mix(in_oklab,var(--panel-text)_55%,white)]">За партию</span>
-          <strong className="mt-2 block text-lg text-[color:var(--panel-text)]">{formatMoney(feedback.estimated_total_mid_rub)} ₽</strong>
+          <span className="block text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:color-mix(in_oklab,var(--panel-text)_55%,white)]">Ориентир AI</span>
+          <strong className="mt-2 block text-lg text-[color:var(--panel-text)]">{formatMoney(aiMidPrice)} ₽</strong>
           <p className="mt-1 text-xs leading-5 text-[color:color-mix(in_oklab,var(--panel-text)_62%,white)]">
-            {formatMoney(feedback.estimated_total_min_rub)} - {formatMoney(feedback.estimated_total_max_rub)} ₽
+            {formatMoney(aiMinPrice)} - {formatMoney(aiMaxPrice)} ₽ за единицу
           </p>
         </div>
         <div className="rounded-[18px] border p-3 [background:color-mix(in_oklab,var(--panel-card)_94%,white)] [border-color:var(--panel-border)]">
-          <span className="block text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:color-mix(in_oklab,var(--panel-text)_55%,white)]">Позиция</span>
-          <strong className="mt-2 block text-lg text-[color:var(--panel-text)]">{feedback.suggested_market_segment || "Не указана"}</strong>
-          <p className="mt-1 text-xs leading-5 text-[color:color-mix(in_oklab,var(--panel-text)_62%,white)]">{formatMarketPosition(feedback.price_position)}</p>
+          <span className="block text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:color-mix(in_oklab,var(--panel-text)_55%,white)]">Отклонение</span>
+          <strong className="mt-2 block text-lg text-[color:var(--panel-text)]">
+            {priceDelta >= 0 ? "+" : ""}{formatMoney(priceDelta)} ₽
+          </strong>
+          <p className="mt-1 text-xs leading-5 text-[color:color-mix(in_oklab,var(--panel-text)_62%,white)]">
+            {aiMidPrice > 0 ? `${priceDelta >= 0 ? "+" : ""}${priceDeltaPercent}% к AI-ориентиру` : "Без сравнения"}
+          </p>
         </div>
       </div>
 
       <div className="mt-3 rounded-[18px] border p-3 [background:color-mix(in_oklab,var(--panel-card)_94%,white)] [border-color:var(--panel-border)]">
-        <strong className="block text-sm font-semibold text-[color:var(--panel-text)]">{feedback.scenario_summary}</strong>
+        <strong className="block text-sm font-semibold text-[color:var(--panel-text)]">{verdict}</strong>
+        <p className="mt-2 text-sm leading-6 text-[color:color-mix(in_oklab,var(--panel-text)_68%,white)]">
+          {feedback.scenario_summary}
+        </p>
         <p className="mt-2 text-sm leading-6 text-[color:color-mix(in_oklab,var(--panel-text)_68%,white)]">{feedback.reasoning}</p>
       </div>
+
+      {(feedback.key_drivers?.length || feedback.recommendations?.length) ? (
+        <div className="mt-3 grid gap-3 lg:grid-cols-2">
+          <div className="rounded-[18px] border p-3 [background:color-mix(in_oklab,var(--panel-card)_94%,white)] [border-color:var(--panel-border)]">
+            <strong className="block text-sm font-semibold text-[color:var(--panel-text)]">Что влияет на цену</strong>
+            <ul className="mt-2 grid gap-2 text-sm leading-6 text-[color:color-mix(in_oklab,var(--panel-text)_68%,white)]">
+              {(feedback.key_drivers || []).slice(0, 3).map((item, index) => (
+                <li key={`${item}-${index}`}>• {item}</li>
+              ))}
+            </ul>
+          </div>
+          <div className="rounded-[18px] border p-3 [background:color-mix(in_oklab,var(--panel-card)_94%,white)] [border-color:var(--panel-border)]">
+            <strong className="block text-sm font-semibold text-[color:var(--panel-text)]">Что делать</strong>
+            <ul className="mt-2 grid gap-2 text-sm leading-6 text-[color:color-mix(in_oklab,var(--panel-text)_68%,white)]">
+              {(feedback.recommendations || []).slice(0, 3).map((item, index) => (
+                <li key={`${item}-${index}`}>• {item}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };
@@ -1265,6 +1311,28 @@ const marketStatusLabel = (status) => {
       return "В рынке";
     default:
       return "Без рынка";
+  }
+};
+
+const buildAIVerdict = ({ finalPricePerUnit, aiMidPrice, marketStatus, targetSegment, suggestedSegment }) => {
+  const currentSegment = targetSegment || "целевого сегмента";
+  const nextSegment = suggestedSegment || currentSegment;
+
+  switch (marketStatus) {
+    case "above_market":
+      return `Ваш расчет ${formatMoney(finalPricePerUnit)} ₽/шт выше ${currentSegment} и ближе к сегменту «${nextSegment}».`;
+    case "below_market":
+      return `Ваш расчет ${formatMoney(finalPricePerUnit)} ₽/шт ниже ${currentSegment}; есть риск недооценить работу.`;
+    case "in_market":
+      if (aiMidPrice > 0) {
+        return `Ваш расчет ${formatMoney(finalPricePerUnit)} ₽/шт остается в рынке, но отличается от AI-ориентира ${formatMoney(aiMidPrice)} ₽/шт.`;
+      }
+      return `Ваш расчет ${formatMoney(finalPricePerUnit)} ₽/шт находится внутри целевого сегмента.`;
+    default:
+      if (aiMidPrice > 0) {
+        return `Ваш расчет ${formatMoney(finalPricePerUnit)} ₽/шт сопоставлен с AI-ориентиром ${formatMoney(aiMidPrice)} ₽/шт.`;
+      }
+      return `DeepSeek проверил ваш расчет ${formatMoney(finalPricePerUnit)} ₽/шт.`;
   }
 };
 
