@@ -150,6 +150,31 @@ func (h *APIHandler) handleCalculate(w http.ResponseWriter, r *http.Request, use
 		return
 	}
 
+	if h.deepseek != nil && result.CalculationMode == "masterpiece" {
+		settings, settingsErr := h.costing.GetUserSettings(r.Context(), userID)
+		if settingsErr != nil {
+			if errors.Is(settingsErr, service.ErrNotFound) {
+				settings = service.DefaultUserSettings()
+			} else {
+				writeAPIDomainError(w, settingsErr)
+				return
+			}
+		}
+
+		feedback, feedbackErr := h.deepseek.AnalyzeMarketFeedback(
+			r.Context(),
+			buildMarketFeedbackInputFromCalculation(result),
+			settings,
+		)
+		if feedbackErr == nil {
+			if attachErr := h.costing.AttachCalculationAIFeedback(r.Context(), userID, chatID, result.CreatedAt, feedback); attachErr != nil {
+				writeAPIDomainError(w, attachErr)
+				return
+			}
+			result.AIFeedback = &feedback
+		}
+	}
+
 	writeAPIJSON(w, http.StatusOK, result)
 }
 
@@ -241,5 +266,39 @@ func writeAPIDomainError(w http.ResponseWriter, err error) {
 		writeAPIError(w, http.StatusGatewayTimeout, err.Error())
 	default:
 		writeAPIError(w, http.StatusInternalServerError, err.Error())
+	}
+}
+
+func buildMarketFeedbackInputFromCalculation(result service.CalculationResult) service.MarketFeedbackInput {
+	operationCounts := make(map[string]int, len(result.AppliedOperations))
+	for _, operation := range result.AppliedOperations {
+		if operation.Count > 0 {
+			operationCounts[operation.Name] = operation.Count
+		}
+	}
+
+	return service.MarketFeedbackInput{
+		GarmentType:     result.GarmentType,
+		MaterialType:    result.MaterialType,
+		MarketSegment:   result.MarketSegment,
+		Urgency:         result.Urgency,
+		Quantity:        result.Quantity,
+		Fittings:        result.Fittings,
+		IsCustomFigure:  result.IsCustomFigure,
+		IsChild:         result.IsChild,
+		Comment:         result.Comment,
+		OperationCounts: operationCounts,
+		Calculation: &service.MarketFeedbackCalculationInput{
+			CalculationMode:        result.CalculationMode,
+			BasePricePerUnitRUB:    result.MinAllowedPricePerUnit,
+			CostPricePerUnitRUB:    result.CostPricePerUnit,
+			PriceBeforeDiscountRUB: result.PriceBeforeDiscount,
+			MinAllowedPriceRUB:     result.MinAllowedPricePerUnit,
+			FinalPricePerUnitRUB:   result.PricePerUnit,
+			FinalTotalRUB:          result.Total,
+			DiscountPercent:        result.DiscountPercent,
+			DiscountAmountRUB:      result.DiscountAmount,
+			MarketStatus:           result.MarketStatus,
+		},
 	}
 }

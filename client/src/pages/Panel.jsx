@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { checkAuthStatus, fetchAuthProfile, logout } from "../utils/yandexAuth.js";
 import {
-  analyzeMarketWithAI,
   calculateInChat,
   createChat,
   deleteChat,
@@ -523,34 +522,21 @@ const Panel = () => {
         ),
       };
       const result = await calculateInChat(userID, activeChatID, payload);
-      let nextResult = result;
-      let nextNotice = `Расчёт выполнен. Итог: ${formatMoney(result.total)} ₽`;
-
-      if (normalizeCalculatorMode(result.calculation_mode) === "masterpiece") {
-        try {
-          const aiFeedback = await analyzeMarketWithAI(userID, buildAIPayloadFromCalculation(result));
-          nextResult = { ...result, ai_feedback: aiFeedback };
-          nextNotice = `${nextNotice}. Оценка DeepSeek добавлена.`;
-        } catch (error) {
-          nextNotice = `${nextNotice}. Оценку DeepSeek получить не удалось: ${mapPanelError(error)}`;
-        }
-      }
-
-      setHistory((current) => [...current, nextResult]);
+      setHistory((current) => [...current, result]);
       setChats((current) =>
         current
           .map((chat) =>
             chat.id === activeChatID
               ? {
                   ...chat,
-                  updated_at: nextResult.created_at,
+                  updated_at: result.created_at,
                   calculations_count: (chat.calculations_count || 0) + 1,
                 }
               : chat
           )
           .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))
       );
-      setCalcNotice(nextNotice);
+      setCalcNotice(`Расчёт выполнен. Итог: ${formatMoney(result.total)} ₽`);
     } catch (error) {
       setCalcNotice(mapPanelError(error));
     } finally {
@@ -1237,35 +1223,6 @@ const syncOrderForm = (current, settings) => ({
   operation_counts: Object.fromEntries(
     Object.keys(settings.operations).map((name) => [name, Number(current.operation_counts?.[name]) || 0])
   ),
-});
-
-const buildAIPayloadFromCalculation = (item) => ({
-  garment_type: item.garment_type,
-  material_type: item.material_type,
-  market_segment: item.market_segment,
-  urgency: item.urgency,
-  quantity: Number(item.quantity) || 0,
-  fittings: Number(item.fittings) || 0,
-  is_custom_figure: Boolean(item.is_custom_figure),
-  is_child: Boolean(item.is_child),
-  comment: item.comment || "",
-  operation_counts: Object.fromEntries(
-    (item.applied_operations || [])
-      .filter((operation) => Number(operation.count) > 0)
-      .map((operation) => [operation.name, Number(operation.count) || 0])
-  ),
-  calculation: {
-    calculation_mode: item.calculation_mode,
-    base_price_per_unit_rub: Number(item.min_allowed_price_per_unit) || 0,
-    cost_price_per_unit_rub: Number(item.cost_price_per_unit) || 0,
-    price_before_discount_rub: Number(item.price_before_discount_per_unit) || 0,
-    min_allowed_price_rub: Number(item.min_allowed_price_per_unit) || 0,
-    final_price_per_unit_rub: Number(item.price_per_unit) || 0,
-    final_total_rub: Number(item.total) || 0,
-    discount_percent: Number(item.discount_percent) || 0,
-    discount_amount_rub: Number(item.discount_amount) || 0,
-    market_status: item.market_status || "",
-  },
 });
 
 const normalizeCalculatorMode = (value) => (value === "quick" ? "quick" : "masterpiece");

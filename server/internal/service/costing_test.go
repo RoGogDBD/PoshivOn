@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 )
 
 type settingsRepoStub struct {
@@ -81,6 +82,23 @@ func (c *chatRepoStub) AppendCalculation(_ context.Context, result CalculationRe
 
 func (c *chatRepoStub) ListCalculations(_ context.Context, _, _ string) ([]CalculationResult, error) {
 	return c.items, nil
+}
+
+func (c *chatRepoStub) AttachCalculationAIFeedback(
+	_ context.Context,
+	_ string,
+	_ string,
+	createdAt time.Time,
+	feedback MarketFeedbackResult,
+) error {
+	for index := range c.items {
+		if c.items[index].CreatedAt.Equal(createdAt) {
+			feedbackCopy := feedback
+			c.items[index].AIFeedback = &feedbackCopy
+			return nil
+		}
+	}
+	return ErrNotFound
 }
 
 func TestCostingService_CalculateInChat_UsesExpandedPricingModel(t *testing.T) {
