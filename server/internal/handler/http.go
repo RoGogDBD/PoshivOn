@@ -167,14 +167,7 @@ func (h *APIHandler) handleCalculate(w http.ResponseWriter, r *http.Request, use
 			settings,
 		)
 		if feedbackErr == nil {
-			if attachErr := h.costing.AttachCalculationAIFeedback(r.Context(), userID, chatID, result.CreatedAt, feedback); attachErr != nil {
-				writeAPIDomainError(w, attachErr)
-				return
-			}
 			result.AIFeedback = &feedback
-			result.AIFeedbackError = ""
-		} else {
-			result.AIFeedbackError = feedbackErr.Error()
 		}
 	}
 

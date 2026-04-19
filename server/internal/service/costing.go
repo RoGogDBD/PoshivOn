@@ -147,7 +147,6 @@ type CalculationResult struct {
 	AppliedOperations       []AppliedOperation    `json:"applied_operations"`
 	MaterialLines           []MaterialLine        `json:"material_lines"`
 	AIFeedback              *MarketFeedbackResult `json:"ai_feedback,omitempty"`
-	AIFeedbackError         string                `json:"ai_feedback_error,omitempty"`
 	CreatedAt               time.Time             `json:"created_at"`
 }
 
@@ -181,7 +180,6 @@ type ChatRepository interface {
 type ChatCalculationRepository interface {
 	AppendCalculation(ctx context.Context, result CalculationResult) error
 	ListCalculations(ctx context.Context, userID, chatID string) ([]CalculationResult, error)
-	AttachCalculationAIFeedback(ctx context.Context, userID, chatID string, createdAt time.Time, feedback MarketFeedbackResult) error
 }
 
 type CostingService struct {
@@ -588,21 +586,6 @@ func (s *CostingService) ListChatCalculations(ctx context.Context, userID, chatI
 		return nil, fmt.Errorf("list chat calculations: %w", err)
 	}
 	return items, nil
-}
-
-func (s *CostingService) AttachCalculationAIFeedback(
-	ctx context.Context,
-	userID, chatID string,
-	createdAt time.Time,
-	feedback MarketFeedbackResult,
-) error {
-	if userID == "" || chatID == "" || createdAt.IsZero() {
-		return fmt.Errorf("user id, chat id and created at are required: %w", ErrInvalidArgument)
-	}
-	if err := s.calcRepo.AttachCalculationAIFeedback(ctx, userID, chatID, createdAt, feedback); err != nil {
-		return fmt.Errorf("attach ai feedback: %w", err)
-	}
-	return nil
 }
 
 func validateSettings(settings UserSettings) error {

@@ -536,11 +536,7 @@ const Panel = () => {
           )
           .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))
       );
-      setCalcNotice(
-        result.ai_feedback_error
-          ? `Расчёт выполнен. Итог: ${formatMoney(result.total)} ₽. DeepSeek не ответил: ${result.ai_feedback_error}`
-          : `Расчёт выполнен. Итог: ${formatMoney(result.total)} ₽`
-      );
+      setCalcNotice(`Расчёт выполнен. Итог: ${formatMoney(result.total)} ₽`);
     } catch (error) {
       setCalcNotice(mapPanelError(error));
     } finally {
@@ -1054,7 +1050,7 @@ const Panel = () => {
                               <li>Скидка: {item.discount_percent}% ({formatMoney(item.discount_amount)} ₽)</li>
                               <li>Минуты: база {item.base_minutes_per_unit}, операции {item.operation_minutes_per_unit}, примерки {item.fitting_minutes_per_unit}, итог {item.adjusted_minutes_per_unit}</li>
                             </ul>
-                            <CalculationAIFeedback calculation={item} feedback={item.ai_feedback} feedbackError={item.ai_feedback_error} />
+                            {itemMode === "quick" ? null : <CalculationAIFeedback calculation={item} feedback={item.ai_feedback} />}
                           </>
                         )}
                       </article>
@@ -1096,20 +1092,13 @@ const DiscountsBlock = ({ settings, handleDiscountChange }) => (
   </SettingsSection>
 );
 
-const CalculationAIFeedback = ({ calculation, feedback, feedbackError }) => {
+const CalculationAIFeedback = ({ calculation, feedback }) => {
   if (!calculation) {
     return null;
   }
 
   if (!feedback) {
-    return feedbackError ? (
-      <div className="mt-4 rounded-[22px] border p-4 [background:color-mix(in_oklab,var(--panel-card)_90%,white)] [border-color:color-mix(in_oklab,#dc2626_20%,var(--panel-border))]">
-        <strong className="block text-base font-semibold text-[color:var(--panel-text)]">Оценка DeepSeek недоступна</strong>
-        <p className="mt-2 text-sm leading-6 text-[color:color-mix(in_oklab,var(--panel-text)_68%,white)]">
-          {feedbackError}
-        </p>
-      </div>
-    ) : null;
+    return null;
   }
 
   const finalPricePerUnit = Number(calculation.price_per_unit) || 0;

@@ -188,33 +188,6 @@ func (r *MemoryRepository) ListCalculations(_ context.Context, userID, chatID st
 	return result, nil
 }
 
-func (r *MemoryRepository) AttachCalculationAIFeedback(
-	_ context.Context,
-	userID, chatID string,
-	createdAt time.Time,
-	feedback service.MarketFeedbackResult,
-) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	byChat, ok := r.chatHistory[userID]
-	if !ok {
-		return fmt.Errorf("calculation for chat %q not found: %w", chatID, service.ErrNotFound)
-	}
-
-	items := byChat[chatID]
-	for index := range items {
-		if items[index].CreatedAt.Equal(createdAt) {
-			feedbackCopy := feedback
-			items[index].AIFeedback = &feedbackCopy
-			byChat[chatID] = items
-			return nil
-		}
-	}
-
-	return fmt.Errorf("calculation for chat %q not found: %w", chatID, service.ErrNotFound)
-}
-
 func copySettings(src service.UserSettings) service.UserSettings {
 	item := src
 	item.Garments = make(map[string]service.GarmentConfig, len(src.Garments))
