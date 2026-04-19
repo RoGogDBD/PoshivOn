@@ -733,7 +733,8 @@
   color: inherit;
   padding: 10px 14px;
   border-radius: 12px;
-  font-size: 14px;
+  font-size: 15px;
+  font-weight: 600;
   cursor: pointer;
   transition: 0.2s ease;
 }
@@ -765,7 +766,7 @@
 .panel__eyebrow {
   text-transform: uppercase;
   letter-spacing: 0.16em;
-  font-size: 12px;
+  font-size: 13px;
   color: #93a2c8;
   margin-bottom: 6px;
 }
@@ -879,16 +880,21 @@
 .panel__meta {
   margin: 0;
   color: #7b8bb3;
+  font-size: 15px;
 }
 
 .panel__notice {
   margin: 0;
   color: #5b6f9a;
+  font-size: 15px;
+  line-height: 1.6;
 }
 
 .panel__empty {
   margin: 0;
   color: #7b8bb3;
+  font-size: 15px;
+  line-height: 1.6;
 }
 
 .panel-workspace {
@@ -916,6 +922,8 @@
 .panel-chat-list__header p {
   margin: 0;
   color: #7b8bb3;
+  font-size: 15px;
+  line-height: 1.6;
 }
 
 .panel-chat-list__create {
@@ -967,7 +975,8 @@
 
 .panel-chat-list__item span {
   color: #7b8bb3;
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .panel-chat-list__item--active {
@@ -1030,6 +1039,8 @@
 .panel-history__stats span,
 .panel-history__list {
   color: #7b8bb3;
+  font-size: 15px;
+  line-height: 1.6;
 }
 
 .panel-history__list {
@@ -1212,7 +1223,7 @@
 }
 
 .panel-summary__label {
-  font-size: 12px;
+  font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 0.14em;
   color: #7b90bc;
@@ -1310,6 +1321,8 @@
 
 .panel-form__row span {
   font-weight: 600;
+  font-size: 15px;
+  line-height: 1.45;
 }
 
 .panel-form__grid {
@@ -1326,7 +1339,7 @@
 }
 
 .panel-history__head strong {
-  font-size: 18px;
+  font-size: 20px;
 }
 
 .panel-history__stats {
@@ -1521,7 +1534,7 @@
   justify-content: center;
   padding: 0.3rem 0.65rem;
   border-radius: 999px;
-  font-size: 0.82rem;
+  font-size: 0.92rem;
   font-weight: 700;
 }
 

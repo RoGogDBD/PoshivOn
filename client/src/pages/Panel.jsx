@@ -145,7 +145,7 @@ const settingsInputClass =
   "h-11 w-full rounded-2xl border px-4 text-sm font-medium text-[color:var(--settings-text)] outline-none transition [background:var(--settings-input-bg)] [border-color:var(--settings-input-border)] shadow-[inset_0_1px_0_var(--settings-input-shadow)] placeholder:text-[color:var(--settings-subtle)] focus:border-[color:var(--settings-accent)] focus:ring-4 focus:ring-[color:var(--settings-focus)]";
 
 const settingsModeButtonBaseClass =
-  "group flex h-full flex-col gap-2 rounded-[24px] border p-5 text-left transition duration-200 [border-color:var(--settings-card-border)] [background:color-mix(in_oklab,var(--settings-card-bg)_92%,transparent)] hover:-translate-y-0.5 hover:[border-color:color-mix(in_oklab,var(--settings-accent)_18%,var(--settings-card-border))] hover:shadow-[0_18px_40px_var(--settings-card-shadow)]";
+  "group flex h-full flex-col gap-2 rounded-[24px] border p-5 text-left motion-safe:animate-soft-pop motion-safe:transition-transform motion-safe:duration-300 motion-safe:ease-[var(--ease-soft-spring)] [border-color:var(--settings-card-border)] [background:color-mix(in_oklab,var(--settings-card-bg)_92%,transparent)] motion-safe:hover:-translate-y-1 motion-safe:hover:[border-color:color-mix(in_oklab,var(--settings-accent)_18%,var(--settings-card-border))] motion-safe:hover:shadow-[0_18px_40px_var(--settings-card-shadow)]";
 
 const SettingsSection = ({ title, description, children }) => (
   <section className={settingsSectionClass}>
@@ -611,17 +611,17 @@ const Panel = () => {
         </div>
 
         <section className="panel-summary">
-          <article className="panel-summary__card">
+          <article className="panel-summary__card motion-safe:animate-fade-rise motion-safe:transition-transform motion-safe:duration-300 motion-safe:ease-[var(--ease-soft-spring)] motion-safe:hover:-translate-y-1">
             <span className="panel-summary__label">Активный чат</span>
             <strong>{activeChat?.title || "Не выбран"}</strong>
             <p>{activeChat ? `${activeChat.calculations_count || 0} расчётов сохранено` : "Создайте чат и начните расчёт."}</p>
           </article>
-          <article className="panel-summary__card">
+          <article className="panel-summary__card motion-safe:animate-fade-rise motion-safe:transition-transform motion-safe:duration-300 motion-safe:ease-[var(--ease-soft-spring)] motion-safe:hover:-translate-y-1 [animation-delay:80ms]">
             <span className="panel-summary__label">Всего чатов</span>
             <strong>{chats.length}</strong>
             <p>Чаты изолированы по пользователю и имеют собственную историю расчётов.</p>
           </article>
-          <article className="panel-summary__card">
+          <article className="panel-summary__card motion-safe:animate-fade-rise motion-safe:transition-transform motion-safe:duration-300 motion-safe:ease-[var(--ease-soft-spring)] motion-safe:hover:-translate-y-1 [animation-delay:140ms]">
             <span className="panel-summary__label">Сумма по чату</span>
             <strong>{formatMoney(totalHistoryAmount)} ₽</strong>
             <p>Сумма сохранённых расчётов в выбранном чате.</p>
@@ -629,7 +629,7 @@ const Panel = () => {
         </section>
 
         {activeSection === "settings" ? (
-          <section className="panel-settings rounded-[32px] border p-5 shadow-[0_28px_80px_var(--settings-shell-shadow)] backdrop-blur-xl [background:var(--settings-shell-bg)] [border-color:var(--settings-shell-border)] sm:p-7">
+          <section className="panel-settings rounded-[32px] border p-5 shadow-[0_28px_80px_var(--settings-shell-shadow)] backdrop-blur-xl motion-safe:animate-fade-rise [background:var(--settings-shell-bg)] [border-color:var(--settings-shell-border)] sm:p-7">
             <div className="mb-6 flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
               <div className="max-w-3xl">
                 <span className="inline-flex rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-[color:var(--settings-muted)] [background:var(--settings-accent-soft)] [border-color:var(--settings-card-border)]">
@@ -854,7 +854,7 @@ const Panel = () => {
 
               <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
                 <button
-                  className="inline-flex min-h-12 items-center justify-center rounded-2xl border px-5 text-sm font-semibold text-white transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60 [background:var(--settings-accent)] [border-color:color-mix(in_oklab,var(--settings-accent)_90%,black)] shadow-[0_16px_30px_var(--settings-card-shadow)]"
+                  className="inline-flex min-h-12 items-center justify-center rounded-2xl border px-5 text-sm font-semibold text-white motion-safe:transition-all motion-safe:duration-200 motion-safe:ease-[var(--ease-soft-spring)] motion-safe:hover:-translate-y-0.5 motion-safe:hover:opacity-95 motion-safe:active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-60 [background:var(--settings-accent)] [border-color:color-mix(in_oklab,var(--settings-accent)_90%,black)] shadow-[0_16px_30px_var(--settings-card-shadow)]"
                   type="submit"
                   disabled={isSavingSettings}
                 >
@@ -984,7 +984,7 @@ const Panel = () => {
                     </div>
 
                     <div className="panel-form__footer">
-                      <button className="panel__theme-toggle" type="submit" disabled={isCalculating}>
+                      <button className="panel__theme-toggle motion-safe:transition-all motion-safe:duration-200 motion-safe:ease-[var(--ease-soft-spring)] motion-safe:hover:-translate-y-0.5 motion-safe:hover:shadow-[0_14px_28px_rgba(36,94,255,0.18)] motion-safe:active:scale-[0.985]" type="submit" disabled={isCalculating}>
                         {isCalculating ? "Считаем..." : "Рассчитать"}
                       </button>
                       {calcNotice ? <p className="panel__notice">{calcNotice}</p> : null}
@@ -1004,7 +1004,7 @@ const Panel = () => {
                   {history.map((item, index) => {
                     const itemMode = normalizeCalculatorMode(item.calculation_mode || calculatorMode);
                     return (
-                      <article className="panel-history__item" key={`${item.created_at}-${index}`}>
+                      <article className="panel-history__item motion-safe:animate-fade-rise motion-safe:transition-transform motion-safe:duration-300 motion-safe:ease-[var(--ease-soft-spring)] motion-safe:hover:-translate-y-0.5" key={`${item.created_at}-${index}`}>
                         {itemMode === "quick" ? (
                           <>
                             <div className="panel-history__head">
@@ -1130,66 +1130,66 @@ const CalculationAIFeedback = ({ calculation, feedback }) => {
   });
 
   return (
-    <div className="mt-4 rounded-[22px] border p-4 [background:color-mix(in_oklab,var(--panel-card)_90%,white)] [border-color:color-mix(in_oklab,var(--panel-accent)_16%,var(--panel-border))]">
+    <div className="mt-4 rounded-[22px] border p-4 motion-safe:animate-fade-rise [background:color-mix(in_oklab,var(--panel-card)_90%,white)] [border-color:color-mix(in_oklab,var(--panel-accent)_16%,var(--panel-border))]">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
-          <strong className="block text-sm font-semibold text-[color:var(--panel-text)]">Оценка DeepSeek</strong>
-          <p className="mt-1 text-xs leading-5 text-[color:color-mix(in_oklab,var(--panel-text)_62%,white)]">
+          <strong className="block text-base font-semibold text-[color:var(--panel-text)]">Оценка DeepSeek</strong>
+          <p className="mt-1 text-sm leading-6 text-[color:color-mix(in_oklab,var(--panel-text)_62%,white)]">
             Финальный расчет проверен на попадание в рынок и адекватность цены.
           </p>
         </div>
-        <span className="rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] [background:color-mix(in_oklab,var(--panel-accent)_8%,white)] [border-color:color-mix(in_oklab,var(--panel-accent)_18%,var(--panel-border))] text-[color:var(--panel-accent)]">
+        <span className="rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] [background:color-mix(in_oklab,var(--panel-accent)_8%,white)] [border-color:color-mix(in_oklab,var(--panel-accent)_18%,var(--panel-border))] text-[color:var(--panel-accent)]">
           {formatConfidence(feedback.confidence)}
         </span>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
-        <div className="rounded-[18px] border p-3 [background:color-mix(in_oklab,var(--panel-card)_94%,white)] [border-color:var(--panel-border)]">
-          <span className="block text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:color-mix(in_oklab,var(--panel-text)_55%,white)]">Ваш расчет</span>
-          <strong className="mt-2 block text-lg text-[color:var(--panel-text)]">{formatMoney(finalPricePerUnit)} ₽</strong>
-          <p className="mt-1 text-xs leading-5 text-[color:color-mix(in_oklab,var(--panel-text)_62%,white)]">
+        <div className="rounded-[18px] border p-3.5 motion-safe:transition-transform motion-safe:duration-300 motion-safe:ease-[var(--ease-soft-spring)] motion-safe:hover:-translate-y-0.5 [background:color-mix(in_oklab,var(--panel-card)_94%,white)] [border-color:var(--panel-border)]">
+          <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-[color:color-mix(in_oklab,var(--panel-text)_55%,white)]">Ваш расчет</span>
+          <strong className="mt-2 block text-xl text-[color:var(--panel-text)]">{formatMoney(finalPricePerUnit)} ₽</strong>
+          <p className="mt-1 text-sm leading-6 text-[color:color-mix(in_oklab,var(--panel-text)_62%,white)]">
             {actualMarketPosition} относительно {actualSegmentLabel}
           </p>
         </div>
-        <div className="rounded-[18px] border p-3 [background:color-mix(in_oklab,var(--panel-card)_94%,white)] [border-color:var(--panel-border)]">
-          <span className="block text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:color-mix(in_oklab,var(--panel-text)_55%,white)]">Ориентир AI</span>
-          <strong className="mt-2 block text-lg text-[color:var(--panel-text)]">{formatMoney(aiMidPrice)} ₽</strong>
-          <p className="mt-1 text-xs leading-5 text-[color:color-mix(in_oklab,var(--panel-text)_62%,white)]">
+        <div className="rounded-[18px] border p-3.5 motion-safe:transition-transform motion-safe:duration-300 motion-safe:ease-[var(--ease-soft-spring)] motion-safe:hover:-translate-y-0.5 [background:color-mix(in_oklab,var(--panel-card)_94%,white)] [border-color:var(--panel-border)]">
+          <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-[color:color-mix(in_oklab,var(--panel-text)_55%,white)]">Ориентир AI</span>
+          <strong className="mt-2 block text-xl text-[color:var(--panel-text)]">{formatMoney(aiMidPrice)} ₽</strong>
+          <p className="mt-1 text-sm leading-6 text-[color:color-mix(in_oklab,var(--panel-text)_62%,white)]">
             {formatMoney(aiMinPrice)} - {formatMoney(aiMaxPrice)} ₽ за единицу
           </p>
         </div>
-        <div className="rounded-[18px] border p-3 [background:color-mix(in_oklab,var(--panel-card)_94%,white)] [border-color:var(--panel-border)]">
-          <span className="block text-[11px] font-semibold uppercase tracking-[0.16em] text-[color:color-mix(in_oklab,var(--panel-text)_55%,white)]">Отклонение</span>
-          <strong className="mt-2 block text-lg text-[color:var(--panel-text)]">
+        <div className="rounded-[18px] border p-3.5 motion-safe:transition-transform motion-safe:duration-300 motion-safe:ease-[var(--ease-soft-spring)] motion-safe:hover:-translate-y-0.5 [background:color-mix(in_oklab,var(--panel-card)_94%,white)] [border-color:var(--panel-border)]">
+          <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-[color:color-mix(in_oklab,var(--panel-text)_55%,white)]">Отклонение</span>
+          <strong className="mt-2 block text-xl text-[color:var(--panel-text)]">
             {priceDelta >= 0 ? "+" : ""}{formatMoney(priceDelta)} ₽
           </strong>
-          <p className="mt-1 text-xs leading-5 text-[color:color-mix(in_oklab,var(--panel-text)_62%,white)]">
+          <p className="mt-1 text-sm leading-6 text-[color:color-mix(in_oklab,var(--panel-text)_62%,white)]">
             {aiMidPrice > 0 ? `${priceDelta >= 0 ? "+" : ""}${priceDeltaPercent}% к AI-ориентиру` : "Без сравнения"}
           </p>
         </div>
       </div>
 
-      <div className="mt-3 rounded-[18px] border p-3 [background:color-mix(in_oklab,var(--panel-card)_94%,white)] [border-color:var(--panel-border)]">
-        <strong className="block text-sm font-semibold text-[color:var(--panel-text)]">{verdict}</strong>
-        <p className="mt-2 text-sm leading-6 text-[color:color-mix(in_oklab,var(--panel-text)_68%,white)]">
+      <div className="mt-3 rounded-[18px] border p-3.5 motion-safe:animate-soft-pop [background:color-mix(in_oklab,var(--panel-card)_94%,white)] [border-color:var(--panel-border)]">
+        <strong className="block text-[15px] font-semibold leading-6 text-[color:var(--panel-text)]">{verdict}</strong>
+        <p className="mt-2 text-[15px] leading-7 text-[color:color-mix(in_oklab,var(--panel-text)_68%,white)]">
           {feedback.scenario_summary}
         </p>
-        <p className="mt-2 text-sm leading-6 text-[color:color-mix(in_oklab,var(--panel-text)_68%,white)]">{feedback.reasoning}</p>
+        <p className="mt-2 text-[15px] leading-7 text-[color:color-mix(in_oklab,var(--panel-text)_68%,white)]">{feedback.reasoning}</p>
       </div>
 
       {(feedback.key_drivers?.length || feedback.recommendations?.length) ? (
         <div className="mt-3 grid gap-3 lg:grid-cols-2">
-          <div className="rounded-[18px] border p-3 [background:color-mix(in_oklab,var(--panel-card)_94%,white)] [border-color:var(--panel-border)]">
-            <strong className="block text-sm font-semibold text-[color:var(--panel-text)]">Что влияет на цену</strong>
-            <ul className="mt-2 grid gap-2 text-sm leading-6 text-[color:color-mix(in_oklab,var(--panel-text)_68%,white)]">
+          <div className="rounded-[18px] border p-3.5 motion-safe:transition-transform motion-safe:duration-300 motion-safe:ease-[var(--ease-soft-spring)] motion-safe:hover:-translate-y-0.5 [background:color-mix(in_oklab,var(--panel-card)_94%,white)] [border-color:var(--panel-border)]">
+            <strong className="block text-[15px] font-semibold text-[color:var(--panel-text)]">Что влияет на цену</strong>
+            <ul className="mt-2 grid gap-2 text-[15px] leading-7 text-[color:color-mix(in_oklab,var(--panel-text)_68%,white)]">
               {(feedback.key_drivers || []).slice(0, 3).map((item, index) => (
                 <li key={`${item}-${index}`}>• {item}</li>
               ))}
             </ul>
           </div>
-          <div className="rounded-[18px] border p-3 [background:color-mix(in_oklab,var(--panel-card)_94%,white)] [border-color:var(--panel-border)]">
-            <strong className="block text-sm font-semibold text-[color:var(--panel-text)]">Что делать</strong>
-            <ul className="mt-2 grid gap-2 text-sm leading-6 text-[color:color-mix(in_oklab,var(--panel-text)_68%,white)]">
+          <div className="rounded-[18px] border p-3.5 motion-safe:transition-transform motion-safe:duration-300 motion-safe:ease-[var(--ease-soft-spring)] motion-safe:hover:-translate-y-0.5 [background:color-mix(in_oklab,var(--panel-card)_94%,white)] [border-color:var(--panel-border)]">
+            <strong className="block text-[15px] font-semibold text-[color:var(--panel-text)]">Что делать</strong>
+            <ul className="mt-2 grid gap-2 text-[15px] leading-7 text-[color:color-mix(in_oklab,var(--panel-text)_68%,white)]">
               {(feedback.recommendations || []).slice(0, 3).map((item, index) => (
                 <li key={`${item}-${index}`}>• {item}</li>
               ))}
