@@ -172,6 +172,9 @@ func (h *APIHandler) handleCalculate(w http.ResponseWriter, r *http.Request, use
 				return
 			}
 			result.AIFeedback = &feedback
+			result.AIFeedbackError = ""
+		} else {
+			result.AIFeedbackError = feedbackErr.Error()
 		}
 	}
 

@@ -147,6 +147,7 @@ type CalculationResult struct {
 	AppliedOperations       []AppliedOperation    `json:"applied_operations"`
 	MaterialLines           []MaterialLine        `json:"material_lines"`
 	AIFeedback              *MarketFeedbackResult `json:"ai_feedback,omitempty"`
+	AIFeedbackError         string                `json:"ai_feedback_error,omitempty"`
 	CreatedAt               time.Time             `json:"created_at"`
 }
 
