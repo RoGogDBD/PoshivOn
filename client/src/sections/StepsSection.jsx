@@ -23,7 +23,6 @@ const StepsSection = () => (
               <div className="mini-row"><span>Пиджак</span><span className="v">12 опер.</span></div>
               <div className="mini-row"><span>Блуза</span><span className="v">6 опер.</span></div>
               <div className="mini-row"><span>Брюки</span><span className="v">8 опер.</span></div>
-              <div className="mini-bar" />
             </div>
           </div>
         </article>
@@ -37,7 +36,6 @@ const StepsSection = () => (
             <div className="mini">
               <div className="mini-row"><span>Тираж</span><span className="v">15 шт.</span></div>
               <div className="mini-row"><span>Срочность</span><span className="v">14 дн.</span></div>
-              <div className="mini-bar" />
             </div>
           </div>
         </article>
