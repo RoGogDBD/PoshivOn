@@ -952,9 +952,9 @@ const Panel = () => {
                       </div>
                     )}
 
-                    <label className="panel-form__row">
+                    <label className="panel-form__row panel-form__row--stacked">
                       <span>Комментарий</span>
-                      <textarea value={orderForm.comment} onChange={(event) => handleOrderChange("comment", event.target.value)} rows="3" />
+                      <textarea value={orderForm.comment} onChange={(event) => handleOrderChange("comment", event.target.value)} rows="4" />
                     </label>
 
                     <div className="panel-form__block">
