@@ -9,15 +9,10 @@ const Header = ({ navItems, onAuthOpen }) => {
   }, [isMenuOpen]);
 
   useEffect(() => {
-    const mediaQuery = window.matchMedia("(min-width: 900px)");
-    const handleViewportChange = (event) => {
-      if (event.matches) {
-        setIsMenuOpen(false);
-      }
-    };
-
-    mediaQuery.addEventListener("change", handleViewportChange);
-    return () => mediaQuery.removeEventListener("change", handleViewportChange);
+    const mq = window.matchMedia("(min-width: 981px)");
+    const handler = (e) => { if (e.matches) setIsMenuOpen(false); };
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
   }, []);
 
   const handleAuthClick = () => {
@@ -26,11 +21,13 @@ const Header = ({ navItems, onAuthOpen }) => {
   };
 
   return (
-    <header className="header">
-      <div className="container header__inner">
-        <div className="logo">PoshivOn</div>
+    <header className="nav-bar">
+      <div className="container nav-inner">
+        <a href="#" className="brand">
+          Poshiv<span className="brand-dot">On</span>
+        </a>
 
-        <nav className="nav nav--desktop" aria-label="Основная навигация">
+        <nav className="nav-links" aria-label="Основная навигация">
           {navItems.map((item) => (
             <a key={item.href} href={item.href}>
               {item.label}
@@ -38,9 +35,9 @@ const Header = ({ navItems, onAuthOpen }) => {
           ))}
         </nav>
 
-        <div className="header__actions">
-          <button className="btn btn--ghost header__login" type="button" onClick={onAuthOpen}>
-            Вход
+        <div className="nav-cta">
+          <button className="btn btn-ghost" type="button" onClick={onAuthOpen}>
+            Войти
           </button>
           <button
             className={`nav-toggle ${isMenuOpen ? "nav-toggle--open" : ""}`}
@@ -48,7 +45,7 @@ const Header = ({ navItems, onAuthOpen }) => {
             aria-expanded={isMenuOpen}
             aria-controls="mobile-nav"
             aria-label={isMenuOpen ? "Закрыть меню" : "Открыть меню"}
-            onClick={() => setIsMenuOpen((current) => !current)}
+            onClick={() => setIsMenuOpen((v) => !v)}
           >
             <span />
             <span />
@@ -62,7 +59,7 @@ const Header = ({ navItems, onAuthOpen }) => {
         className={`mobile-nav ${isMenuOpen ? "mobile-nav--open" : ""}`}
         aria-hidden={!isMenuOpen}
       >
-        <div className="container mobile-nav__inner">
+        <div className="mobile-nav__inner">
           <nav className="mobile-nav__links" aria-label="Мобильная навигация">
             {navItems.map((item) => (
               <a key={item.href} href={item.href} onClick={() => setIsMenuOpen(false)}>
@@ -70,7 +67,7 @@ const Header = ({ navItems, onAuthOpen }) => {
               </a>
             ))}
           </nav>
-          <button className="btn btn--primary mobile-nav__auth" type="button" onClick={handleAuthClick}>
+          <button className="btn btn-primary mobile-nav__auth" type="button" onClick={handleAuthClick}>
             Войти в кабинет
           </button>
         </div>

@@ -1,12 +1,15 @@
-const CtaSection = () => (
-  <section className="cta" id="cta">
-    <div className="container cta__inner">
-      <h2>Рассчитайте стоимость пошива и получите результат за 15 минут.</h2>
-      <button className="btn btn--primary">Начать расчет</button>
-      <p>
-        15 минут, чтобы получить полный расчет с учетом ткани, фурнитуры и
-        работы.
-      </p>
+const CtaSection = ({ onAuthOpen }) => (
+  <section className="container cta-wrap">
+    <div className="cta">
+      <div className="cta-inner--text">
+        <h2>
+          Посчитайте первый заказ <span>сегодня</span>.
+        </h2>
+        <p className="cta-sub">
+          Регистрация через Яндекс ID. Без карты, без ограничений на старте.
+          Нужны 15 минут, чтобы настроить справочник.
+        </p>
+      </div>
     </div>
   </section>
 );
