@@ -11,11 +11,12 @@ import (
 )
 
 type APIHandler struct {
-	costing *service.CostingService
+	costing  *service.CostingService
+	deepseek *service.DeepSeekClient
 }
 
-func NewAPIHandler(costing *service.CostingService) *APIHandler {
-	return &APIHandler{costing: costing}
+func NewAPIHandler(costing *service.CostingService, deepseek *service.DeepSeekClient) *APIHandler {
+	return &APIHandler{costing: costing, deepseek: deepseek}
 }
 
 func (h *APIHandler) Register(mux *http.ServeMux) {
@@ -58,6 +59,9 @@ func (h *APIHandler) handleUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	case resource == "chats" && len(parts) == 4 && parts[3] == "calculations" && r.Method == http.MethodGet:
 		h.handleListChatCalculations(w, r, userID, parts[2])
+		return
+	case resource == "market-feedback" && len(parts) == 2 && r.Method == http.MethodPost:
+		h.handleMarketFeedback(w, r, userID)
 		return
 	default:
 		writeAPIError(w, http.StatusNotFound, "route not found")
@@ -146,6 +150,27 @@ func (h *APIHandler) handleCalculate(w http.ResponseWriter, r *http.Request, use
 		return
 	}
 
+	if h.deepseek != nil && result.CalculationMode == "masterpiece" {
+		settings, settingsErr := h.costing.GetUserSettings(r.Context(), userID)
+		if settingsErr != nil {
+			if errors.Is(settingsErr, service.ErrNotFound) {
+				settings = service.DefaultUserSettings()
+			} else {
+				writeAPIDomainError(w, settingsErr)
+				return
+			}
+		}
+
+		feedback, feedbackErr := h.deepseek.AnalyzeMarketFeedback(
+			r.Context(),
+			buildMarketFeedbackInputFromCalculation(result),
+			settings,
+		)
+		if feedbackErr == nil {
+			result.AIFeedback = &feedback
+		}
+	}
+
 	writeAPIJSON(w, http.StatusOK, result)
 }
 
@@ -157,6 +182,37 @@ func (h *APIHandler) handleListChatCalculations(w http.ResponseWriter, r *http.R
 	}
 
 	writeAPIJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *APIHandler) handleMarketFeedback(w http.ResponseWriter, r *http.Request, userID string) {
+	if h.deepseek == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "deepseek integration is not configured")
+		return
+	}
+
+	var req service.MarketFeedbackInput
+	if err := decodeJSON(r, &req); err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	settings, err := h.costing.GetUserSettings(r.Context(), userID)
+	if err != nil {
+		if errors.Is(err, service.ErrNotFound) {
+			settings = service.DefaultUserSettings()
+		} else {
+			writeAPIDomainError(w, err)
+			return
+		}
+	}
+
+	result, err := h.deepseek.AnalyzeMarketFeedback(r.Context(), req, settings)
+	if err != nil {
+		writeAPIDomainError(w, err)
+		return
+	}
+
+	writeAPIJSON(w, http.StatusOK, result)
 }
 
 func splitPath(path string) []string {
@@ -198,7 +254,47 @@ func writeAPIDomainError(w http.ResponseWriter, err error) {
 		writeAPIError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, service.ErrNotFound):
 		writeAPIError(w, http.StatusNotFound, err.Error())
+	case strings.Contains(strings.ToLower(err.Error()), "rate_limit_exceeded"):
+		writeAPIError(w, http.StatusTooManyRequests, err.Error())
+	case strings.Contains(strings.ToLower(err.Error()), "service_unavailable"):
+		writeAPIError(w, http.StatusServiceUnavailable, err.Error())
+	case strings.Contains(strings.ToLower(err.Error()), "timeout"):
+		writeAPIError(w, http.StatusGatewayTimeout, err.Error())
 	default:
 		writeAPIError(w, http.StatusInternalServerError, err.Error())
+	}
+}
+
+func buildMarketFeedbackInputFromCalculation(result service.CalculationResult) service.MarketFeedbackInput {
+	operationCounts := make(map[string]int, len(result.AppliedOperations))
+	for _, operation := range result.AppliedOperations {
+		if operation.Count > 0 {
+			operationCounts[operation.Name] = operation.Count
+		}
+	}
+
+	return service.MarketFeedbackInput{
+		GarmentType:     result.GarmentType,
+		MaterialType:    result.MaterialType,
+		MarketSegment:   result.MarketSegment,
+		Urgency:         result.Urgency,
+		Quantity:        result.Quantity,
+		Fittings:        result.Fittings,
+		IsCustomFigure:  result.IsCustomFigure,
+		IsChild:         result.IsChild,
+		Comment:         result.Comment,
+		OperationCounts: operationCounts,
+		Calculation: &service.MarketFeedbackCalculationInput{
+			CalculationMode:        result.CalculationMode,
+			BasePricePerUnitRUB:    result.MinAllowedPricePerUnit,
+			CostPricePerUnitRUB:    result.CostPricePerUnit,
+			PriceBeforeDiscountRUB: result.PriceBeforeDiscount,
+			MinAllowedPriceRUB:     result.MinAllowedPricePerUnit,
+			FinalPricePerUnitRUB:   result.PricePerUnit,
+			FinalTotalRUB:          result.Total,
+			DiscountPercent:        result.DiscountPercent,
+			DiscountAmountRUB:      result.DiscountAmount,
+			MarketStatus:           result.MarketStatus,
+		},
 	}
 }

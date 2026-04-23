@@ -218,6 +218,17 @@ func copyCalculation(src service.CalculationResult) service.CalculationResult {
 	item := src
 	item.AppliedOperations = append([]service.AppliedOperation(nil), src.AppliedOperations...)
 	item.MaterialLines = append([]service.MaterialLine(nil), src.MaterialLines...)
+	if src.AIFeedback != nil {
+		feedbackCopy := *src.AIFeedback
+		feedbackCopy.KeyDrivers = append([]string(nil), src.AIFeedback.KeyDrivers...)
+		feedbackCopy.Risks = append([]string(nil), src.AIFeedback.Risks...)
+		feedbackCopy.Recommendations = append([]string(nil), src.AIFeedback.Recommendations...)
+		if src.AIFeedback.SelectedMarketBand != nil {
+			bandCopy := *src.AIFeedback.SelectedMarketBand
+			feedbackCopy.SelectedMarketBand = &bandCopy
+		}
+		item.AIFeedback = &feedbackCopy
+	}
 	return item
 }
 

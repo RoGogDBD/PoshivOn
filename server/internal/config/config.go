@@ -31,6 +31,12 @@ type Config struct {
 
 	AllowedOrigins  string
 	RefreshTTLHours int
+
+	DeepSeekAPIKey      string
+	DeepSeekAPIEndpoint string
+	DeepSeekModel       string
+	DeepSeekTimeoutSec  int
+	DeepSeekMaxRetries  int
 }
 
 func Load() (*Config, error) {
@@ -70,6 +76,12 @@ func Load() (*Config, error) {
 
 		AllowedOrigins:  envOrDefault("CORS_ALLOWED_ORIGINS", ""),
 		RefreshTTLHours: envInt("REFRESH_TTL_HOURS", 720),
+
+		DeepSeekAPIKey:      envOrDefault("DEEPSEEK_API_KEY", ""),
+		DeepSeekAPIEndpoint: envOrDefault("DEEPSEEK_API_ENDPOINT", "https://api.deepseek.com/v1/chat/completions"),
+		DeepSeekModel:       envOrDefault("DEEPSEEK_MODEL", "deepseek-chat"),
+		DeepSeekTimeoutSec:  envInt("DEEPSEEK_TIMEOUT_SEC", 45),
+		DeepSeekMaxRetries:  envInt("DEEPSEEK_MAX_RETRIES", 3),
 	}
 
 	return cfg, nil

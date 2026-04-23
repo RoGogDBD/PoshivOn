@@ -331,6 +331,8 @@ func (r *PostgresRepository) AppendCalculation(ctx context.Context, result servi
 		"market_segment":   result.MarketSegment,
 		"quantity":         result.Quantity,
 		"fittings":         result.Fittings,
+		"is_custom_figure": result.IsCustomFigure,
+		"is_child":         result.IsChild,
 		"comment":          result.Comment,
 	})
 	if err != nil {
@@ -475,6 +477,8 @@ func decodeOrderSnapshot(raw string, item *service.CalculationResult) error {
 		CalculationMode string `json:"calculation_mode"`
 		MarketSegment   string `json:"market_segment"`
 		Fittings        int    `json:"fittings"`
+		IsCustomFigure  bool   `json:"is_custom_figure"`
+		IsChild         bool   `json:"is_child"`
 		Comment         string `json:"comment"`
 	}
 	if raw == "" {
@@ -486,27 +490,30 @@ func decodeOrderSnapshot(raw string, item *service.CalculationResult) error {
 	item.CalculationMode = payload.CalculationMode
 	item.MarketSegment = payload.MarketSegment
 	item.Fittings = payload.Fittings
+	item.IsCustomFigure = payload.IsCustomFigure
+	item.IsChild = payload.IsChild
 	item.Comment = payload.Comment
 	return nil
 }
 
 func decodeBreakdown(raw string, item *service.CalculationResult) error {
 	var payload struct {
-		BaseMinutesPerUnit      int   `json:"base_minutes_per_unit"`
-		OperationMinutesPerUnit int   `json:"operation_minutes_per_unit"`
-		FittingMinutesPerUnit   int   `json:"fitting_minutes_per_unit"`
-		AdjustedMinutesPerUnit  int   `json:"adjusted_minutes_per_unit"`
-		LaborCostPerUnit        int64 `json:"labor_cost_per_unit"`
-		PayrollCostPerUnit      int64 `json:"payroll_cost_per_unit"`
-		MaterialsCostPerUnit    int64 `json:"materials_cost_per_unit"`
-		ConsumablesCostPerUnit  int64 `json:"consumables_cost_per_unit"`
-		OverheadCostPerUnit     int64 `json:"overhead_cost_per_unit"`
-		LogisticsCostPerUnit    int64 `json:"logistics_cost_per_unit"`
-		RiskReservePerUnit      int64 `json:"risk_reserve_per_unit"`
-		CostPricePerUnit        int64 `json:"cost_price_per_unit"`
-		MarginPerUnit           int64 `json:"margin_per_unit"`
-		PriceBeforeDiscount     int64 `json:"price_before_discount_per_unit"`
-		MinAllowedPricePerUnit  int64 `json:"min_allowed_price_per_unit"`
+		BaseMinutesPerUnit      int                           `json:"base_minutes_per_unit"`
+		OperationMinutesPerUnit int                           `json:"operation_minutes_per_unit"`
+		FittingMinutesPerUnit   int                           `json:"fitting_minutes_per_unit"`
+		AdjustedMinutesPerUnit  int                           `json:"adjusted_minutes_per_unit"`
+		LaborCostPerUnit        int64                         `json:"labor_cost_per_unit"`
+		PayrollCostPerUnit      int64                         `json:"payroll_cost_per_unit"`
+		MaterialsCostPerUnit    int64                         `json:"materials_cost_per_unit"`
+		ConsumablesCostPerUnit  int64                         `json:"consumables_cost_per_unit"`
+		OverheadCostPerUnit     int64                         `json:"overhead_cost_per_unit"`
+		LogisticsCostPerUnit    int64                         `json:"logistics_cost_per_unit"`
+		RiskReservePerUnit      int64                         `json:"risk_reserve_per_unit"`
+		CostPricePerUnit        int64                         `json:"cost_price_per_unit"`
+		MarginPerUnit           int64                         `json:"margin_per_unit"`
+		PriceBeforeDiscount     int64                         `json:"price_before_discount_per_unit"`
+		MinAllowedPricePerUnit  int64                         `json:"min_allowed_price_per_unit"`
+		AIFeedback              *service.MarketFeedbackResult `json:"ai_feedback"`
 	}
 	if raw == "" {
 		return nil
@@ -529,6 +536,7 @@ func decodeBreakdown(raw string, item *service.CalculationResult) error {
 	item.MarginPerUnit = payload.MarginPerUnit
 	item.PriceBeforeDiscount = payload.PriceBeforeDiscount
 	item.MinAllowedPricePerUnit = payload.MinAllowedPricePerUnit
+	item.AIFeedback = payload.AIFeedback
 	return nil
 }
 

@@ -111,40 +111,43 @@ type MaterialLine struct {
 }
 
 type CalculationResult struct {
-	UserID                  string             `json:"user_id"`
-	ChatID                  string             `json:"chat_id"`
-	CalculationMode         string             `json:"calculation_mode"`
-	GarmentType             string             `json:"garment_type"`
-	MaterialType            string             `json:"material_type"`
-	Urgency                 string             `json:"urgency"`
-	MarketSegment           string             `json:"market_segment"`
-	Quantity                int                `json:"quantity"`
-	Fittings                int                `json:"fittings"`
-	Comment                 string             `json:"comment"`
-	BaseMinutesPerUnit      int                `json:"base_minutes_per_unit"`
-	OperationMinutesPerUnit int                `json:"operation_minutes_per_unit"`
-	FittingMinutesPerUnit   int                `json:"fitting_minutes_per_unit"`
-	AdjustedMinutesPerUnit  int                `json:"adjusted_minutes_per_unit"`
-	LaborCostPerUnit        int64              `json:"labor_cost_per_unit"`
-	PayrollCostPerUnit      int64              `json:"payroll_cost_per_unit"`
-	MaterialsCostPerUnit    int64              `json:"materials_cost_per_unit"`
-	ConsumablesCostPerUnit  int64              `json:"consumables_cost_per_unit"`
-	OverheadCostPerUnit     int64              `json:"overhead_cost_per_unit"`
-	LogisticsCostPerUnit    int64              `json:"logistics_cost_per_unit"`
-	RiskReservePerUnit      int64              `json:"risk_reserve_per_unit"`
-	CostPricePerUnit        int64              `json:"cost_price_per_unit"`
-	MarginPerUnit           int64              `json:"margin_per_unit"`
-	PriceBeforeDiscount     int64              `json:"price_before_discount_per_unit"`
-	MinAllowedPricePerUnit  int64              `json:"min_allowed_price_per_unit"`
-	PricePerUnit            int64              `json:"price_per_unit"`
-	Subtotal                int64              `json:"subtotal"`
-	DiscountPercent         int64              `json:"discount_percent"`
-	DiscountAmount          int64              `json:"discount_amount"`
-	Total                   int64              `json:"total"`
-	MarketStatus            string             `json:"market_status"`
-	AppliedOperations       []AppliedOperation `json:"applied_operations"`
-	MaterialLines           []MaterialLine     `json:"material_lines"`
-	CreatedAt               time.Time          `json:"created_at"`
+	UserID                  string                `json:"user_id"`
+	ChatID                  string                `json:"chat_id"`
+	CalculationMode         string                `json:"calculation_mode"`
+	GarmentType             string                `json:"garment_type"`
+	MaterialType            string                `json:"material_type"`
+	Urgency                 string                `json:"urgency"`
+	MarketSegment           string                `json:"market_segment"`
+	Quantity                int                   `json:"quantity"`
+	Fittings                int                   `json:"fittings"`
+	IsCustomFigure          bool                  `json:"is_custom_figure"`
+	IsChild                 bool                  `json:"is_child"`
+	Comment                 string                `json:"comment"`
+	BaseMinutesPerUnit      int                   `json:"base_minutes_per_unit"`
+	OperationMinutesPerUnit int                   `json:"operation_minutes_per_unit"`
+	FittingMinutesPerUnit   int                   `json:"fitting_minutes_per_unit"`
+	AdjustedMinutesPerUnit  int                   `json:"adjusted_minutes_per_unit"`
+	LaborCostPerUnit        int64                 `json:"labor_cost_per_unit"`
+	PayrollCostPerUnit      int64                 `json:"payroll_cost_per_unit"`
+	MaterialsCostPerUnit    int64                 `json:"materials_cost_per_unit"`
+	ConsumablesCostPerUnit  int64                 `json:"consumables_cost_per_unit"`
+	OverheadCostPerUnit     int64                 `json:"overhead_cost_per_unit"`
+	LogisticsCostPerUnit    int64                 `json:"logistics_cost_per_unit"`
+	RiskReservePerUnit      int64                 `json:"risk_reserve_per_unit"`
+	CostPricePerUnit        int64                 `json:"cost_price_per_unit"`
+	MarginPerUnit           int64                 `json:"margin_per_unit"`
+	PriceBeforeDiscount     int64                 `json:"price_before_discount_per_unit"`
+	MinAllowedPricePerUnit  int64                 `json:"min_allowed_price_per_unit"`
+	PricePerUnit            int64                 `json:"price_per_unit"`
+	Subtotal                int64                 `json:"subtotal"`
+	DiscountPercent         int64                 `json:"discount_percent"`
+	DiscountAmount          int64                 `json:"discount_amount"`
+	Total                   int64                 `json:"total"`
+	MarketStatus            string                `json:"market_status"`
+	AppliedOperations       []AppliedOperation    `json:"applied_operations"`
+	MaterialLines           []MaterialLine        `json:"material_lines"`
+	AIFeedback              *MarketFeedbackResult `json:"ai_feedback,omitempty"`
+	CreatedAt               time.Time             `json:"created_at"`
 }
 
 type Chat struct {
@@ -538,6 +541,8 @@ func (s *CostingService) CalculateInChat(ctx context.Context, userID, chatID str
 		MarketSegment:           order.MarketSegment,
 		Quantity:                order.Quantity,
 		Fittings:                order.Fittings,
+		IsCustomFigure:          order.IsCustomFigure,
+		IsChild:                 order.IsChild,
 		Comment:                 strings.TrimSpace(order.Comment),
 		BaseMinutesPerUnit:      garment.BaseMinutes,
 		OperationMinutesPerUnit: operationMinutesPerUnit,
@@ -747,6 +752,8 @@ func (s *CostingService) calculateQuickInChat(
 		CalculationMode:        calculatorModeQuick,
 		GarmentType:            order.GarmentType,
 		Quantity:               order.Quantity,
+		IsCustomFigure:         order.IsCustomFigure,
+		IsChild:                order.IsChild,
 		Comment:                strings.TrimSpace(order.Comment),
 		PriceBeforeDiscount:    priceBeforeDiscount,
 		MinAllowedPricePerUnit: garment.QuickPrice,

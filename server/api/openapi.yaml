@@ -150,6 +150,55 @@ paths:
                       $ref: '#/components/schemas/CalculationResult'
                 required: [items]
 
+  /api/v1/users/{userID}/market-feedback:
+    parameters:
+      - in: path
+        name: userID
+        required: true
+        schema:
+          type: string
+    post:
+      summary: Analyze calculation parameters with DeepSeek and estimate RU-market fit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                garment_type:
+                  type: string
+                material_type:
+                  type: string
+                market_segment:
+                  type: string
+                urgency:
+                  type: string
+                quantity:
+                  type: integer
+                fittings:
+                  type: integer
+                is_custom_figure:
+                  type: boolean
+                is_child:
+                  type: boolean
+                operation_counts:
+                  type: object
+                  additionalProperties:
+                    type: integer
+                comment:
+                  type: string
+              required: [quantity]
+      responses:
+        '200':
+          description: Image analysis result
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          description: DeepSeek rate limit exceeded
+        '503':
+          description: DeepSeek integration unavailable
+
 components:
   schemas:
     BatchDiscount:

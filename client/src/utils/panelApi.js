@@ -71,3 +71,9 @@ export const calculateInChat = async (userID, chatID, order) =>
     method: "POST",
     body: JSON.stringify(order),
   });
+
+export const analyzeMarketWithAI = async (userID, payload) =>
+  request(`/api/v1/users/${userID}/market-feedback`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });

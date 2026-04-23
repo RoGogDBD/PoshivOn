@@ -1,0 +1,74 @@
+<svg width="1280" height="720" viewBox="0 0 1280 720" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="80" y1="60" x2="1180" y2="660" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F7EFE3"/>
+      <stop offset="1" stop-color="#E7F1EE"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#FFF8EF"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#23423A" flood-opacity="0.12"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10V0Z" fill="#355D52"/>
+    </marker>
+  </defs>
+
+  <rect width="1280" height="720" rx="28" fill="url(#bg)"/>
+  <circle cx="170" cy="120" r="90" fill="#E9D6B9" fill-opacity="0.55"/>
+  <circle cx="1130" cy="610" r="120" fill="#CFE1DA" fill-opacity="0.7"/>
+
+  <text x="80" y="90" fill="#19352D" font-size="38" font-weight="700" font-family="Arial, sans-serif">PoshivOn: архитектура решения</text>
+  <text x="80" y="128" fill="#4D6B62" font-size="20" font-family="Arial, sans-serif">React-панель, Go API, MariaDB, OAuth и AI-анализ для расчёта стоимости пошива</text>
+
+  <g filter="url(#shadow)">
+    <rect x="90" y="210" width="260" height="220" rx="28" fill="url(#card)" stroke="#DAB98C"/>
+    <text x="122" y="260" fill="#7A4D1C" font-size="26" font-weight="700" font-family="Arial, sans-serif">Frontend</text>
+    <text x="122" y="300" fill="#23423A" font-size="20" font-family="Arial, sans-serif">React 18 + Vite 5</text>
+    <text x="122" y="336" fill="#23423A" font-size="20" font-family="Arial, sans-serif">Лендинг и рабочая панель</text>
+    <text x="122" y="372" fill="#23423A" font-size="20" font-family="Arial, sans-serif">Прокси `/api`, `/auth`, `/health`</text>
+    <text x="122" y="408" fill="#5A746C" font-size="18" font-family="Arial, sans-serif">client/</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="510" y="170" width="290" height="300" rx="28" fill="url(#card)" stroke="#8DB3A6"/>
+    <text x="544" y="220" fill="#22483D" font-size="28" font-weight="700" font-family="Arial, sans-serif">Backend API</text>
+    <text x="544" y="262" fill="#23423A" font-size="20" font-family="Arial, sans-serif">Go 1.25 + net/http + GORM</text>
+    <text x="544" y="298" fill="#23423A" font-size="20" font-family="Arial, sans-serif">OAuth handlers</text>
+    <text x="544" y="334" fill="#23423A" font-size="20" font-family="Arial, sans-serif">CostingService</text>
+    <text x="544" y="370" fill="#23423A" font-size="20" font-family="Arial, sans-serif">DeepSeek integration</text>
+    <text x="544" y="406" fill="#23423A" font-size="20" font-family="Arial, sans-serif">OpenAPI + migrations</text>
+    <text x="544" y="442" fill="#5A746C" font-size="18" font-family="Arial, sans-serif">server/</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="930" y="210" width="260" height="220" rx="28" fill="url(#card)" stroke="#8DB3A6"/>
+    <text x="964" y="260" fill="#22483D" font-size="26" font-weight="700" font-family="Arial, sans-serif">Data Layer</text>
+    <text x="964" y="300" fill="#23423A" font-size="20" font-family="Arial, sans-serif">MariaDB 11.4</text>
+    <text x="964" y="336" fill="#23423A" font-size="20" font-family="Arial, sans-serif">Настройки пользователей</text>
+    <text x="964" y="372" fill="#23423A" font-size="20" font-family="Arial, sans-serif">Чаты и история расчётов</text>
+    <text x="964" y="408" fill="#5A746C" font-size="18" font-family="Arial, sans-serif">docker-compose / migrations</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="330" y="520" width="280" height="120" rx="24" fill="url(#card)" stroke="#DAB98C"/>
+    <text x="362" y="570" fill="#7A4D1C" font-size="24" font-weight="700" font-family="Arial, sans-serif">Yandex OAuth</text>
+    <text x="362" y="606" fill="#23423A" font-size="18" font-family="Arial, sans-serif">Логин, профиль, refresh-cookie</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="690" y="520" width="280" height="120" rx="24" fill="url(#card)" stroke="#8DB3A6"/>
+    <text x="722" y="570" fill="#22483D" font-size="24" font-weight="700" font-family="Arial, sans-serif">DeepSeek</text>
+    <text x="722" y="606" fill="#23423A" font-size="18" font-family="Arial, sans-serif">Рыночная оценка и рекомендации</text>
+  </g>
+
+  <path d="M350 320H500" stroke="#355D52" stroke-width="6" marker-end="url(#arrow)"/>
+  <path d="M800 320H920" stroke="#355D52" stroke-width="6" marker-end="url(#arrow)"/>
+  <path d="M610 470L500 520" stroke="#355D52" stroke-width="6" marker-end="url(#arrow)"/>
+  <path d="M700 470L810 520" stroke="#355D52" stroke-width="6" marker-end="url(#arrow)"/>
+
+  <text x="390" y="304" fill="#355D52" font-size="18" font-family="Arial, sans-serif">HTTP / JSON</text>
+  <text x="834" y="304" fill="#355D52" font-size="18" font-family="Arial, sans-serif">GORM</text>
+</svg>
