@@ -1041,7 +1041,7 @@ const Panel = () => {
                               <span>Риск: {formatMoney(item.risk_reserve_per_unit)} ₽</span>
                               <span>Себестоимость: {formatMoney(item.cost_price_per_unit)} ₽</span>
                             </div>
-                          <ul className="panel-history__list">
+                            <ul className="panel-history__list">
                               {item.applied_operations?.length > 0 ? item.applied_operations.map((operation) => (
                                 <li key={`${item.created_at}-${operation.name}`}>
                                   {operation.name} × {operation.count}: +{operation.additional_minutes} мин, +{formatMoney(operation.additional_material_cost)} ₽
