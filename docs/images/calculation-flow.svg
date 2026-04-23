@@ -1,0 +1,72 @@
+<svg width="1280" height="520" viewBox="0 0 1280 520" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg2" x1="60" y1="40" x2="1210" y2="500" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF7EE"/>
+      <stop offset="1" stop-color="#EEF5F2"/>
+    </linearGradient>
+    <linearGradient id="step" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#FCF4E7"/>
+    </linearGradient>
+    <filter id="shadow2" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="16" flood-color="#173B31" flood-opacity="0.12"/>
+    </filter>
+    <marker id="arrow2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10V0Z" fill="#466B60"/>
+    </marker>
+  </defs>
+
+  <rect width="1280" height="520" rx="28" fill="url(#bg2)"/>
+  <text x="72" y="82" fill="#19352D" font-size="34" font-weight="700" font-family="Arial, sans-serif">Поток пользовательского расчёта</text>
+  <text x="72" y="118" fill="#4D6B62" font-size="20" font-family="Arial, sans-serif">От авторизации и настройки правил до итоговой цены и AI-комментария</text>
+
+  <g filter="url(#shadow2)">
+    <rect x="70" y="190" width="210" height="180" rx="28" fill="url(#step)" stroke="#DAB98C"/>
+    <circle cx="122" cy="240" r="26" fill="#C97E2E"/>
+    <text x="113" y="248" fill="white" font-size="20" font-weight="700" font-family="Arial, sans-serif">1</text>
+    <text x="108" y="290" fill="#7A4D1C" font-size="24" font-weight="700" font-family="Arial, sans-serif">Вход</text>
+    <text x="108" y="326" fill="#23423A" font-size="18" font-family="Arial, sans-serif">Яндекс ID,</text>
+    <text x="108" y="352" fill="#23423A" font-size="18" font-family="Arial, sans-serif">профиль и сессия</text>
+  </g>
+
+  <g filter="url(#shadow2)">
+    <rect x="310" y="190" width="210" height="180" rx="28" fill="url(#step)" stroke="#DAB98C"/>
+    <circle cx="362" cy="240" r="26" fill="#C97E2E"/>
+    <text x="353" y="248" fill="white" font-size="20" font-weight="700" font-family="Arial, sans-serif">2</text>
+    <text x="348" y="290" fill="#7A4D1C" font-size="24" font-weight="700" font-family="Arial, sans-serif">Настройки</text>
+    <text x="348" y="326" fill="#23423A" font-size="18" font-family="Arial, sans-serif">Изделия, материалы,</text>
+    <text x="348" y="352" fill="#23423A" font-size="18" font-family="Arial, sans-serif">операции и скидки</text>
+  </g>
+
+  <g filter="url(#shadow2)">
+    <rect x="550" y="190" width="210" height="180" rx="28" fill="url(#step)" stroke="#8DB3A6"/>
+    <circle cx="602" cy="240" r="26" fill="#2D7C65"/>
+    <text x="593" y="248" fill="white" font-size="20" font-weight="700" font-family="Arial, sans-serif">3</text>
+    <text x="588" y="290" fill="#22483D" font-size="24" font-weight="700" font-family="Arial, sans-serif">Чат</text>
+    <text x="588" y="326" fill="#23423A" font-size="18" font-family="Arial, sans-serif">Контекст под заказ</text>
+    <text x="588" y="352" fill="#23423A" font-size="18" font-family="Arial, sans-serif">или клиента</text>
+  </g>
+
+  <g filter="url(#shadow2)">
+    <rect x="790" y="190" width="210" height="180" rx="28" fill="url(#step)" stroke="#8DB3A6"/>
+    <circle cx="842" cy="240" r="26" fill="#2D7C65"/>
+    <text x="833" y="248" fill="white" font-size="20" font-weight="700" font-family="Arial, sans-serif">4</text>
+    <text x="828" y="290" fill="#22483D" font-size="24" font-weight="700" font-family="Arial, sans-serif">Расчёт</text>
+    <text x="828" y="326" fill="#23423A" font-size="18" font-family="Arial, sans-serif">`quick` или</text>
+    <text x="828" y="352" fill="#23423A" font-size="18" font-family="Arial, sans-serif">`masterpiece`</text>
+  </g>
+
+  <g filter="url(#shadow2)">
+    <rect x="1030" y="190" width="180" height="180" rx="28" fill="url(#step)" stroke="#8DB3A6"/>
+    <circle cx="1082" cy="240" r="26" fill="#2D7C65"/>
+    <text x="1073" y="248" fill="white" font-size="20" font-weight="700" font-family="Arial, sans-serif">5</text>
+    <text x="1068" y="290" fill="#22483D" font-size="24" font-weight="700" font-family="Arial, sans-serif">Итог</text>
+    <text x="1068" y="326" fill="#23423A" font-size="18" font-family="Arial, sans-serif">Цена, история,</text>
+    <text x="1068" y="352" fill="#23423A" font-size="18" font-family="Arial, sans-serif">AI-советы</text>
+  </g>
+
+  <path d="M280 280H300" stroke="#466B60" stroke-width="6" marker-end="url(#arrow2)"/>
+  <path d="M520 280H540" stroke="#466B60" stroke-width="6" marker-end="url(#arrow2)"/>
+  <path d="M760 280H780" stroke="#466B60" stroke-width="6" marker-end="url(#arrow2)"/>
+  <path d="M1000 280H1020" stroke="#466B60" stroke-width="6" marker-end="url(#arrow2)"/>
+</svg>
