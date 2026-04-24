@@ -7,5 +7,5 @@ export const navItems = [
 ];
 
 export const footerContacts = [
-  { label: "support@poshivon.ru", href: "mailto:support@poshivon.ru" },
+  { label: "GitHub", href: "https://github.com/RoGogDBD/PoshivOn" },
 ];
