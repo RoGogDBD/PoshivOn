@@ -6,6 +6,4 @@ export const navItems = [
   { href: "#faq", label: "Вопросы" },
 ];
 
-export const footerContacts = [
-  { label: "GitHub", href: "https://github.com/RoGogDBD/PoshivOn" },
-];
+export const footerContacts = [];

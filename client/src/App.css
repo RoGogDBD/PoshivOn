@@ -624,6 +624,15 @@ h1.hero-title span { color: var(--accent); }
   display: flex; justify-content: space-between; gap: 24px;
   font-size: 13px; color: var(--ink-3);
 }
+.footer-github {
+  margin-top: 20px;
+  display: flex; justify-content: center;
+}
+.footer-github a {
+  color: var(--ink-4);
+  transition: color .15s ease;
+}
+.footer-github a:hover { color: var(--ink); }
 
 /* ---- Mobile nav (landing) ---- */
 .nav-toggle {
