@@ -635,7 +635,7 @@ const Panel = () => {
                 </strong>
                 <p className="text-sm leading-6 text-[color:var(--settings-muted)]">
                   {isQuickCalculator
-                    ? "Быстрый тарифный режим для чернового просчёта без детальной себестоимости."
+                    ? "Быстрый тарифный режим для чернового просчёта без детальной стоимости."
                     : "Полная модель с минутами, материалами, срочностью, скидками и рыночными диапазонами."}
                 </p>
               </div>
@@ -722,7 +722,7 @@ const Panel = () => {
                 </>
               ) : (
                 <>
-                  <SettingsSection title="Общие правила" description="Базовые коэффициенты и ставки, влияющие на расчёт себестоимости и цены.">
+                  <SettingsSection title="Общие правила" description="Базовые коэффициенты и ставки, влияющие на расчёт стоимости и цены.">
                     <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
                       {Object.entries(settings.pricing_rules)
                         .filter(([key]) => key !== "calculator_mode")

@@ -66,6 +66,10 @@ jobs:
             id
             ls -ld /srv || true
             mkdir -p /srv/poshivon/nginx /srv/poshivon/certs || sudo mkdir -p /srv/poshivon/nginx /srv/poshivon/certs
+            mkdir -p /srv/poshivon/monitoring/prometheus
+            mkdir -p /srv/poshivon/monitoring/grafana/provisioning/datasources
+            mkdir -p /srv/poshivon/monitoring/grafana/provisioning/dashboards
+            mkdir -p /srv/poshivon/monitoring/grafana/dashboards
 
       - name: Upload docker-compose
         uses: appleboy/scp-action@v0.1.7
@@ -75,6 +79,16 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
           source: docker-compose.prod.yml
+          target: /srv/poshivon
+
+      - name: Upload monitoring configs
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          source: monitoring/
           target: /srv/poshivon
 
       - name: Deploy
@@ -104,6 +118,7 @@ jobs:
           DB_USER: ${{ secrets.DB_USER }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           DB_ROOT_PASSWORD: ${{ secrets.DB_ROOT_PASSWORD }}
+          GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
           GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
           TLS_FULLCHAIN: ${{ secrets.TLS_FULLCHAIN }}
@@ -113,7 +128,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
-          envs: IMAGE_OWNER,IMAGE_TAG,APP_STORAGE,APP_HOST,APP_PORT,LOG_LEVEL,DEEPSEEK_API_KEY,DEEPSEEK_API_ENDPOINT,DEEPSEEK_MODEL,DEEPSEEK_TIMEOUT_SEC,DEEPSEEK_MAX_RETRIES,CORS_ALLOWED_ORIGINS,COOKIE_SECURE,COOKIE_SAMESITE,COOKIE_DOMAIN,YANDEX_CLIENT_ID,YANDEX_CLIENT_SECRET,YANDEX_REDIRECT_URI,DB_HOST,DB_PORT,DB_NAME,DB_USER,DB_PASSWORD,DB_ROOT_PASSWORD,GHCR_USERNAME,GHCR_TOKEN,TLS_FULLCHAIN,TLS_PRIVATE_KEY
+          envs: IMAGE_OWNER,IMAGE_TAG,APP_STORAGE,APP_HOST,APP_PORT,LOG_LEVEL,DEEPSEEK_API_KEY,DEEPSEEK_API_ENDPOINT,DEEPSEEK_MODEL,DEEPSEEK_TIMEOUT_SEC,DEEPSEEK_MAX_RETRIES,CORS_ALLOWED_ORIGINS,COOKIE_SECURE,COOKIE_SAMESITE,COOKIE_DOMAIN,YANDEX_CLIENT_ID,YANDEX_CLIENT_SECRET,YANDEX_REDIRECT_URI,DB_HOST,DB_PORT,DB_NAME,DB_USER,DB_PASSWORD,DB_ROOT_PASSWORD,GRAFANA_ADMIN_PASSWORD,GHCR_USERNAME,GHCR_TOKEN,TLS_FULLCHAIN,TLS_PRIVATE_KEY
           script: |
             set -euo pipefail
             umask 077
@@ -213,6 +228,23 @@ jobs:
                 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
                 proxy_set_header X-Forwarded-Proto $scheme;
               }
+
+              location = /metrics {
+                deny all;
+                return 403;
+              }
+
+              location = /grafana {
+                return 301 /grafana/;
+              }
+
+              location /grafana/ {
+                proxy_pass http://grafana:3000/grafana/;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+              }
             }
             EOF
             cat > /srv/poshivon/certs/fullchain.pem <<EOF
@@ -246,6 +278,7 @@ jobs:
             DB_USER=${DB_USER}
             DB_PASSWORD=${DB_PASSWORD}
             DB_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
+            GRAFANA_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
             EOF
             docker login ghcr.io -u "${GHCR_USERNAME}" -p "${GHCR_TOKEN}"
             docker compose --env-file /srv/poshivon/.env -f /srv/poshivon/docker-compose.prod.yml pull
@@ -257,4 +290,5 @@ jobs:
               sleep 2
             done
             docker exec -e DB_USER -e DB_PASSWORD -e DB_NAME poshivon_db /bin/sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" -h 127.0.0.1 -e "DROP USER IF EXISTS '\''$DB_USER'\''@'\''localhost'\''; DROP USER IF EXISTS '\''$DB_USER'\''@'\''127.0.0.1'\''; DROP USER IF EXISTS '\''$DB_USER'\''@'\''172.18.0.%'\''; DROP USER IF EXISTS '\''$DB_USER'\''@'\''%'\''; CREATE USER '\''$DB_USER'\''@'\''%'\'' IDENTIFIED BY '\''$DB_PASSWORD'\''; ALTER USER '\''$DB_USER'\''@'\''%'\'' IDENTIFIED BY '\''$DB_PASSWORD'\''; GRANT ALL PRIVILEGES ON \`$DB_NAME\`.* TO '\''$DB_USER'\''@'\''%'\''; FLUSH PRIVILEGES;"'
+            docker compose --env-file /srv/poshivon/.env -f /srv/poshivon/docker-compose.prod.yml up -d node_exporter prometheus grafana
             docker compose --env-file /srv/poshivon/.env -f /srv/poshivon/docker-compose.prod.yml up -d app web proxy

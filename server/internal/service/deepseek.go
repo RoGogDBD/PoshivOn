@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/RoGogDBD/PoshivOn/internal/metrics"
 )
 
 type MarketFeedbackInput struct {
@@ -101,9 +103,16 @@ type deepSeekMessage struct {
 	Content string `json:"content"`
 }
 
+type deepSeekUsage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+}
+
 type deepSeekChatResponse struct {
 	Model   string               `json:"model"`
 	Choices []deepSeekChatChoice `json:"choices"`
+	Usage   deepSeekUsage        `json:"usage"`
 }
 
 type deepSeekChatChoice struct {
@@ -207,11 +216,14 @@ func (c *DeepSeekClient) AnalyzeMarketFeedback(
 		return MarketFeedbackResult{}, fmt.Errorf("marshal deepseek request: %w", err)
 	}
 
+	start := time.Now()
 	var lastErr error
 	backoff := time.Second
 	for attempt := 0; attempt <= c.maxRetries; attempt++ {
 		result, retryable, callErr := c.sendFeedbackRequest(ctx, payload, input, settings)
 		if callErr == nil {
+			metrics.AIRequestDuration.Observe(time.Since(start).Seconds())
+			metrics.AIRequestsTotal.WithLabelValues("success").Inc()
 			return result, nil
 		}
 		lastErr = callErr
@@ -232,6 +244,8 @@ func (c *DeepSeekClient) AnalyzeMarketFeedback(
 		}
 	}
 
+	metrics.AIRequestDuration.Observe(time.Since(start).Seconds())
+	metrics.AIRequestsTotal.WithLabelValues("error").Inc()
 	return MarketFeedbackResult{}, lastErr
 }
 
@@ -283,6 +297,13 @@ func (c *DeepSeekClient) sendFeedbackRequest(
 	var feedback deepSeekFeedbackPayload
 	if err := json.Unmarshal([]byte(content), &feedback); err != nil {
 		return MarketFeedbackResult{}, false, fmt.Errorf("parse deepseek feedback json: %w; raw=%s", err, content)
+	}
+
+	if completion.Usage.PromptTokens > 0 {
+		metrics.AITokensTotal.WithLabelValues("prompt").Add(float64(completion.Usage.PromptTokens))
+	}
+	if completion.Usage.CompletionTokens > 0 {
+		metrics.AITokensTotal.WithLabelValues("completion").Add(float64(completion.Usage.CompletionTokens))
 	}
 
 	feedback = normalizeFeedbackPayload(feedback)

@@ -14,6 +14,7 @@ import (
 	"github.com/RoGogDBD/PoshivOn/internal/repository"
 	"github.com/RoGogDBD/PoshivOn/internal/service"
 	"github.com/RoGogDBD/PoshivOn/migrations"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
@@ -64,6 +65,7 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
+	mux.Handle("/metrics", promhttp.Handler())
 	mux.HandleFunc("/auth/yandex", authHandler.HandleYandexLogin)
 	mux.HandleFunc("/auth/yandex/code", authHandler.HandleYandexCode)
 	mux.HandleFunc("/auth/status", authHandler.HandleStatus)
@@ -73,7 +75,7 @@ func main() {
 
 	handlerWithCORS := handler.WithCORS(handler.CORSConfig{
 		AllowedOrigins: splitCSV(cfg.AllowedOrigins),
-	}, mux)
+	}, handler.WithMetrics(mux))
 
 	server := &http.Server{
 		Addr:              fmt.Sprintf("%s:%s", cfg.Host, cfg.Port),

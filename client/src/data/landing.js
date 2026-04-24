@@ -6,6 +6,4 @@ export const navItems = [
   { href: "#faq", label: "Вопросы" },
 ];
 
-export const footerContacts = [
-  { label: "support@poshivon.ru", href: "mailto:support@poshivon.ru" },
-];
+export const footerContacts = [];

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 
 const HERO_TAGS = [
   "Калькулятор пошива",
-  "Себестоимость · AI",
+  "Стоимость · AI",
   "Раскладка · ткань",
   "Операции · тариф",
   "Сегмент · маржа",
@@ -73,7 +73,7 @@ const HeroSection = ({ onAuthOpen }) => (
       <div>
         <EyebrowRotator />
         <h1 className="hero-title">
-          Точная себестоимость пошива — <span>за две минуты.</span>
+          Точная стоимость пошива — <span>за две минуты.</span>
         </h1>
         <p className="hero-sub">
           PoshivOn собирает ткань, фурнитуру, операции и срочность в одной панели.
