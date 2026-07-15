@@ -35,12 +35,18 @@ services:
   proxy:
     image: nginx:1.27-alpine
     container_name: poshivon_proxy
-    ports:
-      - "80:80"
-      - "443:443"
+    expose:
+      - "80"
+    environment:
+      VIRTUAL_HOST: poshivon.ru,www.poshivon.ru
+      VIRTUAL_PORT: "80"
+      LETSENCRYPT_HOST: poshivon.ru,www.poshivon.ru
+      LETSENCRYPT_EMAIL: chudra2015@gmail.com
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./certs:/etc/nginx/certs:ro
+    networks:
+      - default
+      - proxy
     depends_on:
       - web
       - app
@@ -107,3 +113,8 @@ volumes:
   mariadb_data:
   prometheus_data:
   grafana_data:
+
+networks:
+  proxy:
+    external: true
+    name: haclever_proxy

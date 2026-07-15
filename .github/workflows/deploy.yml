@@ -62,7 +62,7 @@ jobs:
           script: |
             set -e
             whoami
-            mkdir -p "$HOME/poshivon/nginx" "$HOME/poshivon/certs"
+            mkdir -p "$HOME/poshivon/nginx"
             mkdir -p "$HOME/poshivon/monitoring/prometheus"
             mkdir -p "$HOME/poshivon/monitoring/grafana/provisioning/datasources"
             mkdir -p "$HOME/poshivon/monitoring/grafana/provisioning/dashboards"
@@ -118,14 +118,12 @@ jobs:
           GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
           GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
-          TLS_FULLCHAIN: ${{ secrets.TLS_FULLCHAIN }}
-          TLS_PRIVATE_KEY: ${{ secrets.TLS_PRIVATE_KEY }}
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
-          envs: IMAGE_OWNER,IMAGE_TAG,APP_STORAGE,APP_HOST,APP_PORT,LOG_LEVEL,DEEPSEEK_API_KEY,DEEPSEEK_API_ENDPOINT,DEEPSEEK_MODEL,DEEPSEEK_TIMEOUT_SEC,DEEPSEEK_MAX_RETRIES,CORS_ALLOWED_ORIGINS,COOKIE_SECURE,COOKIE_SAMESITE,COOKIE_DOMAIN,YANDEX_CLIENT_ID,YANDEX_CLIENT_SECRET,YANDEX_REDIRECT_URI,DB_HOST,DB_PORT,DB_NAME,DB_USER,DB_PASSWORD,DB_ROOT_PASSWORD,GRAFANA_ADMIN_PASSWORD,GHCR_USERNAME,GHCR_TOKEN,TLS_FULLCHAIN,TLS_PRIVATE_KEY
+          envs: IMAGE_OWNER,IMAGE_TAG,APP_STORAGE,APP_HOST,APP_PORT,LOG_LEVEL,DEEPSEEK_API_KEY,DEEPSEEK_API_ENDPOINT,DEEPSEEK_MODEL,DEEPSEEK_TIMEOUT_SEC,DEEPSEEK_MAX_RETRIES,CORS_ALLOWED_ORIGINS,COOKIE_SECURE,COOKIE_SAMESITE,COOKIE_DOMAIN,YANDEX_CLIENT_ID,YANDEX_CLIENT_SECRET,YANDEX_REDIRECT_URI,DB_HOST,DB_PORT,DB_NAME,DB_USER,DB_PASSWORD,DB_ROOT_PASSWORD,GRAFANA_ADMIN_PASSWORD,GHCR_USERNAME,GHCR_TOKEN
           script: |
             set -euo pipefail
             umask 077
@@ -133,17 +131,6 @@ jobs:
             server {
               listen 80;
               server_name poshivon.ru www.poshivon.ru;
-              return 301 https://$host$request_uri;
-            }
-
-            server {
-              listen 443 ssl;
-              server_name poshivon.ru www.poshivon.ru;
-
-              ssl_certificate /etc/nginx/certs/fullchain.pem;
-              ssl_certificate_key /etc/nginx/certs/privkey.pem;
-              ssl_protocols TLSv1.2 TLSv1.3;
-              ssl_prefer_server_ciphers off;
               add_header X-Robots-Tag "noindex, nofollow, noarchive, nosnippet" always;
 
               location / {
@@ -243,12 +230,6 @@ jobs:
                 proxy_set_header X-Forwarded-Proto $scheme;
               }
             }
-            EOF
-            cat > $HOME/poshivon/certs/fullchain.pem <<EOF
-            ${TLS_FULLCHAIN}
-            EOF
-            cat > $HOME/poshivon/certs/privkey.pem <<EOF
-            ${TLS_PRIVATE_KEY}
             EOF
             cat > $HOME/poshivon/.env <<EOF
             IMAGE_OWNER=${IMAGE_OWNER}
