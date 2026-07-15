@@ -134,7 +134,7 @@ jobs:
               add_header X-Robots-Tag "noindex, nofollow, noarchive, nosnippet" always;
 
               location / {
-                proxy_pass http://web:80;
+                proxy_pass http://poshivon_web:80;
                 proxy_set_header Host $host;
                 proxy_set_header X-Real-IP $remote_addr;
                 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -142,7 +142,7 @@ jobs:
               }
 
               location = /auth {
-                proxy_pass http://web:80;
+                proxy_pass http://poshivon_web:80;
                 proxy_set_header Host $host;
                 proxy_set_header X-Real-IP $remote_addr;
                 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -150,7 +150,7 @@ jobs:
               }
 
               location = /auth/ {
-                proxy_pass http://web:80;
+                proxy_pass http://poshivon_web:80;
                 proxy_set_header Host $host;
                 proxy_set_header X-Real-IP $remote_addr;
                 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -158,7 +158,7 @@ jobs:
               }
 
               location = /auth/status {
-                proxy_pass http://app:8080;
+                proxy_pass http://poshivon_app:8080;
                 proxy_set_header Host $host;
                 proxy_set_header X-Real-IP $remote_addr;
                 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -166,7 +166,7 @@ jobs:
               }
 
               location = /auth/me {
-                proxy_pass http://app:8080;
+                proxy_pass http://poshivon_app:8080;
                 proxy_set_header Host $host;
                 proxy_set_header X-Real-IP $remote_addr;
                 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -174,7 +174,7 @@ jobs:
               }
 
               location = /auth/logout {
-                proxy_pass http://app:8080;
+                proxy_pass http://poshivon_app:8080;
                 proxy_set_header Host $host;
                 proxy_set_header X-Real-IP $remote_addr;
                 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -182,7 +182,7 @@ jobs:
               }
 
               location = /auth/yandex {
-                proxy_pass http://app:8080;
+                proxy_pass http://poshivon_app:8080;
                 proxy_set_header Host $host;
                 proxy_set_header X-Real-IP $remote_addr;
                 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -190,7 +190,7 @@ jobs:
               }
 
               location = /auth/yandex/code {
-                proxy_pass http://app:8080;
+                proxy_pass http://poshivon_app:8080;
                 proxy_set_header Host $host;
                 proxy_set_header X-Real-IP $remote_addr;
                 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -198,7 +198,7 @@ jobs:
               }
 
               location /health {
-                proxy_pass http://app:8080;
+                proxy_pass http://poshivon_app:8080;
                 proxy_set_header Host $host;
                 proxy_set_header X-Real-IP $remote_addr;
                 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -206,7 +206,7 @@ jobs:
               }
 
               location /api/ {
-                proxy_pass http://app:8080;
+                proxy_pass http://poshivon_app:8080;
                 proxy_set_header Host $host;
                 proxy_set_header X-Real-IP $remote_addr;
                 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -223,7 +223,7 @@ jobs:
               }
 
               location /grafana/ {
-                proxy_pass http://grafana:3000/grafana/;
+                proxy_pass http://poshivon_grafana:3000/grafana/;
                 proxy_set_header Host $host;
                 proxy_set_header X-Real-IP $remote_addr;
                 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
