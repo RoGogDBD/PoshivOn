@@ -62,14 +62,11 @@ jobs:
           script: |
             set -e
             whoami
-            pwd
-            id
-            ls -ld /srv || true
-            mkdir -p /srv/poshivon/nginx /srv/poshivon/certs || sudo mkdir -p /srv/poshivon/nginx /srv/poshivon/certs
-            mkdir -p /srv/poshivon/monitoring/prometheus
-            mkdir -p /srv/poshivon/monitoring/grafana/provisioning/datasources
-            mkdir -p /srv/poshivon/monitoring/grafana/provisioning/dashboards
-            mkdir -p /srv/poshivon/monitoring/grafana/dashboards
+            mkdir -p "$HOME/poshivon/nginx" "$HOME/poshivon/certs"
+            mkdir -p "$HOME/poshivon/monitoring/prometheus"
+            mkdir -p "$HOME/poshivon/monitoring/grafana/provisioning/datasources"
+            mkdir -p "$HOME/poshivon/monitoring/grafana/provisioning/dashboards"
+            mkdir -p "$HOME/poshivon/monitoring/grafana/dashboards"
 
       - name: Upload docker-compose
         uses: appleboy/scp-action@v0.1.7
@@ -79,7 +76,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
           source: docker-compose.prod.yml
-          target: /srv/poshivon
+          target: /home/${{ secrets.SSH_USER }}/poshivon
 
       - name: Upload monitoring configs
         uses: appleboy/scp-action@v0.1.7
@@ -89,7 +86,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
           source: monitoring/
-          target: /srv/poshivon
+          target: /home/${{ secrets.SSH_USER }}/poshivon
 
       - name: Deploy
         uses: appleboy/ssh-action@v1.0.3
@@ -132,7 +129,7 @@ jobs:
           script: |
             set -euo pipefail
             umask 077
-            cat > /srv/poshivon/nginx/default.conf <<'EOF'
+            cat > $HOME/poshivon/nginx/default.conf <<'EOF'
             server {
               listen 80;
               server_name poshivon.ru www.poshivon.ru;
@@ -247,13 +244,13 @@ jobs:
               }
             }
             EOF
-            cat > /srv/poshivon/certs/fullchain.pem <<EOF
+            cat > $HOME/poshivon/certs/fullchain.pem <<EOF
             ${TLS_FULLCHAIN}
             EOF
-            cat > /srv/poshivon/certs/privkey.pem <<EOF
+            cat > $HOME/poshivon/certs/privkey.pem <<EOF
             ${TLS_PRIVATE_KEY}
             EOF
-            cat > /srv/poshivon/.env <<EOF
+            cat > $HOME/poshivon/.env <<EOF
             IMAGE_OWNER=${IMAGE_OWNER}
             IMAGE_TAG=${IMAGE_TAG}
             APP_STORAGE=${APP_STORAGE}
@@ -281,8 +278,8 @@ jobs:
             GRAFANA_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
             EOF
             docker login ghcr.io -u "${GHCR_USERNAME}" -p "${GHCR_TOKEN}"
-            docker compose --env-file /srv/poshivon/.env -f /srv/poshivon/docker-compose.prod.yml pull
-            docker compose --env-file /srv/poshivon/.env -f /srv/poshivon/docker-compose.prod.yml up -d db
+            docker compose --env-file $HOME/poshivon/.env -f $HOME/poshivon/docker-compose.prod.yml pull
+            docker compose --env-file $HOME/poshivon/.env -f $HOME/poshivon/docker-compose.prod.yml up -d db
             for i in $(seq 1 30); do
               if docker inspect -f '{{.State.Health.Status}}' poshivon_db 2>/dev/null | grep -q healthy; then
                 break
@@ -290,5 +287,5 @@ jobs:
               sleep 2
             done
             docker exec -e DB_USER -e DB_PASSWORD -e DB_NAME poshivon_db /bin/sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" -h 127.0.0.1 -e "DROP USER IF EXISTS '\''$DB_USER'\''@'\''localhost'\''; DROP USER IF EXISTS '\''$DB_USER'\''@'\''127.0.0.1'\''; DROP USER IF EXISTS '\''$DB_USER'\''@'\''172.18.0.%'\''; DROP USER IF EXISTS '\''$DB_USER'\''@'\''%'\''; CREATE USER '\''$DB_USER'\''@'\''%'\'' IDENTIFIED BY '\''$DB_PASSWORD'\''; ALTER USER '\''$DB_USER'\''@'\''%'\'' IDENTIFIED BY '\''$DB_PASSWORD'\''; GRANT ALL PRIVILEGES ON \`$DB_NAME\`.* TO '\''$DB_USER'\''@'\''%'\''; FLUSH PRIVILEGES;"'
-            docker compose --env-file /srv/poshivon/.env -f /srv/poshivon/docker-compose.prod.yml up -d node_exporter prometheus grafana
-            docker compose --env-file /srv/poshivon/.env -f /srv/poshivon/docker-compose.prod.yml up -d app web proxy
+            docker compose --env-file $HOME/poshivon/.env -f $HOME/poshivon/docker-compose.prod.yml up -d node_exporter prometheus grafana
+            docker compose --env-file $HOME/poshivon/.env -f $HOME/poshivon/docker-compose.prod.yml up -d app web proxy

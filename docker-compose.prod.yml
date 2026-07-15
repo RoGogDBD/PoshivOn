@@ -39,8 +39,8 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - /srv/poshivon/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
-      - /srv/poshivon/certs:/etc/nginx/certs:ro
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certs:/etc/nginx/certs:ro
     depends_on:
       - web
       - app
@@ -66,7 +66,7 @@ services:
     image: prom/prometheus:v3.3.1
     container_name: poshivon_prometheus
     volumes:
-      - /srv/poshivon/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
@@ -82,8 +82,8 @@ services:
       GF_SERVER_ROOT_URL: "https://poshivon.ru/grafana/"
       GF_SERVER_SERVE_FROM_SUB_PATH: "true"
     volumes:
-      - /srv/poshivon/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
-      - /srv/poshivon/monitoring/grafana/dashboards:/etc/grafana/dashboards:ro
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/etc/grafana/dashboards:ro
       - grafana_data:/var/lib/grafana
     restart: unless-stopped
     depends_on:
