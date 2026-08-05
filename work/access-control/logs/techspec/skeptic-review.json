@@ -1,110 +1,124 @@
 {
-  "status": "approved",
-  "summary": "Checked 61 verifiable claims against the codebase. Every file:line reference in the tech-spec resolves exactly to what it claims — no critical mirages. The proposed 004 migration was applied live against mariadb:11.4 on top of 001+002+003 and works. Found 3 major and 8 minor issues, two of which were confirmed by live database experiment.",
+  "summary": "Round 2. Re-verified every file:line reference in the current tech-spec plus all newly added claims (Decisions 6/7/8/13/17, Data Models migration incl. admin seeding, Panel.jsx, Testing Strategy, Risks). All three round-1 major findings are genuinely closed — confirmed by code reading and by a live mariadb:11.4 run of 001+002+003+004 (twice, plus the seed INSERT and the chk_users_role repro). No critical mirages. Found 2 major and 6 minor issues; 3 of the minors are carried over from round 1 and were never addressed.",
+  "prior_findings": [
+    {
+      "id": "round1-1",
+      "claim": "GET /api/v1/access/me promised a `name` field with no source",
+      "status": "closed",
+      "evidence": "Contract now reads {login,display_name,email,role,has_access,request_status,contact_email} (tech-spec:122, :475). Source chain is complete end-to-end: migration adds users.display_name and oauth_sessions.yandex_display_name (tech-spec:362, :368 — applied live, columns present); AccessState.DisplayName and UserRecord.DisplayName exist (tech-spec:411, :420); EnsureUser(ctx, login, email, displayName) carries it (tech-spec:273, :430); and the underlying value really is obtainable — fetchYandexProfile already computes a display name with display_name → real_name → first+last → login fallback (server/internal/handler/auth.go:490-505) and returns it as yandexProfile.Name (auth.go:454-457, :507-510)."
+    },
+    {
+      "id": "round1-2",
+      "claim": "Spec falsely claimed MariaDB rejects ADD CONSTRAINT ... IF NOT EXISTS",
+      "status": "closed",
+      "evidence": "The false statement is gone; tech-spec:353-355 now asserts MariaDB 11.4 supports IF NOT EXISTS for ADD CONSTRAINT and CREATE INDEX. Verified live on mariadb:11.4.12: the exact SQL block from tech-spec:358-388 applied on top of 001+002+003 succeeded, and a second identical run also succeeded (RUN1 OK / RUN2 OK) — including ADD CONSTRAINT IF NOT EXISTS chk_users_role, CREATE INDEX IF NOT EXISTS idx_users_role_has_access (the second half of the round-1 minor, also closed) and the seed INSERT. Final schema: role varchar(16) NOT NULL DEFAULT 'user', has_access tinyint(1) NOT NULL DEFAULT 0, email/display_name nullable, KEY idx_users_role_has_access, CONSTRAINT chk_users_role."
+    },
+    {
+      "id": "round1-3",
+      "claim": "Extending the shared GORM userModel breaks upsertUser via chk_users_role",
+      "status": "closed",
+      "evidence": "Decision 13 (tech-spec:291-302) now forbids extending it, and every supporting reference checks out: userModel is postgres.go:15-18 with TableName at :20-22 (cited range 15-22 covers the declaration block, fields ID + CreatedAt only); upsertUser is defined at postgres.go:550-555 and called from exactly three sites — :140 (UpsertSettings, func at :101), :233 (CreateChat, func at :231), :363 (AppendCalculation, func at :317). Live repro of the failure mode reproduced verbatim: INSERT INTO users (id, created_at, role, has_access, email) VALUES ('brokenuser', NOW(), '', 0, '') → ERROR 4025 (23000) CONSTRAINT `chk_users_role` failed, while the narrow insert INSERT INTO users (id, created_at) succeeds and defaults to role='user', has_access=0. Decision 13 is also mirrored correctly in Task 3 and in the Risks row."
+    }
+  ],
   "findings": [
     {
       "severity": "major",
-      "location": "Data Models > Контракт API (line 357) and Architecture > How it works (line 92)",
-      "claim": "GET /api/v1/access/me отвечает 200 {login,name,email,role,has_access,request_status,contact_email}",
-      "reality": "Поле `name` не имеет источника нигде в техспеке. Миграция 004 добавляет в `users` только role, has_access, email; в `oauth_sessions` — только yandex_login, yandex_email. Доменные типы `AccessState` (tech-spec:311-317) и `UserRecord` (319-327) поля Name не содержат. `EnsureUser(ctx, login, email)` имя не принимает. Единственный источник имени в проекте сегодня — живой вызов `fetchYandexProfile` (server/internal/handler/auth.go:459-511, поле `yandexProfile.Name` на auth.go:454-457), а Decision 1 прямо отказывается от такого вызова на горячем пути.",
-      "fix": "Либо убрать `name` из контракта /api/v1/access/me (клиент уже получает имя из /auth/me — Panel.jsx:582 использует `profile?.name`), либо добавить `yandex_name` в oauth_sessions и поле Name в AccessState + EnsureUser(ctx, login, email, name)."
+      "location": "Decision 4 (tech-spec.md:184-187) vs Data Models migration block (tech-spec.md:385-396) and User-Spec Deviations (tech-spec.md:698-702)",
+      "claim": "Decision 4: «Логины двух администраторов проставляются `UPDATE` в конце миграции по плейсхолдерам, которые пользователь заменит перед выкаткой.»",
+      "reality": "Внутреннее противоречие, оставшееся после расширения скоупа. Data Models прямо отвергает UPDATE: «Оператор именно вставляющий, а не `UPDATE`: у аккаунта, ещё ни разу не входившего в систему, строки `users` не существует, и `UPDATE` его бы не затронул» (:391-392), и приводит `INSERT ... ON DUPLICATE KEY UPDATE role='admin'`. Кроме того, Decision 4 говорит о двух плейсхолдерах, тогда как Data Models (:398) и Deviations (:701) фиксируют, что первый логин известен — `RoGogDBD` — и плейсхолдер остался ровно один (`ADMIN_LOGIN_2`). Исполнитель Task 1 читает Decisions раньше Data Models и может написать неработающий UPDATE.",
+      "fix": "Переписать вторую фразу Decision 4: «Роль администраторов назначается оператором `INSERT ... ON DUPLICATE KEY UPDATE role='admin'` в конце миграции (см. Data Models); первый логин известен — `RoGogDBD`, второй подставляется вместо `ADMIN_LOGIN_2` перед выкаткой».",
+      "prior_finding_status": "n/a"
     },
     {
       "severity": "major",
-      "location": "Risks table, row 2 (line 499)",
-      "claim": "`ADD CONSTRAINT ... CHECK` внутри общего `ALTER TABLE` не поддерживает `IF NOT EXISTS` для констрейнта — повторный прогон файла упадёт",
-      "reality": "Проверено вживую на mariadb:11.4 (та же версия, что в docker-compose.yml:38 и docker-compose.prod.yml:56): `ALTER TABLE users ADD CONSTRAINT IF NOT EXISTS chk_users_role CHECK (role IN ('user','admin'));` выполняется успешно и идемпотентно. MariaDB поддерживает IF NOT EXISTS для ADD CONSTRAINT. Верна только вторая половина утверждения: без IF NOT EXISTS повторный прогон действительно падает — ERROR 1826 (HY000) 'Duplicate CHECK constraint name chk_users_role'.",
-      "fix": "Заменить в миграции на `ADD CONSTRAINT IF NOT EXISTS chk_users_role CHECK (...)` и убрать/переформулировать строку риска — файл становится полностью идемпотентным, необходимость в ручном сценарии восстановления отпадает."
-    },
-    {
-      "severity": "major",
-      "location": "Task 4 (line 611-621) в связке с Decision 11 (line 235-243) и Data Models (line 265-269)",
-      "claim": "Реализовать `UserRepository` в `PostgresRepository`; существующий `upsertUser` остаётся как есть",
-      "reality": "Не учтено взаимодействие с существующим кодом. `upsertUser` (server/internal/repository/postgres.go:550-555) делает `tx.Clauses(clause.OnConflict{DoNothing}).Create(&userModel{ID: userID})` над общей моделью `userModel` (postgres.go:15-22, сейчас только ID + CreatedAt) и вызывается из трёх боевых путей записи — postgres.go:140 (UpsertSettings), :233 (CreateChat), :363 (AppendCalculation). Если Task 4 расширит `userModel` полями Role/HasAccess/Email, GORM начнёт включать их в INSERT с нулевыми значениями, и вставка новой строки нарушит новый CHECK. Воспроизведено вживую на mariadb:11.4 после применения миграции 004: `INSERT INTO users (id, created_at, role, has_access, email) VALUES ('newuser', NOW(), '', 0, '')` → ERROR 4025 (23000) CONSTRAINT `chk_users_role` failed. То есть сохранение настроек / создание чата / расчёт сломались бы для нового пользователя на APP_STORAGE=mysql.",
-      "fix": "В Task 4 явно предписать одно из: (а) отдельная GORM-модель для новых полей (`userAccessModel` с TableName 'users') с сохранением узкого `userModel` в upsertUser; (б) `Select(\"id\",\"created_at\")` в существующем upsertUser; (в) `Role Role \\`gorm:\"default:user\"\\`` + омит нулевых значений. Добавить пункт в Acceptance Criteria: existing write paths (settings/chat/calculation) работают на APP_STORAGE=mysql после миграции для НОВОГО пользователя."
+      "location": "Decision 8 (tech-spec.md:238-241) в связке с AVP шаг 2 (tech-spec.md:641-652), Acceptance Criteria (:754) и Verify-smoke Task 5 (:861)",
+      "claim": "«При пустом списке проверка пропускается — это конфигурация локальной разработки» + AVP на localhost проверяет, что «изменяющий запрос с посторонним `Origin` отклонён»",
+      "reality": "Оба утверждения верны по отдельности и несовместимы вместе. Сервис приложения в `docker-compose.yml:2-26` не задаёт `CORS_ALLOWED_ORIGINS`, а `config.go:77` подставляет `\"\"` → список пуст → `RequireSameOrigin` по собственному правилу Decision 8 не срабатывает. То есть ровно в том окружении, где AVP шаг 2 и Verify-smoke гоняют curl (`localhost:8080`), проверка `Origin` выключена и негативный сценарий не может дать 403. Зеркальное следствие: если переменную задать, то `RequireSameOrigin` стоит первым в цепочке (таблица :111-115), и curl-запросы без заголовка `Origin` начнут отвечать 403 вместо ожидаемого 401 в Verify-smoke Task 5 (`curl -i -X POST localhost:8080/api/v1/admin/users/someone/access` → заявлено 401) и Task 6.",
+      "fix": "Либо добавить `CORS_ALLOWED_ORIGINS: http://localhost:5173` в `docker-compose.yml` (сервис `app`) и переписать ожидания curl-проверок с учётом порядка middleware (без `Origin` → 403), либо явно указать в AVP, что проверку `Origin` выполнять с временно выставленной переменной, а остальные curl-сценарии — с заголовком `Origin: http://localhost:5173`.",
+      "prior_finding_status": "n/a"
     },
     {
       "severity": "minor",
-      "location": "Decision 7, Rationale (line 200-201)",
-      "claim": "сегодня всего 5 прямых модулей в `server/go.mod`",
-      "reality": "В server/go.mod четыре прямых (не-indirect) модуля: github.com/go-sql-driver/mysql v1.8.1, github.com/prometheus/client_golang v1.22.0, gorm.io/driver/mysql v1.6.0, gorm.io/gorm v1.31.0. Остальные 12 помечены `// indirect`.",
-      "fix": "Исправить на «всего 4 прямых модуля». Вывод решения (не добавлять зависимость ради одного письма) от этого не меняется."
+      "location": "Risks table (tech-spec.md:686)",
+      "claim": "`ya_access` хранит сырой access-токен Яндекса, `yandex_refresh_token` лежит в БД открытым текстом (`server/internal/auth/store.go:13-14`)",
+      "reality": "Суть риска верна (auth.go:22 — `accessCookieName = \"ya_access\"`, auth.go:164 кладёт в куку сам `accessToken`; `001_auth_sessions.up.sql:4-5` — `yandex_access_token TEXT NOT NULL`, `yandex_refresh_token TEXT NULL` без шифрования). Но ссылка сдвинута на строку: store.go:13 — это `RefreshTokenHash` (как раз захешированное значение, SHA-256), а нужные поля — store.go:14 (`YandexAccessToken`) и store.go:15 (`YandexRefreshToken`).",
+      "fix": "Заменить `store.go:13-14` на `store.go:14-15` (или сослаться на `server/migrations/001_auth_sessions.up.sql:4-5`).",
+      "prior_finding_status": "partially_closed"
     },
     {
       "severity": "minor",
-      "location": "Risks table, предпоследняя строка (line 506)",
-      "claim": "Пользователь без доступа всё ещё грузит `/settings` и `/chats`: эффекты в `client/src/pages/Panel.jsx:230-278, 280-308` завязаны на `profile`, а не на `status`",
-      "reality": "Диапазоны строк точны, но второй эффект грузит не то, что заявлено. Panel.jsx:230-278 — один эффект с двумя загрузчиками: loadSettings → GET /api/v1/users/{id}/settings и loadChats → GET /api/v1/users/{id}/chats. Panel.jsx:280-308 — отдельный эффект, вызывающий listChatCalculations → GET /api/v1/users/{id}/chats/{chatID}/calculations (panelApi.js:66-67), то есть историю расчётов, а не /settings и не /chats.",
-      "fix": "Переформулировать: «эффекты 230-278 (settings + chats) и 280-308 (calculations)». Охрану по доступу нужно ставить на оба, но AC (line 565) проверяет только /settings и /chats — стоит добавить и /calculations."
+      "location": "Data Models > Доменные типы (tech-spec.md:436-440)",
+      "claim": "`GetRequest(ctx context.Context, login string) (AccessRequest, error)`",
+      "reality": "Тип `AccessRequest` в техспеке нигде не объявлен: блок доменных типов определяет `Role`, `AccessState`, `UserRecord`, `UserRepository`, `AccessRequestRepository` — и всё. Исполнитель Task 2 вынужден изобрести форму возвращаемого значения (какие поля, есть ли `DecidedBy`/`DecidedAt`, как отличается от `UserRecord.RequestStatus`), а Task 3 — угадать её же для репозиториев.",
+      "fix": "Добавить в блок объявление `type AccessRequest struct { Login string; Status string; Message string; CreatedAt time.Time; DecidedAt *time.Time; DecidedBy string }` — поля уже диктуются схемой `access_requests` и Decision 5.",
+      "prior_finding_status": "n/a"
     },
     {
       "severity": "minor",
-      "location": "Data Models > миграция (line 288) и Risks table row 2 (line 499)",
-      "claim": "Риск неидемпотентности отнесён только к `ADD CONSTRAINT ... CHECK`",
-      "reality": "В той же миграции есть второй неидемпотентный оператор: `CREATE INDEX idx_users_role_has_access ON users(role, has_access);`. Проверено на mariadb:11.4 — повторный прогон даёт ERROR 1061 (42000) 'Duplicate key name'. При этом `CREATE INDEX IF NOT EXISTS ...` MariaDB 11.4 поддерживает и выполняет идемпотентно (проверено).",
-      "fix": "Добавить `IF NOT EXISTS` и к CREATE INDEX — вместе с фиксом ADD CONSTRAINT это делает весь файл 004 повторно применимым."
+      "location": "How it works / Decision 12 (tech-spec.md:99-102, :281-289)",
+      "claim": "`HandleYandexCode` … один раз запрашивает профиль Яндекса, кладёт `login`, `default_email` и отображаемое имя в строку `oauth_sessions`",
+      "reality": "Логин и имя из профиля достать можно (auth.go:490-510), а email — нет: `yandexProfile` (auth.go:454-457) содержит только `Name` и `Login`, и `fetchYandexProfile` (auth.go:459-511) распаковывает ответ в `map[string]interface{}` и выбрасывает `default_email`, не возвращая его. Ни одно решение и ни одна задача не упоминают, что структуру и функцию нужно расширить. Дополнительно: сегодня `HandleYandexCode` (auth.go:99-168) вообще не вызывает `fetchYandexProfile` — вызов появляется только в этой фиче (Task 4 действительно правит auth.go, так что работа выполнима).",
+      "fix": "В Decision 12 или в описании Task 4 добавить фразу: «`yandexProfile` расширяется полями `Email`/`DisplayName`, `fetchYandexProfile` начинает возвращать `default_email` из payload; в `HandleYandexCode` добавляется вызов профиля перед `CreateSession`».",
+      "prior_finding_status": "n/a"
     },
     {
       "severity": "minor",
-      "location": "Task 9, Verify-smoke (line 687)",
-      "claim": "`docker exec poshivon_app env | grep -E 'SMTP_|ADMIN_NOTIFY|CONTACT_EMAIL'` → переменные присутствуют",
-      "reality": "Имена переменных `ADMIN_NOTIFY*` и `CONTACT_EMAIL` не определены нигде больше в техспеке. Раздел Architecture (line 65) говорит только «`config.go` (правка) — SMTP и контактный email», Decision 7 называет единственную конкретную переменную — `SMTP_HOST`. Существующий config.go (server/internal/config/config.go:54-85) этих полей не содержит. Исполнитель Task 2 (который правит config.go) и исполнитель Task 9 (который прокидывает переменные) выведут разные имена.",
-      "fix": "Зафиксировать точный список имён в разделе Architecture или в Task 2: например SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_FROM, ADMIN_NOTIFY_EMAILS, CONTACT_EMAIL — и сослаться на него из Verify-smoke Task 9."
+      "location": "Decision 16 (tech-spec.md:327-333)",
+      "claim": "CORS-обёртка объявляет только `GET, POST, OPTIONS` (`cors.go:33`), поэтому PATCH/PUT потребовали бы изменить общий CORS-контракт",
+      "reality": "Ссылка точна (cors.go:33), но посылка слабее заявленной: проект уже обслуживает DELETE вопреки этому списку — `http.go:51` маршрутизирует `chats` + `MethodDelete`, клиент вызывает его из `panelApi.js:54-58`. Кроме того, `WithCORS` при пустом `CORS_ALLOWED_ORIGINS` возвращает `next` вообще без заголовков (cors.go:13-15), то есть «контракт» существует только при заполненной переменной. Вывод (POST) остаётся разумным, обоснование — нет.",
+      "fix": "Переформулировать rationale: «консистентность с уже объявленным списком методов», а не «PATCH сломает CORS-контракт».",
+      "prior_finding_status": "open"
     },
     {
       "severity": "minor",
-      "location": "Task 9, Files to read (line 689)",
-      "claim": "`deploy/nginx.conf` — файл для чтения при правке проксирования",
-      "reality": "`deploy/nginx.conf` (73 строки) не подключён ни к одному деплою: grep по всем compose-файлам, Dockerfile и Makefile не находит на него ссылок. Живых nginx-конфигураций ровно две: `client/nginx.conf` (копируется в образ через client/Dockerfile:18) и heredoc в `.github/workflows/deploy.yml:130-233`, который пишется в `$HOME/poshivon/nginx/default.conf` и монтируется через docker-compose.prod.yml:46. В `deploy/nginx.conf` тоже нет /auth/refresh.",
-      "fix": "Отметить в Task 9, что deploy/nginx.conf — мёртвый артефакт, править его не нужно (или удалить в рамках задачи), чтобы исполнитель не решил, что «обе конфигурации» — это client/nginx.conf и deploy/nginx.conf."
-    },
-    {
-      "severity": "minor",
-      "location": "Decision 9, Rationale (line 220-222)",
-      "claim": "CORS-обёртка объявляет только `GET, POST, OPTIONS` (`server/internal/handler/cors.go:33`), поэтому PATCH/PUT потребовали бы изменить общий CORS-контракт",
-      "reality": "Ссылка точна — cors.go:33 действительно объявляет 'GET, POST, OPTIONS'. Но посылка слабее, чем заявлено: проект уже обслуживает DELETE вопреки этому списку — `server/internal/handler/http.go:51` маршрутизирует `resource == \"chats\" && len(parts) == 3 && r.Method == http.MethodDelete`, а клиент вызывает его через panelApi.js:54-58. Кроме того, WithCORS вообще возвращает next без заголовков, если CORS_ALLOWED_ORIGINS пуст (cors.go:13-15).",
-      "fix": "Оставить POST (решение разумно и консистентно), но переформулировать rationale — «консистентность с уже объявленным списком методов», а не «PATCH сломает CORS-контракт»."
-    },
-    {
-      "severity": "minor",
-      "location": "Data Models, первый абзац (line 259-260)",
-      "claim": "Следующий свободный номер — `004`; трёхзначный префикс обязателен",
-      "reality": "Номер 004 действительно свободный, и лексикографическая сортировка (migrate.go:25) даст правильный порядок. Но «обязателен» ничем не обеспечено: `extractVersion` (migrate.go:87-89) просто срезает суффикс `.up.sql`, формат префикса не проверяется. В каталоге к тому же лежит `0001_init.sql` с четырёхзначным префиксом — он не попадает в `//go:embed *.up.sql` (migrate.go:13) из-за отсутствия суффикса и не применяется вовсе.",
-      "fix": "Смягчить до «конвенция проекта — трёхзначный префикс; четырёхзначный сломал бы лексикографический порядок относительно 001-003». Опционально упомянуть, что `0001_init.sql` — неиспользуемый артефакт."
-    },
-    {
-      "severity": "minor",
-      "location": "Architecture > Shared resources, строка `*gorm.DB` (line 116)",
+      "location": "Architecture > Shared resources (tech-spec.md:145)",
       "claim": "`*gorm.DB` … Instance count 1",
-      "reality": "В dev-окружении по умолчанию их 0: `docker-compose.yml` не задаёт APP_STORAGE, config.go:58 подставляет 'memory', и ветка main.go:115-117 возвращает MemoryRepository, не вызывая db.OpenGORM (main.go:119). Сам техспек это признаёт в AVP (line 473-477), но таблица Shared resources противоречит. Следствие для фичи: AccessService/AccessHandler в dev по умолчанию работают поверх MemoryRepository, а не PostgresRepository.",
-      "fix": "Уточнить в таблице: «1 при APP_STORAGE in (postgres|mysql|mariadb), 0 при значении по умолчанию memory» — по аналогии со строкой SMTPNotifier, где условность уже отражена."
+      "reality": "Повтор незакрытой находки round 1. В dev-конфигурации по умолчанию экземпляров 0: `docker-compose.yml` не задаёт `APP_STORAGE`, `config.go:58` подставляет `memory`, ветка `main.go:114-117` возвращает `MemoryRepository`, не доходя до `db.OpenGORM` (`main.go:119`). Сам техспек это признаёт в AVP (:648-652), но таблица противоречит.",
+      "fix": "Уточнить: «1 при `APP_STORAGE in (postgres|mysql|mariadb)`, 0 при значении по умолчанию `memory`» — по аналогии со строкой `SMTPNotifier`.",
+      "prior_finding_status": "open"
+    },
+    {
+      "severity": "minor",
+      "location": "Data Models, первый абзац (tech-spec.md:348-351)",
+      "claim": "Следующий свободный номер — `004`; трёхзначный префикс обязателен",
+      "reality": "Повтор незакрытой находки round 1. Номер 004 действительно свободен и лексикографическая сортировка (`migrate.go:25`) даст верный порядок, но «обязателен» ничем не обеспечено: `extractVersion` (`migrate.go:87-89`) просто срезает суффикс `.up.sql` и формат префикса не проверяет. В каталоге лежит `0001_init.sql` с четырёхзначным префиксом — он не попадает в `//go:embed *.up.sql` (`migrate.go:13`) и не применяется вовсе.",
+      "fix": "Смягчить до «конвенция проекта — трёхзначный префикс; иной префикс сломал бы лексикографический порядок относительно 001-003»; опционально упомянуть `0001_init.sql` как неиспользуемый артефакт.",
+      "prior_finding_status": "open"
+    },
+    {
+      "severity": "minor",
+      "location": "Testing Strategy > CI (tech-spec.md:620-623) и User-Spec Deviations (tech-spec.md:712-714)",
+      "claim": "«единственный воркфлоу срабатывает на тег и только собирает образы»",
+      "reality": "Часть про тесты верна — тестов не гоняет никто, `.github/workflows/` содержит только `deploy.yml`, триггер `on: push: tags: [\"*\"]` (deploy.yml:3-6). Но «только собирает образы» занижает: тот же воркфлоу деплоит по SSH, переписывает `$HOME/poshivon/nginx/default.conf` и `.env` на сервере (deploy.yml:121-233+). Формулировка может создать у исполнителя Task 9 впечатление, что деплой-шаг в файле отсутствует.",
+      "fix": "«единственный воркфлоу срабатывает на тег, собирает образы и деплоит по SSH; прогона тестов в нём нет».",
+      "prior_finding_status": "n/a"
     }
   ],
   "stats": {
-    "total_claims_checked": 61,
-    "confirmed": 50,
-    "mirages_found": 11,
+    "total_claims_checked": 78,
+    "confirmed": 70,
+    "mirages_found": 8,
     "verified_claims": [
-      "server/internal/auth/store.go:11-21 — Session без полей личности",
-      "server/internal/handler/auth.go:197 — fetchYandexProfile в HandleMe",
-      "server/internal/handler/auth.go:459-511 — fetchYandexProfile",
-      "server/internal/handler/http.go:26-70 — handleUsers без аутентификации",
-      "server/internal/handler/http.go:188-191 — проверка h.deepseek == nil",
-      "server/internal/handler/http.go:251-266 — writeAPIDomainError",
-      "server/internal/handler/http.go:264 — err.Error() в ветке 500",
-      "server/internal/handler/cors.go:33 — Allow-Methods GET, POST, OPTIONS",
-      "server/internal/repository/postgres.go:140, 233, 363 — вызовы upsertUser",
-      "server/internal/repository/postgres.go:550-555 — определение upsertUser",
-      "server/internal/repository/memory.go:28-30 — compile-time assertions",
-      "server/internal/service/costing.go:15-18 — только ErrInvalidArgument и ErrNotFound",
-      "server/internal/service/costing.go:168-183 — три узких repository-интерфейса",
-      "server/internal/config/config.go:58 — APP_STORAGE по умолчанию memory",
-      "server/cmd/main.go:26 db.Open, :32-34 migrations.Run+log.Fatalf, :115-117 memory, :119 db.OpenGORM",
-      "server/migrations/migrate.go:25 sort.Strings, :32-36 однократность, :43 один db.Exec, down-миграций нет",
-      "server/internal/db/db.go:63 — multiStatements=true",
-      "server/migrations/002_costing_schema.up.sql:46-53 — CHECK-констрейнты; users.id VARCHAR(255) PRIMARY KEY",
-      "server/migrations/003_pricing_and_chat_delete.up.sql:2-7 ADD COLUMN IF NOT EXISTS, :16 market_status VARCHAR(64)",
-      "Миграция 004 из Data Models применена вживую на mariadb:11.4 поверх 001-003 — успешно; FK, PK и оба CHECK работают; PostgreSQL-синтаксис частичного индекса отвергается (ERROR 1064)"
+      "server/internal/handler/http.go:26-70 — handleUsers, userID из parts[0], без какой-либо аутентификации (Decision 6)",
+      "server/internal/handler/http.go:230 — decodeJSON с DisallowUnknownFields (Decision 6)",
+      "server/internal/handler/http.go:251-266 — writeAPIDomainError; :264 — default отдаёт err.Error() (Decision 17)",
+      "server/internal/handler/http.go:188-191 — h.deepseek == nil (Decision 14)",
+      "server/internal/service/costing.go:87 OrderInput и :164-166 CreateChatInput без полей владельца; UserID только у CalculationResult (:114) и Chat (:154); UserSettings (:77-85) и MarketFeedbackInput (deepseek.go:17-29) владельца тоже не содержат",
+      "server/internal/service/costing.go:15-18 — только ErrInvalidArgument и ErrNotFound; :168-183 — три узких repository-интерфейса",
+      "server/cmd/main.go:69 — mux.HandleFunc(\"/auth/yandex\", authHandler.HandleYandexLogin); auth.go:42-97 — приём access_token из тела (Decision 7)",
+      "client/src/utils/yandexAuth.js:61 persistYandexToken; :125-142 buildYandexAuthUrl только response_type=code, без scope; :14-16 shouldRefreshAuth; :18-25 refreshAuthSession",
+      "client/src/pages/AuthCallback.jsx:36-45 — implicit-ветка `if (accessToken)` (Decision 7)",
+      "server/internal/handler/cors.go:30 Allow-Credentials true, :33 Allow-Methods 'GET, POST, OPTIONS', :13-15 пустой список → next без заголовков (Decision 8)",
+      "server/internal/handler/auth.go:513-522 — parseSameSite, default → SameSiteLaxMode (Decision 8); :37 — httpClient Timeout 10s; :197 fetchYandexProfile в HandleMe; :459-511 fetchYandexProfile",
+      "server/internal/repository/postgres.go:15-22 userModel (ID+CreatedAt+TableName); :550-555 upsertUser; вызовы :140 (UpsertSettings), :233 (CreateChat), :363 (AppendCalculation) (Decision 13)",
+      "Живой mariadb:11.4.12: миграция 004 из Data Models поверх 001+002+003 применена дважды без ошибок — полностью идемпотентна",
+      "Живой mariadb:11.4: seed INSERT ... ON DUPLICATE KEY UPDATE role='admin' валиден и создаёт RoGogDBD/ADMIN_LOGIN_2 с role=admin, has_access=1; у существующей строки меняет только role (has_access и email сохраняются)",
+      "users после 004 не имеет ни одной NOT NULL колонки без DEFAULT (id — PK из INSERT, created_at DEFAULT current_timestamp(), role DEFAULT 'user', has_access DEFAULT 0) — INSERT (id, role, has_access) валиден",
+      "Живой mariadb:11.4: INSERT с role='' → ERROR 4025 (23000) CONSTRAINT chk_users_role failed; узкий INSERT (id, created_at) проходит (Decision 13)",
+      "Живой mariadb:11.4: частичный индекс (WHERE) и функциональный индекс ((LOWER(...))) отвергаются ERROR 1064; дубль PK → ERROR 1062 (Decision 5)",
+      "client/src/pages/Panel.jsx:190 `const userID = profile?.login || \"\"`; :583 `Пользователь: {userID}`; :192-224 bootstrap-эффект (2 вызова); :230-278 settings+chats; :280-308 calculations",
+      "client/package.json — нет тест-раннера, скрипта test и тестовых зависимостей; во всём репозитории один тест-файл costing_test.go (293 строки); .github/workflows/ содержит только deploy.yml",
+      "server/internal/handler/metrics.go:23-45 — normalizePath + looksLikeID (число или len>8 с дефисом), короткие логины не сворачиваются; deploy.yml:126 envs-allowlist, :130-233 heredoc nginx с location /api/ → poshivon_app:8080 и без /auth/refresh; client/nginx.conf:13-67 без /auth/refresh; memory.go:28-30 compile-time assertions; go.mod — 4 прямых модуля; db.go:63 multiStatements=true; migrate.go:25/:43 без down-пути; server/api/openapi.yaml, client/src/hooks/useAuthModal.js, классы .panel__card/.panel__notice/.panel__empty/.panel-chat-list__*/.panel--light/.panel--dark в App.css — существуют"
     ]
   }
 }

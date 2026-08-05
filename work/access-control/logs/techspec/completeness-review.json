@@ -3,30 +3,58 @@
     {
       "type": "gap",
       "severity": "major",
-      "requirement": "n/a (Architecture → Shared Resources: AccessService)",
-      "description": "Shared Resources таблица в Architecture указывает, что `AccessService` создаётся в `cmd/main.go` и потребляется двумя компонентами: `AccessHandler` (Task 6, Wave 3) и `AuthHandler` — только `EnsureUser` (Task 5, Wave 2). Task 3 создаёт тип `AccessService`, но не трогает `cmd/main.go`. Task 5 явно описывает вызов `AccessService.EnsureUser(...)` из обработчика входа, но его 'Files to modify' (`server/internal/auth/store.go`, `server/internal/handler/auth.go`, `server/internal/handler/middleware.go`, `server/internal/handler/http.go`) не включает `cmd/main.go`. Единственная задача, которая трогает `cmd/main.go` в связи с access-контуром до Task 6 (Wave 3) — Task 4 (репозитории). Получается, что для `AuthHandler`, работающего уже в Wave 2, нет назначенной задачи, которая создаёт экземпляр `AccessService` и инжектирует его в конструктор `AuthHandler` — по факту это тот же паттерн, что правило 'Shared Resources заполнен, но нет task-владельца для ресурса, потребляемого несколькими компонентами в разных волнах'.",
-      "recommendation": "Явно добавить `server/cmd/main.go` в 'Files to modify' Task 5 (или зафиксировать отдельным шагом, что конструирование `AccessService` и его инъекция в `AuthHandler` происходит в Task 5, а не откладывается до Task 6), чтобы volume не собирался в промежуточном состоянии с несоответствующей сигнатурой конструктора."
+      "requirement": "n/a (Architecture → Shared Resources: AccessService; Task 4 vs Task 5 wiring)",
+      "description": "Round-1 issue is still present, unchanged. Task 4 (Wave 3) modifies `server/internal/handler/auth.go` to call `AccessService.EnsureUser` from the login handler (per Solution point 1 and 'How it works' → 'Вход'), which requires `AuthHandler` to receive an `AccessService` dependency — i.e. its constructor signature changes. Task 4's 'Files to modify' list does not include `server/cmd/main.go` (only reads it). The only task that touches `cmd/main.go` for the access circuit is Task 5, one wave later (Wave 4, 'собрать в main.go все зависимости'). Task 3 (repository implementations, same wave as Task 4) also doesn't touch `main.go`. So after Wave 3 completes, `cmd/main.go` still calls the old `AuthHandler` constructor without an `AccessService` argument while `auth.go` now requires one — the codebase does not compile until Task 5 lands a wave later. Task 4's Verify-smoke (`go test ./internal/auth/... ./internal/handler/...`) would not necessarily surface this since it doesn't build the `cmd` package.",
+      "recommendation": "Add `server/cmd/main.go` to Task 4's 'Files to modify', with an explicit instruction to construct `AccessService` (using the interfaces from Task 2/3) and inject it into `AuthHandler`'s constructor in the same task that changes the constructor's signature. Task 5 can still own the rest of the `/api/v1/` middleware assembly.",
+      "prior_finding_status": "open"
     },
     {
       "type": "gap",
       "severity": "minor",
       "requirement": "n/a (Decision 2)",
-      "description": "Decision 2 помечен `[TECHNICAL]` и описывает поведение с прямым влиянием на пользователей: все существующие сессии после выкатки миграции становятся 'неопознанными' и переспрашивают повторный вход через `RequireAuth` (401 `session_identity_missing`). Это реальное, заметное пользователю последствие (в т.ч. потенциально для самих администраторов), а не чисто внутренний рефакторинг. Раздел 'User-Spec Deviations' не содержит отдельной записи об этом — поведение упомянуто только в таблице Risks ('Ожидаемое поведение...'), что не то же самое, что явная запись для одобрения пользователем.",
-      "recommendation": "Продублировать/перенести пункт про обесценивание существующих сессий в 'User-Spec Deviations' с явной причиной и статусом одобрения, а не оставлять его только в Risks — так пользователь увидит его в месте, предназначенном для решений, требующих его внимания."
+      "description": "Decision 2 is unchanged from round 1 and the round-1 recommendation was not applied. It is marked `[TECHNICAL]` but describes a real, user-visible consequence: every existing session becomes unidentified after the migration and every currently-logged-in user (including both admins) is forced to re-authenticate. This is still surfaced only in the Risks table ('Ожидаемое поведение, fail-closed...'), not in User-Spec Deviations, so it never reaches the place reserved for items requiring the user's explicit attention/approval.",
+      "recommendation": "Add an entry to User-Spec Deviations for the forced-relogin-after-deploy behavior, with the same reasoning already in Decision 2/Risks, marked `[PENDING USER APPROVAL]` like the other entries — Risks alone is not a substitute.",
+      "prior_finding_status": "open"
     },
     {
       "type": "scope_creep",
       "severity": "minor",
       "requirement": "n/a",
-      "description": "Проксирование `/auth/refresh` на проде и правки в `docker-compose.yml`/`client/nginx.conf`/workflow — функциональность, не вытекающая ни из одного US-требования (это исправление предсуществующего дефекта, который becomes заметным из-за новой фичи). Запись в 'User-Spec Deviations' присутствует, содержит причину и корректно помечена `[PENDING USER APPROVAL]`, поэтому это не недокументированный scope creep — фиксирую как minor для осведомлённости пользователя перед одобрением, отдельно от остальных 14 требований.",
-      "recommendation": "При апруве tech-spec явно подтвердить у пользователя именно этот пункт отдельно от остальных, так как он расширяет объём деплоя за пределы описанного в user-spec функционала."
+      "description": "The `/auth/refresh` nginx proxying fix is still present in User-Spec Deviations with a clear reason and status `[PENDING USER APPROVAL]`, consistent with the document's `status: draft`. It remains correctly documented (not undocumented scope creep), so the round-1 concern (which was purely about traceability/documentation, not about blocking the item) is resolved.",
+      "recommendation": "No action needed beyond normal draft-to-approved sign-off of the User-Spec Deviations list.",
+      "prior_finding_status": "closed"
     },
     {
       "type": "gap",
       "severity": "minor",
       "requirement": "US-3",
-      "description": "US-3 требует 'повторная подача при заявке на рассмотрении невозможна'. Реализация — check-then-act в `AccessService`: сервис читает текущий статус заявки, и если не `pending`/доступ не выдан, создаёт/перезаписывает строку. `access_requests.user_id` — `PRIMARY KEY`, что защищает от дублирования строк на уровне схемы, но описание Decision 5 и API-контракта не поясняет, как two near-simultaneous запроса на создание заявки (двойной клик, повторный запрос до получения первого ответа) обрабатываются на уровне сервиса — упадёт ли второй запрос в 409 детерминированно, или возможна гонка между чтением статуса и записью строки.",
-      "recommendation": "В Decision 5 или в Testing Strategy явно зафиксировать поведение при параллельных запросах на создание заявки от одного пользователя (транзакция/INSERT ... ON DUPLICATE KEY, либо явное указание, что гонка допустима и не критична для M-фичи)."
+      "description": "The insert-first / PK-violation-as-conflict approach (Decision 5) genuinely closes the original race for two simultaneous *first-time* pending submissions — that part is resolved. However, Decision 5 and the `AccessRequestRepository.CreateRequest` interface also require that a resubmission after `rejected` UPDATES the existing row (keeping `decided_by`/`decided_at`) rather than erroring — behavior that a plain 'INSERT, catch PK violation' cannot produce, since the row already exists. The tech-spec never specifies the actual SQL mechanism that reconciles 'insert-or-conflict for pending/granted' with 'insert-or-update for rejected' inside a single `CreateRequest(ctx, login, message)` call (e.g. `ON DUPLICATE KEY UPDATE ... IF(status='rejected', ...)` plus rows-affected inspection). Additionally, `MemoryRepository`'s concurrency-safety for this same method under simultaneous goroutines is untested — the contract test only checks two *sequential* calls ('дважды подряд'), and Go maps are not safe for concurrent writes. This is lower risk since production runs on MariaDB/PostgresRepository, but MemoryRepository is the default in the dev docker-compose setup.",
+      "recommendation": "Spell out the actual UPSERT SQL/rows-affected logic for `CreateRequest` in Decision 5 (covering the three cases: no row, row=pending/approved, row=rejected), and add a concurrency-safety note or mutex for `MemoryRepository`'s implementation, or an explicit contract test that runs two concurrent goroutines against it.",
+      "prior_finding_status": "partially_closed"
+    },
+    {
+      "type": "overengineering",
+      "severity": "minor",
+      "requirement": "n/a",
+      "description": "`access_requests.message` (VARCHAR(1000)) and `AccessRequestRepository.CreateRequest(ctx, login, message string)` exist in the schema and domain interface, but nothing in user-spec, the Contract API table (`POST /api/v1/access/requests` documents no request body), or any client task (Task 7) ever populates or exposes this field to the user. It is a column and a parameter with no producer.",
+      "recommendation": "Either drop the `message` column/parameter until a requirement calls for it (YAGNI), or explicitly note in the tech-spec that it's reserved for a future free-text request note and always sent empty for now.",
+      "prior_finding_status": "n/a"
+    },
+    {
+      "type": "gap",
+      "severity": "minor",
+      "requirement": "n/a (Phase 1 / Phase 2 boundary documentation)",
+      "description": "The Phase 1/Phase 2 split itself is sound and honestly documented: the deferral of US-5 is disclosed in user-spec's own acceptance criteria (line 53), in the tech-spec's Implementation Tasks intro, in the phased Acceptance Criteria section, and in User-Spec Deviations — a functional, standalone MVP (gate + manual admin review + contact-email banner) genuinely stands on its own without automated email. However, the Solution and Architecture → 'How it works' sections narrate `net/smtp` notification and async email sending as if part of the single base flow, without the '(Phase 2)' tag that the Shared Resources table correctly applies to `SMTPNotifier`. A reader relying only on Solution/'How it works' (rather than cross-referencing Implementation Tasks) could mistakenly believe email notification ships in Phase 1.",
+      "recommendation": "Add an explicit '(Phase 2)' marker next to the SMTP/notification sentences in Solution and in 'How it works' → 'Заявка', mirroring the Shared Resources table, so the phase boundary is unambiguous from every section, not only Implementation Tasks.",
+      "prior_finding_status": "n/a"
+    },
+    {
+      "type": "gap",
+      "severity": "minor",
+      "requirement": "US-5",
+      "description": "Phase 2's `SMTPNotifier`/config table lets `ADMIN_NOTIFY_EMAILS` default to `\"\"` independently of `SMTP_HOST`. If `SMTP_HOST` is configured but `ADMIN_NOTIFY_EMAILS` is left empty, nothing in Decision 14, Task 16, or the test list addresses what happens (silent no-op send, error, or empty-recipient SMTP error) — this boundary case isn't covered by the listed notifier tests.",
+      "recommendation": "Add a test case and a short note for the empty-recipients-but-configured-SMTP case (e.g. treat as disabled and log a warning, same as empty `SMTP_HOST`).",
+      "prior_finding_status": "n/a"
     }
   ]
 }

@@ -1,72 +1,102 @@
 {
   "status": "changes_required",
-  "summary": "Structure, frontmatter, Decisions, AVP, Risks, Audit Wave and Final Wave are all compliant. Three critical problems block decomposition: Tasks 7 and 8 are both in Wave 4 and both modify client/src/pages/Panel.jsx; Task 8 also consumes files Task 7 creates in the same wave; and in Wave 2 Tasks 4 and 5 depend on server/internal/service/access.go and the new domain errors produced by Task 3 in that same wave. Plus 4 major and 4 minor issues around task field completeness, task brevity and layout/code skill routing.",
+  "summary": "Round 2. All three prior criticals are closed (no same-wave file conflicts and no same-wave file dependencies in either phase), and prior majors #5/#6/#7 plus #4 are closed. One NEW critical: Task 4 deletes HandleYandexLogin but does not own server/cmd/main.go, which registers it at line 69 — the build breaks at the end of Phase 1 Wave 3. Three majors (orphaned openapi.yaml, unresolvable ADMIN_LOGIN_2 placeholder in Task 9, over-broad Task 7). Frontmatter valid, all template sections present and filled, all skills and reviewer names valid, no time-based estimates, no AC/TDD anchors inside tasks. Phase 1 = 15 tasks (exactly at the guideline cap), Phase 2 = 5.",
   "findings": [
     {
       "severity": "critical",
-      "section": "Implementation Tasks / Wave 4 — wave conflict",
-      "description": "Task 7 («Гейт доступа и плашка запроса в панели») and Task 8 («Раздел «Пользователи» для администратора») are both under `### Wave 4 (depends on Wave 3)` (tech-spec.md lines 649-674; `### Wave 5` starts only at line 676). Both list `client/src/pages/Panel.jsx` in Files to modify. Tasks in one wave run in parallel, so the two agents will edit the same file and produce a merge conflict. Task 7 rewrites the bootstrap effect and the `status` state machine, Task 8 rewrites the panel body ternary — the edits overlap in the same region of the file.",
-      "fix": "Move Task 8 to Wave 5 (renaming the current Wave 5 to Wave 6), or merge Tasks 7 and 8 into a single Panel.jsx task. Wave 5 (Task 9, deploy config) is independent of client code and can stay parallel to Task 8 if the wave numbering is reworked accordingly."
-    },
-    {
-      "severity": "critical",
-      "section": "Implementation Tasks / Wave 4 — dependency vs wave ordering",
-      "description": "Task 8 lists `client/src/utils/accessApi.js` and `client/src/components/AccessRequestBanner.jsx` in Files to read, but both files are created by Task 7 in the same Wave 4. The admin section also calls the new access-contour API layer that Task 7 introduces. A dependent task must sit in a later wave than the task producing its inputs.",
-      "fix": "Same fix as the Panel.jsx conflict: place Task 8 in the wave after Task 7. If Task 8 must run in parallel, extract `accessApi.js` into a separate Wave 3-level task that both Tasks 7 and 8 depend on."
-    },
-    {
-      "severity": "critical",
-      "section": "Implementation Tasks / Wave 2 — dependency vs wave ordering",
-      "description": "Tasks 3, 4 and 5 are all in Wave 2, but Tasks 4 and 5 depend on Task 3's output. Task 4 («Реализации репозиториев доступа») implements the `UserRepository` / `AccessRequestRepository` interfaces declared in `server/internal/service/access.go` and lists that file in Files to read — it does not exist until Task 3 finishes. Task 5 adds 403/409 branches to `writeAPIDomainError`, which require `ErrForbidden` / `ErrConflict` that Task 3 adds to `server/internal/service/costing.go`, and it also lists `server/internal/service/access.go` in Files to read.",
-      "fix": "Split Wave 2: keep Task 3 (domain service, interfaces, domain errors) alone in Wave 2, and move Tasks 4 and 5 into Wave 3, shifting the subsequent waves. Alternatively, declare the interfaces and error values in a Wave 1 task so Tasks 3-5 can run in parallel."
+      "section": "Implementation Tasks / Phase 1 Wave 3 / Task 4",
+      "category": "tasks",
+      "description": "Task 4 (Wave 3) removes HandleYandexLogin from server/internal/handler/auth.go, but server/cmd/main.go:69 registers it: mux.HandleFunc(\"/auth/yandex\", authHandler.HandleYandexLogin). Task 4 lists server/cmd/main.go only under 'Files to read'; main.go is first modified by Task 5 in Wave 4. The tree therefore does not compile at the end of Wave 3, and Task 4's own Verify-smoke (go test ./internal/auth/... ./internal/handler/...) never builds package main, so the break is not caught by the task's own verification. With per-wave commits this commits a non-building Wave 3.",
+      "fix": "Add `server/cmd/main.go` to Task 4's 'Files to modify' and make removal of the /auth/yandex route registration part of Task 4's scope (Decision 7 owns both halves). Alternatively move deletion of HandleYandexLogin out of Task 4 into Task 5, which already owns main.go. Also extend Task 4's Verify-smoke to `go build ./...` so a cross-package break is caught inside the task.",
+      "prior_finding_status": "n/a"
     },
     {
       "severity": "major",
-      "section": "Implementation Tasks / Task 5 — missing smoke verification",
-      "description": "Task 5 modifies the OAuth login path (`server/internal/handler/auth.go`, `server/internal/auth/store.go`): it persists the Yandex profile into `oauth_sessions` and calls `EnsureUser`. This is external-integration and DB-write behaviour, and the Testing Strategy explicitly states `auth.Store` requires a real `*sql.DB` and is not covered by the automated tests. The task has neither `Verify-smoke` nor `Verify-user`.",
-      "fix": "Add a Verify-smoke to Task 5, e.g. perform a login against the dev stack and then `docker exec poshivon_db mariadb -uposhivon -pposhivon poshivon -e \"SELECT yandex_login, yandex_email FROM oauth_sessions ORDER BY id DESC LIMIT 1; SELECT id, role, has_access FROM users;\"` → the session row carries the login and a `users` row exists right after login (matches the AC «Строка `users` появляется после входа»)."
+      "section": "Implementation Tasks / Phase 1 Wave 5 / Task 6",
+      "category": "tasks",
+      "description": "server/api/openapi.yaml has no owning task. It documents /api/v1/users/{userID}/settings, /chats, /chats/{chatID}/calculate, /chats/{chatID}/calculations and /market-feedback (lines 21, 53, 93, 125, 153), each with a userID path parameter that Decision 6 deletes. Task 6 lists openapi.yaml under 'Files to read' only, and no task adds the four new /api/v1/access/* and /api/v1/admin/* routes to it. The API contract document silently goes stale on the exact change the feature is about. Same class of defect as the earlier App.css finding, which is now closed via Phase 2 Task 17.",
+      "fix": "Move `server/api/openapi.yaml` into Task 6's 'Files to modify' (drop the userID parameter from the five existing paths) and add it to Task 5's 'Files to modify' for the four new endpoints, or create an explicit documentation task owning the file.",
+      "prior_finding_status": "n/a"
     },
     {
       "severity": "major",
-      "section": "Implementation Tasks / Task 8 — task brevity",
-      "description": "Task 8's description contains step-by-step implementation instructions rather than scope: «Тело панели сегодня — бинарный тернарник, его нужно превратить в цепочку, а блок сводки над ним перенести внутрь рабочей ветки». How the JSX is restructured is implementation detail that belongs in the task file produced during decomposition.",
-      "fix": "Reduce to scope and result: «Добавить пункт навигации «Пользователи», видимый только администратору, и секцию со списком пользователей и переключателем доступа. Нужно для US-7…US-12. Результат: администратор видит список всех аккаунтов и может выдавать/отзывать доступ.» Move the ternary/summary-block restructuring into the task file."
+      "section": "Implementation Tasks / Phase 1 Wave 8 / Task 9",
+      "category": "tasks",
+      "description": "Task 9 includes 'убедиться, что плейсхолдер второго администратора в миграции заменён на реальный логин' and its Verify-smoke runs `grep ADMIN_LOGIN_2 server/migrations/004_access_control.up.sql` expecting empty output — but that migration file is not in Task 9's 'Files to modify', so the task has no mandate to edit it, and the second admin login is a value the agent cannot know (Data Models says the user supplies it by reading Panel.jsx:583 after logging in). There is no Verify-user field asking the user for it. As written the task's own smoke check cannot pass. The Risks table already flags that an unreplaced placeholder creates an extra account with admin rights, so this is a live production hazard.",
+      "fix": "Add `server/migrations/004_access_control.up.sql` to Task 9's 'Files to modify' and add a Verify-user field: ask the user for the second administrator's Yandex login before deploy, substitute it, then run the grep check. Consider making this a standalone blocking step ahead of Task 14 (Deploy).",
+      "prior_finding_status": "n/a"
     },
     {
       "severity": "major",
-      "section": "Implementation Tasks / Tasks 7, 8 — skill routing (layout vs code)",
-      "description": "Tasks 7 and 8 are planned mixed layout + business-logic scopes assigned to a single `code-writing` task each: Task 7 creates `client/src/components/AccessRequestBanner.jsx` (markup for the request banner) alongside the bootstrap gate and state machine; Task 8 creates `client/src/components/AdminUsersSection.jsx` and modifies `client/src/App.css` alongside the admin data flow. The catalog (skills-and-reviewers.md line 30) requires a planned mixed scope to be split into linked one-skill `layout-writing` and `code-writing` tasks, and every `layout-writing` task must include `layout-reviewer`. Neither task lists `layout-reviewer`.",
-      "fix": "Split the visual part of each task into a `layout-writing` task with `Reviewers: layout-reviewer` (banner markup/styles; admin section markup/styles), keeping the gate logic, API calls and state machine in the `code-writing` tasks. If the visual part is judged trivial enough to stay inline, state that explicitly and still add `layout-reviewer` to the reviewers."
-    },
-    {
-      "severity": "major",
-      "section": "Implementation Tasks / Task 7 — incomplete Files to modify",
-      "description": "Task 7 creates a new visible component (`AccessRequestBanner.jsx`) and lists `client/src/App.css` only in Files to read, while Task 8 lists `client/src/App.css` in Files to modify. Styling for the banner therefore has no assigned owner: either Task 7's file list is incomplete, or banner styles are silently expected from Task 8 (which is not stated). Note that adding App.css to Task 7 as-is would create a second same-wave file conflict with Task 8.",
-      "fix": "Decide where banner styles live and reflect it in Files to modify. Combined with the Wave 4 fix (Task 8 moved to a later wave), `client/src/App.css` can be added to Task 7's Files to modify without a conflict."
+      "section": "Implementation Tasks / Phase 1 Wave 6 / Task 7",
+      "category": "task_quality",
+      "description": "Task 7 bundles three independent concerns across six files: (a) the access gate — accessApi.js, the third bootstrap call, status: no-access, effect guards, AccessRequestBanner.jsx; (b) OAuth hardening — scope and state in yandexAuth.js, removal of the implicit branch and persistYandexToken in AuthCallback.jsx (Decisions 7, 9, 12); (c) migrating existing call URLs off the userID segment in panelApi.js (Decision 6). (b) and (c) have no dependency on (a). The single Verify-user covers the gate well but touches the OAuth changes only via 'выйти и войти заново → вход проходит успешно' — nothing verifies that a state mismatch aborts login or that the implicit hash path is gone, and the task carries no test-reviewer while the client has no test infrastructure. A security-relevant change rides along unverified inside a UI task.",
+      "fix": "Split Task 7 into a client access-gate task and a client OAuth-hardening task (yandexAuth.js + AuthCallback.jsx, Decisions 7/9/12); they can share a wave since the file sets are disjoint. At minimum extend Verify-user with explicit checks: tampering with the state value in sessionStorage aborts the callback, and a URL with #access_token=... no longer creates a session.",
+      "prior_finding_status": "n/a"
     },
     {
       "severity": "minor",
-      "section": "Implementation Tasks / Tasks 5, 8 — description format",
-      "description": "The template's Description format is «what and why. Результат: …». Tasks 5 and 8 state what and why but omit the `Результат:` clause; every other implementation task (1, 2, 3, 4, 6, 7, 9) has one.",
-      "fix": "Add a one-line `Результат:` to Tasks 5 and 8, e.g. Task 5: «Результат: логин вызывающего доступен обработчикам из `context`, неавторизованный запрос к новому контуру получает 401, неадминистратор — 403.»"
+      "section": "Implementation Tasks / Phase 1 Wave 3 / Task 4",
+      "category": "task_quality",
+      "description": "Task 4 is the only implementation task with no 'Результат:' clause. Its description ends on decision references (Decision 2, 8, 17) instead of stating the observable outcome. Every other task (1, 2, 3, 5, 6, 7, 8, 9, 16, 17) has one.",
+      "fix": "Append a Результат: sentence to Task 4, e.g. 'Результат: сессия хранит личность и переживает ротацию токенов, middleware отдаёт 401 без сессии и 403 без доступа, старая сессия без yandex_login отвергается кодом session_identity_missing.'",
+      "prior_finding_status": "partially_closed"
     },
     {
       "severity": "minor",
-      "section": "Implementation Tasks / Task 5 — scope size",
-      "description": "Task 5 bundles five distinct changes into one sentence: persisting identity in `oauth_sessions` on login, the same on token rotation in `HandleRefresh`, the `EnsureUser` call, extracting the session check for reuse, `RequireAuth`/`RequireAdmin` with context propagation, and 403/409 branches in `writeAPIDomainError`. It touches four files across two packages — the widest task in the spec.",
-      "fix": "Consider splitting into «личность в сессии + EnsureUser» (auth/store.go, handler/auth.go) and «middleware авторизации + доменные коды ошибок» (handler/middleware.go, handler/http.go). The two halves have no overlapping files and can run in one wave once Task 3 precedes them."
+      "section": "Implementation Tasks / Tasks 6 and 9",
+      "category": "task_quality",
+      "description": "Rationale is still restated in task descriptions rather than referenced. Task 6: 'пока владелец приходит из адреса запроса, отзыв доступа не имеет эффекта, а данные любого пользователя доступны напрямую' duplicates Decision 6's Rationale nearly verbatim, even though the task already cites (Decision 6). Task 9: 'Нужно, потому что переменная, отсутствующая в allowlist envs:, теряется молча, тесты сегодня не запускаются нигде, а незаменённый плейсхолдер создаст лишний аккаунт с правами администратора' restates three separate rows of the Risks table. Both trip the rationale-marker rule (потому что / пока … не имеет эффекта). Content is correct but now lives in two places and can drift.",
+      "fix": "Reduce these clauses to a bare pointer — Task 6: 'Нужно для US-15 и US-16 (Decision 6).' Task 9: 'Нужно для US-6; обоснование — Risks (allowlist envs:, отсутствие прогона тестов, плейсхолдер администратора).'",
+      "prior_finding_status": "partially_closed"
     },
     {
       "severity": "minor",
-      "section": "Implementation Tasks / Tasks 4, 9 — rationale in task descriptions",
-      "description": "Task 4 («Нужно, потому что без реализации в обоих хранилищах dev-окружение перестаёт собираться») and Task 9 («Нужно, потому что переменная, отсутствующая в allowlist `envs:`, теряется молча») restate justifications that already appear verbatim as rows in the Risks table (lines 503, 508). This is the mild form of the «rationale duplicated outside its home section» rule; the tasks are otherwise exemplary in referencing Decisions by number instead of restating them.",
-      "fix": "Shorten to a plain «Нужно для …» and reference the Risks row, e.g. Task 4: «Нужно, потому что обе реализации требуются одновременно — см. Risks.»"
+      "section": "Implementation Tasks / Phase 2",
+      "category": "structure",
+      "description": "Phase 2 has no Audit Wave; the template marks it 'Always present'. Judgment: acceptable for a phase with two substantive tasks — Task 16 already carries code-reviewer, security-auditor and test-reviewer, Task 17 carries layout-reviewer, and Phase 1's Audit Wave covered the shared surface. Residual gap: Task 16 introduces SMTP credential handling and outbound email content, exactly what a full-feature security audit is for, and per-task review sees only that task's diff.",
+      "fix": "Optional. If kept as-is, state in the Phase 2 preamble that the Audit Wave is deliberately omitted because Phase 1's audit covered the shared surface and Phase 2 adds two tasks. If tightened, add a single Security Audit task (skill: security-auditor, Reviewers: none) in a Phase 2 Audit Wave scoped to the notifier and its configuration.",
+      "prior_finding_status": "n/a"
     },
     {
       "severity": "minor",
-      "section": "Standards compliance",
-      "description": "Project Knowledge is absent: `.claude/skills/project-knowledge/references/architecture.md` and `patterns.md` do not exist in this repository (the `.claude/skills/` directory itself is missing). Proposed file paths and component naming could not be checked against documented project conventions. Mitigating factor: the tech-spec derives conventions directly from the codebase (house style of `service/costing.go`, migration numbering from `migrations/migrate.go`, `VARCHAR + CHECK` from migration 003) and cites concrete files for each.",
-      "fix": "Optional: run the documentation-writing / project-planning flow to create Project Knowledge so future specs can be validated against a written standard. Not a blocker for this feature."
+      "section": "Implementation Tasks / Tasks 7 and 8",
+      "category": "tasks",
+      "description": "Client tasks 7 and 8 use code-writing with reviewers code-reviewer, security-auditor — omitting test-reviewer, a catalog default for code-writing. Judgment: acceptable. Testing Strategy > Client tests documents the reason explicitly (no test runner, no test script, no test dependencies in client/package.json; building client test infrastructure exceeds the feature) and states the substitution outright. All reviewer names used are in the catalog, so this is a documented deviation from the default set, not an invalid value.",
+      "fix": "No change required. For traceability add a short note in the two task descriptions — 'test-reviewer не назначается: клиентской тест-инфраструктуры нет, см. Testing Strategy > Client tests' — so the omission reads as deliberate at the point of use.",
+      "prior_finding_status": "n/a"
+    },
+    {
+      "severity": "minor",
+      "section": "Implementation Tasks / Final Waves",
+      "category": "tasks",
+      "description": "The two Deploy tasks are inconsistent. Task 14 (Phase 1 Final Wave) has 'Reviewers: none' per the template; Task 19 (Phase 2 Final Wave) has 'Reviewers: code-reviewer, security-auditor, deploy-reviewer' and a substantive description (plumbing SMTP variables through five hops). Task 19 is a deploy-pipeline configuration task placed in the Final Wave, whereas Phase 1 separates that work into Task 9 (deploy-pipeline, Wave 8) from Task 14 (Deploy, Final Wave). Task 19 also has no Files to modify / Files to read while Task 9 does.",
+      "fix": "Mirror the Phase 1 shape: split Task 19 into a deploy-pipeline configuration task in a Phase 2 wave (Files to modify: .github/workflows/deploy.yml, docker-compose.prod.yml; reviewers code-reviewer, security-auditor, deploy-reviewer) plus a plain 'Deploy + verify logs' task with Reviewers: none in the Final Wave.",
+      "prior_finding_status": "n/a"
+    },
+    {
+      "severity": "minor",
+      "section": "Implementation Tasks / Phase 2 Wave 2",
+      "category": "tasks",
+      "description": "Phase 2 Wave 2 is labelled 'depends on Wave 1', but Task 17 (layout of the banner and users section — client/src/components/*.jsx, client/src/App.css) has no dependency on Task 16 (SMTPNotifier — server-side Go plus cmd/main.go). The file sets are fully disjoint and Task 17's real prerequisites are Phase 1 Tasks 7 and 8. The ordering serialises two tasks that could run in parallel.",
+      "fix": "Move Task 17 into Phase 2 Wave 1 alongside Task 16, or relabel the wave to state the true prerequisite ('depends on Phase 1 Tasks 7-8').",
+      "prior_finding_status": "n/a"
+    },
+    {
+      "severity": "minor",
+      "section": "Decisions / Decision 12, phase boundary",
+      "category": "task_quality",
+      "description": "Cross-phase ordering check: Phase 1 does NOT ship dead code. CONTACT_EMAIL is added and consumed in Phase 1 (Task 5); SMTP_* and ADMIN_NOTIFY_EMAILS are added only in Phase 2 (Task 16); users.email/display_name are consumed by the Phase 1 admin list; the Shared resources table tags SMTPNotifier as Phase 2. Phase 2 Task 16 modifying access.go/access_test.go/main.go created in Phase 1 is normal cross-phase extension. One soft spot: Decision 12 (OAuth scope login:email) states its Rationale purely as 'поддерживает US-5 — письмо должно содержать email заявителя', and US-5 is Phase 2, yet the change ships in Phase 1 Task 7 — paying its real cost (console change plus re-consent from every already-authorized user) one release early. Its Phase 1 justification (email shown in the admin list, US-7) appears only in User-Spec Deviations, not in the Decision.",
+      "fix": "Add the Phase 1 justification to Decision 12's Rationale (email is displayed in the admin users list per US-7, so the scope is needed in Phase 1 regardless of US-5), or move the scope change to Phase 2 Task 16 so re-consent is requested once, alongside the feature that needs it.",
+      "prior_finding_status": "n/a"
+    },
+    {
+      "severity": "minor",
+      "section": "Implementation Tasks / Phase 1 Wave 4 / Task 5",
+      "category": "task_quality",
+      "description": "Task 5's description contains an undocumented design decision: 'Сборка маршрутов выносится в функцию, переиспользуемую тестами, чтобы проверялась фактическая обвязка, а не её копия.' This is an architectural choice with a rationale clause; it appears in Testing Strategy prose but has no entry in the Decisions section, so a reader of the task cannot follow the reference.",
+      "fix": "Either add a short Decision ('Сборка маршрутов вынесена в переиспользуемую функцию, чтобы интеграционные тесты проверяли фактическую цепочку middleware') and reference it from Task 5, or record it in the What we're building/modifying entry for server/cmd/main.go.",
+      "prior_finding_status": "n/a"
     }
   ]
 }
