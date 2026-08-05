@@ -143,7 +143,7 @@ size: L
 |----------|----------------|-----------|----------------|
 | `*sql.DB` (MariaDB, database/sql) | `cmd/main.go:26` через `db.Open` | `auth.Store`, `migrations.Run` | 1 |
 | `*gorm.DB` (MariaDB, GORM) | `cmd/main.go:119` через `db.OpenGORM` | `PostgresRepository` (настройки, чаты, расчёты, пользователи, заявки) | 1 |
-| `SMTPNotifier` | `cmd/main.go` | `AccessHandler` | 1 (nil, если SMTP не сконфигурирован) |
+| `SMTPNotifier` (Phase 2) | `cmd/main.go` | `AccessHandler` | 1 (nil, если SMTP не сконфигурирован) |
 | `AccessService` | `cmd/main.go` | `AccessHandler`, `AuthHandler` (только `EnsureUser`), middleware | 1 |
 
 Новых тяжёлых ресурсов не появляется: `SMTPNotifier` не держит постоянного соединения —
@@ -525,7 +525,7 @@ HTTP-обвязка строится на `net/http/httptest` из станда�
 - `SetAccess(granted=false)` снимает флаг и переводит заявку в `rejected`
 - `SetAccess` для несуществующего логина: `ErrNotFound`
 
-`server/internal/service/notifier_test.go`:
+`server/internal/service/notifier_test.go` (**Phase 2**):
 
 - Тема письма с кириллицей кодируется в RFC 2047 encoded-word
 - Тело письма содержит логин и email заявителя
@@ -572,9 +572,9 @@ HTTP-обвязка строится на `net/http/httptest` из станда�
 - Администратором `granted=true` → 204, флаг выставлен; `granted=false` → 204, флаг снят
 - Тело с неизвестным полем → 400
 - Изменяющий запрос с посторонним `Origin` → 403 **и флаг не изменился** (Decision 8)
-- Ошибка нотификатора при создании заявки → ответ по-прежнему 201
-- `nil`-нотификатор → ответ 201, отправки нет
 - Ошибка репозитория с SQL-текстом внутри → 500 **без этого текста в теле** (Decision 17)
+- **Phase 2:** ошибка нотификатора при создании заявки → ответ по-прежнему 201
+- **Phase 2:** `nil`-нотификатор → ответ 201, отправки нет
 
 `server/internal/handler/http_test.go` — те же маршруты продукта после перевода на сессию:
 
@@ -678,6 +678,13 @@ None — E2E-инфраструктуры (раннер как зависимо�
 
 ## User-Spec Deviations
 
+- **Разбиение на две фазы.** User-spec описывает фичу как единое целое. Tech-spec выносит
+  автоматическое письмо администраторам (US-5) и оформление новых экранов во вторую фазу,
+  чтобы объём первой поставки укладывался в 15 задач. Практическое следствие: между выкаткой
+  Phase 1 и Phase 2 администратор узнаёт о заявке, открыв раздел «Пользователи», а не из
+  письма; плашка при этом показывает контактный email, поэтому пользователь может обратиться
+  напрямую. → [PENDING USER APPROVAL]
+
 - **Расширение US-6 (два админ-аккаунта):** user-spec говорит «конкретные логины будут указаны
   пользователем перед деплоем». Tech-spec фиксирует механизм: логины подставляются в
   `UPDATE users SET role='admin' WHERE id IN (...)` в миграции `004`, причём администратор
@@ -742,8 +749,6 @@ None — E2E-инфраструктуры (раннер как зависимо�
 - [ ] Пользователь не может получить данные другого владельца ни через адрес, ни через тело запроса
 - [ ] `POST /auth/yandex` возвращает 404
 - [ ] `UpdateSessionTokens` сохраняет личность сессии при ротации токенов
-- [ ] Ошибка отправки письма не влияет на код ответа при создании заявки
-- [ ] При незаданном `SMTP_HOST` сервер стартует, пишет предупреждение в лог, заявки создаются
 - [ ] Строка `users` появляется после входа, до каких-либо действий в панели
 - [ ] Пользователь без доступа не отправляет запросов к `/settings`, `/chats`, `/calculations`
 - [ ] Пользователь без прав администратора не видит пункт «Пользователи» в навигации
@@ -751,10 +756,29 @@ None — E2E-инфраструктуры (раннер как зависимо�
 - [ ] Ответ 500 не содержит текста внутренней ошибки
 - [ ] Все существующие тесты проходят; регрессий в `costing_test.go` нет
 - [ ] `go test ./...` запускается в CI и блокирует деплой при падении
-- [ ] Новые переменные окружения доходят до контейнера `poshivon_app` на проде
+- [ ] `CONTACT_EMAIL` доходит до контейнера `poshivon_app` на проде и виден на плашке
+
+Критерии Phase 2:
+
+- [ ] При новой заявке администраторам уходит письмо с логином и email заявителя
+- [ ] Ошибка отправки письма не влияет на код ответа при создании заявки
+- [ ] При незаданном `SMTP_HOST` сервер стартует, пишет предупреждение в лог, заявки создаются
+- [ ] SMTP-переменные доходят до контейнера `poshivon_app` на проде
 - [ ] Ни один SMTP-секрет не присутствует в репозитории
+- [ ] Плашка и раздел «Пользователи» оформлены в стиле панели в обеих темах
 
 ## Implementation Tasks
+
+Работа разбита на две фазы. **Phase 1 (MVP)** закрывает контроль доступа целиком: гейт,
+заявку, админский раздел и защиту данных на сервере — 15 задач. **Phase 2 (Расширение)**
+добавляет автоматическое письмо администраторам и приводит новые экраны к оформлению панели.
+
+Граница выбрана так, чтобы MVP оставался самодостаточным: плашка показывает контактный email
+из конфигурации, поэтому пользователь может обратиться за доступом, а администратор видит
+заявку в списке — сценарий работает и без автоматической рассылки. Требование US-5
+(письмо администраторам) выполняется в Phase 2, US-1..US-4 и US-6..US-17 — в Phase 1.
+
+## Phase 1 — MVP
 
 ### Wave 1 (independent)
 
@@ -770,20 +794,9 @@ None — E2E-инфраструктуры (раннер как зависимо�
 - **Files to modify:** `server/migrations/004_access_control.up.sql`
 - **Files to read:** `server/migrations/002_costing_schema.up.sql`, `server/migrations/003_pricing_and_chat_delete.up.sql`, `server/migrations/migrate.go`, `server/internal/db/db.go`
 
-#### Task 2: Отправка письма администраторам
-- **Description:** Создать `SMTPNotifier` на `net/smtp` с RFC 2047 кодированием темы и
-  добавить в конфигурацию SMTP-переменные, список получателей и контактный email из раздела
-  Data Models. Нужно для US-5. Результат: сервис отправляет письмо о новой заявке списку
-  администраторов и конструируется в `nil` при незаданном `SMTP_HOST` (Decision 14).
-- **Skill:** code-writing
-- **Reviewers:** code-reviewer, security-auditor, test-reviewer
-- **Verify-smoke:** `docker run --rm -d -p 1025:1025 -p 8025:8025 --name mailpit axllent/mailpit`, отправка тестового письма временным `go run`-скриптом против `SMTP_HOST=localhost SMTP_PORT=1025`, затем `curl -s localhost:8025/api/v1/messages` → письмо присутствует, тема декодируется в кириллицу
-- **Files to modify:** `server/internal/service/notifier.go`, `server/internal/service/notifier_test.go`, `server/internal/config/config.go`
-- **Files to read:** `server/internal/service/deepseek.go`, `server/cmd/main.go`
-
 ### Wave 2 (depends on Wave 1)
 
-#### Task 3: Доменный сервис доступа
+#### Task 2: Доменный сервис доступа
 - **Description:** Создать `AccessService` с интерфейсами `UserRepository` и
   `AccessRequestRepository`, доменными ошибками `ErrForbidden` и `ErrConflict` и правилами
   из Decisions 3, 5, 10, 11. Нужно как единственное место, где живут правила доступа.
@@ -796,7 +809,7 @@ None — E2E-инфраструктуры (раннер как зависимо�
 
 ### Wave 3 (depends on Wave 2)
 
-#### Task 4: Реализации репозиториев доступа
+#### Task 3: Реализации репозиториев доступа
 - **Description:** Реализовать `UserRepository` и `AccessRequestRepository` в
   `PostgresRepository` и `MemoryRepository`, добавить compile-time assertions и контрактный
   набор тестов над фабрикой, запускаемый против обоих хранилищ. Модель `userModel` при этом
@@ -809,7 +822,7 @@ None — E2E-инфраструктуры (раннер как зависимо�
 - **Files to modify:** `server/internal/repository/postgres.go`, `server/internal/repository/memory.go`, `server/internal/repository/access_repo_test.go`
 - **Files to read:** `server/internal/service/access.go`, `server/internal/repository/README.md`
 
-#### Task 5: Личность в сессии и middleware авторизации
+#### Task 4: Личность в сессии и middleware авторизации
 - **Description:** Сохранять личность Яндекса в `oauth_sessions` при входе и при ротации
   токенов, удалить `HandleYandexLogin`, вынести проверку сессии в вид, доступный вне
   `AuthHandler`, и создать `RequireAuth`, `RequireAccess`, `RequireAdmin`, `RequireSameOrigin`
@@ -824,23 +837,23 @@ None — E2E-инфраструктуры (раннер как зависимо�
 
 ### Wave 4 (depends on Wave 3)
 
-#### Task 6: Эндпоинты доступа и администрирования, сборка маршрутов
+#### Task 5: Эндпоинты доступа и администрирования, сборка маршрутов
 - **Description:** Создать `AccessHandler` с четырьмя маршрутами из раздела Data Models,
-  собрать в `main.go` все зависимости и цепочки middleware для всех префиксов `/api/v1/`
-  согласно таблице в разделе Architecture, и построить обвязку интеграционных тестов на
-  `httptest` — тестов уровня handler в проекте нет. Сборка маршрутов выносится в функцию,
-  переиспользуемую тестами, чтобы проверялась фактическая обвязка. Результат: контракт
-  эндпоинтов и коды 401/403/404/409 покрыты тестами, включая проверку, что отказ не меняет
-  состояние хранилища.
+  добавить в конфигурацию `CONTACT_EMAIL`, собрать в `main.go` все зависимости и цепочки
+  middleware для всех префиксов `/api/v1/` согласно таблице в разделе Architecture, и
+  построить обвязку интеграционных тестов на `httptest` — тестов уровня handler в проекте нет.
+  Сборка маршрутов выносится в функцию, переиспользуемую тестами, чтобы проверялась
+  фактическая обвязка. Результат: контракт эндпоинтов и коды 401/403/404/409 покрыты тестами,
+  включая проверку, что отказ не меняет состояние хранилища.
 - **Skill:** code-writing
 - **Reviewers:** code-reviewer, security-auditor, test-reviewer
 - **Verify-smoke:** `curl -i localhost:8080/api/v1/admin/users` → 401; `curl -i -X POST localhost:8080/api/v1/admin/users/someone/access -H 'Content-Type: application/json' -d '{"granted":true}'` → 401; `curl -i -X POST localhost:8080/auth/yandex` → 404
-- **Files to modify:** `server/internal/handler/access.go`, `server/internal/handler/access_test.go`, `server/internal/handler/middleware_test.go`, `server/cmd/main.go`
+- **Files to modify:** `server/internal/handler/access.go`, `server/internal/handler/access_test.go`, `server/internal/handler/middleware_test.go`, `server/internal/config/config.go`, `server/cmd/main.go`
 - **Files to read:** `server/internal/handler/http.go`, `server/internal/handler/middleware.go`, `server/internal/service/access.go`
 
 ### Wave 5 (depends on Wave 4)
 
-#### Task 7: Перевод существующих маршрутов на личность из сессии
+#### Task 6: Перевод существующих маршрутов на личность из сессии
 - **Description:** Убрать сегмент `userID` из адресов `/api/v1/users/*` и брать владельца из
   контекста, заполняемого middleware. Нужно для US-15 и US-16: пока владелец приходит из
   адреса запроса, отзыв доступа не имеет эффекта, а данные любого пользователя доступны
@@ -854,13 +867,13 @@ None — E2E-инфраструктуры (раннер как зависимо�
 
 ### Wave 6 (depends on Wave 5)
 
-#### Task 8: Клиентский гейт доступа и правки авторизации
+#### Task 7: Клиентский гейт доступа и правки авторизации
 - **Description:** Добавить слой вызовов контура доступа, третий вызов в bootstrap-эффекте
   панели, значение `no-access` в машину состояний `status`, охрану эффектов загрузки данных,
-  функциональную плашку запроса доступа, а также `scope` и `state` в OAuth-URL с удалением
-  implicit-ветки входа. Обновить адреса существующих вызовов под контракт из Task 7.
-  Нужно для US-1..US-4, US-11, US-17. Результат: пользователь без доступа видит плашку
-  вместо рабочего интерфейса и не отправляет запросов за данными.
+  функциональную плашку запроса доступа с контактным email, а также `scope` и `state` в
+  OAuth-URL с удалением implicit-ветки входа. Обновить адреса существующих вызовов под
+  контракт из Task 6. Нужно для US-1..US-4, US-11, US-17. Результат: пользователь без доступа
+  видит плашку вместо рабочего интерфейса и не отправляет запросов за данными.
 - **Skill:** code-writing
 - **Reviewers:** code-reviewer, security-auditor
 - **Verify-user:** открыть `localhost:5173/panel` аккаунтом без доступа → видна плашка, рабочего интерфейса нет, во вкладке Network нет запросов к `/settings`, `/chats`, `/calculations`; нажать «Запросить доступ» → плашка сообщает, что заявка на рассмотрении, кнопка неактивна; выйти и войти заново → вход проходит успешно
@@ -869,7 +882,7 @@ None — E2E-инфраструктуры (раннер как зависимо�
 
 ### Wave 7 (depends on Wave 6)
 
-#### Task 9: Раздел «Пользователи» для администратора
+#### Task 8: Раздел «Пользователи» для администратора
 - **Description:** Добавить пункт навигации, видимый только при роли администратора, и секцию
   со списком всех пользователей и переключателем доступа напротив каждого. Нужно для US-7..US-10
   и US-12. Результат: администратор выдаёт и отзывает доступ из панели, обычный пользователь
@@ -882,65 +895,50 @@ None — E2E-инфраструктуры (раннер как зависимо�
 
 ### Wave 8 (depends on Wave 7)
 
-#### Task 10: Вёрстка плашки и раздела пользователей
-- **Description:** Привести плашку запроса доступа и раздел «Пользователи» к оформлению
-  панели: существующие блоки `.panel__card`, `.panel__notice`, `.panel__empty`,
-  `.panel-chat-list__*` в `client/src/App.css` и модификаторы темы `.panel--light` /
-  `.panel--dark`. Нужно, потому что оба компонента созданы предыдущими задачами
-  функционально, без оформления. Результат: новые экраны неотличимы по стилю от остальной
-  панели в обеих темах и на узком экране.
-- **Skill:** layout-writing
-- **Reviewers:** layout-reviewer
-- **Verify-user:** открыть панель в светлой и тёмной теме, шириной 1440px и 390px → плашка и список пользователей выглядят как остальные карточки панели, ничего не выходит за границы, горизонтальной прокрутки нет
-- **Files to modify:** `client/src/components/AccessRequestBanner.jsx`, `client/src/components/AdminUsersSection.jsx`, `client/src/App.css`
-- **Files to read:** `client/src/pages/Panel.jsx`, `client/src/index.css`
-
-### Wave 9 (depends on Wave 8)
-
-#### Task 11: Конфигурация деплоя, проксирование и прогон тестов в CI
-- **Description:** Провести новые переменные окружения через все пять переходов от секрета
-  GitHub до контейнера, добавить проксирование `/auth/refresh` в обе nginx-конфигурации,
-  создать воркфлоу прогона `go test ./...` и сделать его обязательным для деплоя, а также
+#### Task 9: Конфигурация деплоя, проксирование и прогон тестов в CI
+- **Description:** Провести `CONTACT_EMAIL` через все пять переходов от секрета GitHub до
+  контейнера, добавить проксирование `/auth/refresh` в обе nginx-конфигурации, создать
+  воркфлоу прогона `go test ./...` и сделать его обязательным для деплоя, а также
   зафиксировать порядок выкатки администраторов из раздела Data Models. Нужно, потому что
   переменная, отсутствующая в allowlist `envs:`, теряется молча, а тесты сегодня не
-  запускаются нигде. Результат: сервер на проде видит новые переменные, `/auth/refresh`
+  запускаются нигде. Результат: сервер на проде видит новую переменную, `/auth/refresh`
   доходит до бэкенда, падение тестов блокирует деплой.
 - **Skill:** deploy-pipeline
 - **Reviewers:** code-reviewer, security-auditor, deploy-reviewer
-- **Verify-smoke:** `docker exec poshivon_app env | grep -E 'SMTP_|ADMIN_NOTIFY|CONTACT_EMAIL'` → переменные присутствуют; `curl -i -X POST https://<host>/auth/refresh` → ответ JSON от бэкенда, не HTML SPA; `act -W .github/workflows/test.yml` либо push в ветку → джоба тестов отрабатывает
+- **Verify-smoke:** `docker exec poshivon_app env | grep CONTACT_EMAIL` → переменная присутствует; `curl -i -X POST https://<host>/auth/refresh` → ответ JSON от бэкенда, не HTML SPA; push в ветку → джоба тестов отрабатывает и блокирует деплой при падении
 - **Files to modify:** `.github/workflows/deploy.yml`, `.github/workflows/test.yml`, `docker-compose.prod.yml`, `docker-compose.yml`, `client/nginx.conf`
 - **Files to read:** `server/internal/config/config.go`, `server/Dockerfile`
 
 ### Audit Wave
 
-#### Task 12: Code Audit
+#### Task 10: Code Audit
 - **Description:** Full-feature code quality audit. Read all source files created/modified in this feature (from decisions.md + tech-spec "Files to modify"). Review holistically for cross-component issues: duplicate resource initialization, shared resources compliance with Architecture decisions, architectural consistency. Write audit report.
 - **Skill:** code-reviewing
 - **Reviewers:** none
 
-#### Task 13: Security Audit
+#### Task 11: Security Audit
 - **Description:** Full-feature security audit. Read all source files created/modified in this feature. Analyze for OWASP Top 10 across all components, cross-component auth/data flow. Write audit report.
 - **Skill:** security-auditor
 - **Reviewers:** none
 
-#### Task 14: Test Audit
+#### Task 12: Test Audit
 - **Description:** Full-feature test quality audit. Read all test files created in this feature. Verify coverage, meaningful assertions, test pyramid balance across all components. Write audit report.
 - **Skill:** test-master
 - **Reviewers:** none
 
 ### Final Wave
 
-#### Task 15: Pre-deploy QA
-- **Description:** Acceptance testing: run all tests, verify acceptance criteria from user-spec and tech-spec
+#### Task 13: Pre-deploy QA
+- **Description:** Acceptance testing: run all tests, verify acceptance criteria from user-spec and tech-spec, за исключением помеченных Phase 2
 - **Skill:** pre-deploy-qa
 - **Reviewers:** none
 
-#### Task 16: Deploy
+#### Task 14: Deploy
 - **Description:** Deploy + verify logs
 - **Skill:** deploy-pipeline
 - **Reviewers:** none
 
-#### Task 17: Post-deploy verification
+#### Task 15: Post-deploy verification
 - **Description:** Live environment verification:
   - Контейнер `poshivon_app` поднялся, миграция `004_access_control` применена, нет crash-loop — tool: bash (`docker compose logs`, `docker exec poshivon_db mariadb`)
   - `GET /api/v1/access/me` без кук отвечает 401 через прод-nginx — tool: curl
@@ -949,7 +947,61 @@ None — E2E-инфраструктуры (раннер как зависимо�
   - `POST /auth/yandex` отвечает 404 — tool: curl
   - `POST /auth/refresh` доходит до бэкенда, а не до SPA — tool: curl
   - Панель без доступа показывает плашку, под администратором — раздел «Пользователи», под обычным пользователем с доступом пункта нет — tool: Playwright MCP
+  Tools: curl, bash, Playwright MCP
+- **Skill:** post-deploy-qa
+- **Reviewers:** none
+
+## Phase 2 — Расширение
+
+Выполняется после выкатки и приёмки Phase 1.
+
+### Wave 1 (independent)
+
+#### Task 16: Отправка письма администраторам
+- **Description:** Создать `SMTPNotifier` на `net/smtp` с RFC 2047 кодированием темы,
+  добавить SMTP-переменные и список получателей в конфигурацию и вызвать отправку из
+  обработчика создания заявки. Нужно для US-5. Результат: при новой заявке администраторам
+  уходит письмо с логином и email заявителя, а сбой отправки не влияет на код ответа
+  (Decision 14).
+- **Skill:** code-writing
+- **Reviewers:** code-reviewer, security-auditor, test-reviewer
+- **Verify-smoke:** `docker run --rm -d -p 1025:1025 -p 8025:8025 --name mailpit axllent/mailpit`, создание заявки против сервера с `SMTP_HOST=localhost SMTP_PORT=1025`, затем `curl -s localhost:8025/api/v1/messages` → письмо присутствует, тема декодируется в кириллицу, в теле логин и email заявителя
+- **Files to modify:** `server/internal/service/notifier.go`, `server/internal/service/notifier_test.go`, `server/internal/config/config.go`, `server/internal/handler/access.go`, `server/internal/handler/access_test.go`, `server/cmd/main.go`
+- **Files to read:** `server/internal/service/deepseek.go`, `server/internal/service/access.go`
+
+### Wave 2 (depends on Wave 1)
+
+#### Task 17: Вёрстка плашки и раздела пользователей
+- **Description:** Привести плашку запроса доступа и раздел «Пользователи» к оформлению
+  панели: существующие блоки `.panel__card`, `.panel__notice`, `.panel__empty`,
+  `.panel-chat-list__*` в `client/src/App.css` и модификаторы темы `.panel--light` /
+  `.panel--dark`. Нужно, потому что в Phase 1 оба компонента созданы функционально, без
+  оформления. Результат: новые экраны неотличимы по стилю от остальной панели в обеих темах
+  и на узком экране.
+- **Skill:** layout-writing
+- **Reviewers:** layout-reviewer
+- **Verify-user:** открыть панель в светлой и тёмной теме, шириной 1440px и 390px → плашка и список пользователей выглядят как остальные карточки панели, ничего не выходит за границы, горизонтальной прокрутки нет
+- **Files to modify:** `client/src/components/AccessRequestBanner.jsx`, `client/src/components/AdminUsersSection.jsx`, `client/src/App.css`
+- **Files to read:** `client/src/pages/Panel.jsx`, `client/src/index.css`
+
+### Final Wave
+
+#### Task 18: Pre-deploy QA
+- **Description:** Acceptance testing: run all tests, verify Phase 2 acceptance criteria from user-spec and tech-spec
+- **Skill:** pre-deploy-qa
+- **Reviewers:** none
+
+#### Task 19: Deploy
+- **Description:** Провести SMTP-переменные и список получателей через все пять переходов от секрета GitHub до контейнера, выкатить и проверить логи. Секреты только в GitHub Secrets и `.env` на сервере.
+- **Skill:** deploy-pipeline
+- **Reviewers:** code-reviewer, security-auditor, deploy-reviewer
+
+#### Task 20: Post-deploy verification
+- **Description:** Live environment verification:
+  - `docker exec poshivon_app env | grep -E 'SMTP_|ADMIN_NOTIFY'` → переменные присутствуют — tool: bash
+  - Создание заявки на проде не отвечает ошибкой при недоступном SMTP — tool: curl
   - Письмо о новой заявке доставлено на почту администраторов — tool: проверка пользователем (доставка зависит от боевых SMTP-кредов)
+  - Плашка и раздел «Пользователи» отрисованы в стиле панели в обеих темах — tool: Playwright MCP
   Tools: curl, bash, Playwright MCP
 - **Skill:** post-deploy-qa
 - **Reviewers:** none
