@@ -1,0 +1,33 @@
+{
+  "validator": "reality-checker",
+  "batch": [4, 5, 6],
+  "status": "changes_required",
+  "findings": [
+    {
+      "severity": "critical",
+      "category": "cross-task-integration",
+      "task": 4,
+      "issue": "Task 4 requires AuthHandler.HandleYandexCode to call `AccessService.EnsureUser(ctx, login, email, displayName)` before writing cookies (What to do #2, and it is an Acceptance Criterion: \"Строка users появляется сразу после входа\"). Today `AuthHandler` is constructed as `handler.NewAuthHandler(store, cfg)` (server/cmd/main.go:37) and its struct (auth.go:26-30) holds only `store`, `cfg`, `httpClient` — no reference to `AccessService`/`UserRepository`. Task 4 never instructs adding an AccessService (or narrower interface) field to `AuthHandler` or updating `NewAuthHandler`'s signature, and explicitly restricts its own main.go changes to \"delete exactly the /auth/yandex registration line\" (What to do #5: \"не трогать регистрацию остальных /auth/* маршрутов и /api/v1/* в этой задаче ... здесь middleware только создаются\"). Constructing a real, storage-backed `AccessService` in main.go requires `UserRepository`/`AccessRequestRepository` implementations, which only become reachable via `buildRepositories` once it is extended — and that extension is explicitly assigned to Task 5 (\"Расширить buildRepositories, которая сегодня возвращает фиксированную тройку ... чтобы она также возвращала реализации service.UserRepository и service.AccessRequestRepository\"). Task 5, in turn, treats `authHandler` as an already-fully-built dependency to pass into its route-assembly function (Task 5 What-to-do #4: \"функцию ... принимающую уже собранные cfg, authHandler, accessHandler, apiHandler\") and never touches auth.go (Task 5's Files to modify list excludes auth.go entirely). No task in this batch owns wiring a real AccessService into AuthHandler for production, yet Task 4's own Verify-smoke gate (`go build ./...`) and TDD-anchor-driven Acceptance Criterion require the call to exist and work.",
+      "fix": "Either (a) add an explicit step to Task 4's 'What to do' instructing it to extend `NewAuthHandler`'s signature to accept an `AccessService`/`UserRepository`-shaped dependency and update main.go's single call site accordingly (documenting that the concrete repository-backed instance may be a minimal/placeholder construction until Task 5 finishes wiring `buildRepositories`, or explicitly deferred with a documented TODO), or (b) move the AccessService-into-AuthHandler wiring responsibility into Task 5 (which already owns `buildRepositories` extension and full main.go assembly) and have Task 4's own tests exercise `EnsureUser` purely via a stub passed directly to a test-constructed AuthHandler, with Task 4's Acceptance Criteria reworded to reflect that production wiring completes in Task 5, not Task 4."
+    },
+    {
+      "severity": "minor",
+      "category": "hints",
+      "task": 5,
+      "issue": "Task 5's Edge Cases section flags what it presents as an unresolved conflict between the Architecture routing table order (`RequireSameOrigin → RequireAuth → RequireAdmin`) and its own Verify-smoke expectation that `POST /api/v1/admin/users/someone/access` with a valid `Origin` header but no cookies returns 401 rather than 403, telling the implementer to 'sverit' the actual order and document a deviation if needed. In fact there is no real conflict: in dev, `CORS_ALLOWED_ORIGINS` is unset, so `RequireSameOrigin`'s same-origin fallback (Decision 8, cross-checked against cors.go/config.go) matches `Origin: http://localhost:8080` against `r.Host = localhost:8080` and passes; `RequireAuth` then rejects the cookie-less request with 401, exactly as the smoke test expects, with the table order left intact. Presenting this as an open question invites an implementer to needlessly second-guess or reorder the already-correct middleware chain.",
+      "fix": "Either remove this 'Edge cases' paragraph or rephrase it to state the resolution directly: same-origin Origin fallback passes RequireSameOrigin first (Origin matches r.Host), so RequireAuth's 401 for missing cookies is reached next — no reordering of the Architecture table's declared chain is needed."
+    },
+    {
+      "severity": "minor",
+      "category": "hints",
+      "task": 5,
+      "issue": "Task 5's What-to-do #1 speculates that `AccessHandler` might take a dependency on `service.Notifier`/`SMTPNotifier` \"if Task 2/3 already defined such a constructor\". Per tech-spec's own phase split, `SMTPNotifier` is Phase 2 scope (Task 16, Wave 1 of Phase 2 — 'Отправка письма администраторам'), not something Task 2 or Task 3 (both Phase 1) would ever define. This aside is hedged with 'if' so it isn't a hard claim, but it references a dependency that this Phase-1 task should not expect to exist at all.",
+      "fix": "Drop the SMTPNotifier/Notifier aside from Task 5's construction instructions, or note explicitly that AccessHandler in Phase 1 has no notifier dependency and that wiring is added later by Task 16."
+    }
+  ],
+  "stats": {
+    "tasks_checked": 3,
+    "claims_verified": 41,
+    "issues_found": 3
+  }
+}

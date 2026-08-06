@@ -1,0 +1,33 @@
+{
+  "validator": "reality-checker",
+  "batch": [10, 11, 12],
+  "status": "approved",
+  "findings": [
+    {
+      "severity": "major",
+      "category": "cross-task-integration",
+      "task": 11,
+      "issue": "Task 11's 'What to do' bullet on EnsureUser ('does it ever touch role/has_access, directly or via a GORM model that carries those columns') is labeled '(Decision 13's invariant)'. That invariant is actually Decision 11 ('AccessService.EnsureUser ... список обновляемых колонок, ограниченным email и display_name' — the fix for the admin-demotion regression). Decision 13 is a distinct, narrower invariant: that the pre-existing userModel struct (used by the three unrelated upsertUser call sites behind UpsertSettings/CreateChat/AppendCalculation) never gains a Role field, so those unrelated writes don't reset role to '' and violate chk_users_role. Task 11's numbered decision list to verify ('Decisions 1, 2, 6, 7, 8, 9, 10, 13, 17, 18') never includes Decision 11 at all, even though the task's own Description paragraph explicitly calls out 'how the migration's seeded roles interact with EnsureUser's upsert' as one of the things this audit must trace — that is precisely Decision 11's subject matter, not Decision 13's.",
+      "fix": "In Task 11, split the EnsureUser bullet into two checks: one for Decision 11 (EnsureUser's own INSERT ... ON CONFLICT DO UPDATE restricts updated columns to email/display_name, never touching role/has_access) and one for Decision 13 (userModel struct still has only ID/CreatedAt, the three existing upsertUser call sites unaffected). Add '11' to the explicit numbered decision list in Description and 'What to do'."
+    },
+    {
+      "severity": "major",
+      "category": "cross-task-integration",
+      "task": 12,
+      "issue": "Tasks 10, 11, and 12 are all Audit Wave (wave 9) report-only tasks with identical rationale for omitting code-verification sections, but they handle it inconsistently. Task 10 keeps the '## Verification Steps' heading and states explicitly why Automated/Smoke/User are omitted ('The Automated/Smoke/User subsections are intentionally omitted — the verification of this task is the audit report itself'). Task 11 and Task 12 both drop the '## Verification Steps' heading entirely — no explanatory note, no section at all. The task template (task.md.template) lists 'Verification Steps' as a standard section (with 'Omit section if no smoke checks' guidance only for the Smoke/User subsections, not for the whole section). Same-wave tasks solving the same problem (audit task has no automated verification) took two different structural approaches.",
+      "fix": "Make Task 11 and Task 12 consistent with Task 10's pattern: add a '## Verification Steps' heading with the same one-line explanation of why Automated/Smoke/User are omitted, rather than dropping the section outright."
+    },
+    {
+      "severity": "minor",
+      "category": "cross-task-integration",
+      "task": 12,
+      "issue": "Task 12 omits the '## Reviewers' section heading entirely. Task 10 and Task 11 (same wave, same 'reviewers: [] — audit task IS the review' situation) both include an explicit '## Reviewers' section stating 'None — this is an audit task...'. Task 12's frontmatter comment ('audit task — no reviewers, report only') conveys the same intent but the body never states it, breaking the pattern the other two audit tasks in this wave established.",
+      "fix": "Add a '## Reviewers' section to Task 12 matching the wording used in Task 10/11 ('None — this task is itself the review...')."
+    }
+  ],
+  "stats": {
+    "tasks_checked": 3,
+    "claims_verified": 47,
+    "issues_found": 3
+  }
+}

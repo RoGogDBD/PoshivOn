@@ -1,0 +1,40 @@
+{
+  "validator": "reality-checker",
+  "batch": [1, 2, 3],
+  "status": "approved",
+  "findings": [
+    {
+      "severity": "minor",
+      "category": "hallucination",
+      "task": 3,
+      "issue": "Task 3 Description states file sizes as 'postgres.go (556 lines currently)' and 'memory.go (243 lines currently)'. Actual line counts (verified with wc -l) are 555 and 242 respectively — off by one on both.",
+      "fix": "Update the parenthetical line counts to 555 and 242, or drop them since they are cosmetic context and will drift again as soon as the file changes."
+    },
+    {
+      "severity": "minor",
+      "category": "hallucination",
+      "task": 3,
+      "issue": "Task 3 Description says MemoryRepository 'is the in-memory store used when STORAGE=memory (see buildRepositories in server/cmd/main.go)'. The actual environment variable is APP_STORAGE, not STORAGE — confirmed at server/internal/config/config.go:58 (`Storage: envOrDefault(\"APP_STORAGE\", \"memory\")`) and referenced as APP_STORAGE in the error path at server/cmd/main.go:132.",
+      "fix": "Replace 'STORAGE=memory' with 'APP_STORAGE=memory' (or '' — config.go:58 defaults to memory) in the Description."
+    },
+    {
+      "severity": "minor",
+      "category": "tdd",
+      "task": 3,
+      "issue": "Internal inconsistency: Task 3's Acceptance Criteria says '`UpsertSettings`, `CreateChat`, and calculation append still work for a brand-new user...' (three write paths), but 'What to do' item 6 and the TDD Anchor's `TestAccessRepoContract_ExistingWritePathsSurviveAccessColumns` only name two write paths ('UpsertSettings and CreateChat'), matching the tech-spec's Decision 13 wording exactly (tech-spec.md line ~660-661, which also lists only these two). AppendCalculation ('calculation append') has no corresponding TDD anchor test despite being promised in the Acceptance Criteria checklist.",
+      "fix": "Either add a third regression test case for AppendCalculation to the TDD Anchor and 'What to do' item 6 (AppendCalculation also calls upsertUser at postgres.go:363, so it carries the same Decision 13 risk), or remove 'and calculation append' from the Acceptance Criteria bullet to match the two-path scope actually implemented and tested."
+    },
+    {
+      "severity": "minor",
+      "category": "hints",
+      "task": 1,
+      "issue": "Task 1's 'Load-bearing именование файла' note cites 'попасть в embed.FS через паттерн *.up.sql (migrate.go:14)'. The `//go:embed *.up.sql` directive is actually on migrate.go:13; line 14 is the `var migrationsFS embed.FS` declaration it applies to. Trivial off-by-one within the same two-line pair.",
+      "fix": "Cite 'migrate.go:13-14' instead of 'migrate.go:14' if precision is desired; low priority given the directive and declaration are adjacent."
+    }
+  ],
+  "stats": {
+    "tasks_checked": 3,
+    "claims_verified": 46,
+    "issues_found": 4
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "validator": "reality-checker",
+  "batch": [13, 14, 15],
+  "status": "approved",
+  "findings": [],
+  "stats": {
+    "tasks_checked": 3,
+    "claims_verified": 33,
+    "issues_found": 0
+  },
+  "notes": {
+    "task_13_ac_diff": "Acceptance Criteria block in tasks/13.md (32 lines, HTML comment stripped) diffed programmatically against tech-spec.md's global Acceptance Criteria section (lines 901-935), stopping before 'Критерии Phase 2:' (line 936). Result: byte-for-byte identical, zero deltas.",
+    "task_13_test_file_crosscheck": "Cited test files (server/internal/repository/access_repo_test.go, server/internal/auth/store_test.go, server/internal/handler/access_test.go, middleware_test.go, http_test.go, auth_test.go) verified against Tasks 3/4/5/6's own 'Files to modify' lists (not just tech-spec): Task 3 creates access_repo_test.go; Task 4 creates store_test.go and auth_test.go (also introduces middleware.go/middleware_test.go per its own What-to-do, consistent with Task 5's later references to the same file); Task 5 creates access_test.go and extends middleware_test.go; Task 6 creates http_test.go. No drift found between tech-spec's Testing Strategy section and what Tasks 3-6 actually commit to producing.",
+    "task_13_dependency_chain": "depends_on: [10, 11, 12] confirmed correct — Tasks 10/11/12 (Code/Security/Test Audit) are wave 9, depends_on [1..9], matching the Audit Wave that precedes Final Wave in tech-spec.md.",
+    "task_14_migration_irreversibility": "Verified against real files: server/migrations/ contains only *.up.sql files (0001_init.sql, 001_auth_sessions.up.sql, 002_costing_schema.up.sql, 003_pricing_and_chat_delete.up.sql) — no down-migration files or mechanism exist. server/migrations/migrate.go globs only '*.up.sql' and has no down-path code at all. server/cmd/main.go lines 32-34: 'if err := migrations.Run(database); err != nil { log.Fatalf(\"Ошибка применения миграций: %v\", err) }' — confirmed exact line numbers and fail-fast behavior as task 14 claims.",
+    "task_14_container_names": "poshivon_app, poshivon_web, poshivon_proxy, poshivon_db all confirmed present in docker-compose.prod.yml via container_name greps.",
+    "task_15_checklist_vs_spec": "Task 15's 11 Acceptance Criteria and its Smoke/User verification steps map cleanly onto tech-spec.md's Task 15 description (lines 1125-1136, Implementation Tasks -> Final Wave) and the Agent Verification Plan section (lines 769-821): admin count check, 401/403/404 curl matrix, /auth/refresh JSON-vs-HTML check, and the three-role Playwright panel checks (banner/no-panel, admin with Пользователи section, regular user with neither) are all present in tech-spec and none invented beyond it. The CONTACT_EMAIL banner-text check in task 15's User verification step is grounded in AVP item 3 (tech-spec.md line 803: плашка with CONTACT_EMAIL contact text), not an invention.",
+    "boilerplate_scan": "Grepped tasks/13.md, 14.md, 15.md for template residue patterns (path/to/file.ts, pytest tests/test_xxx.py, 'Criterion 1', '# Task N: Name', 'other files as needed', TODO/FIXME/placeholder/[fill in]/TBD) — zero matches. Verified all 9 required section headings present exactly once in each file with non-empty bodies (Required Skills, Description, What to do, Acceptance Criteria, Context Files, Verification Steps, Details, Reviewers, Post-completion). No leftover stale/incomplete template content found despite the noted multi-attempt creation history."
+  }
+}

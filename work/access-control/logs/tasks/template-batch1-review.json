@@ -1,0 +1,43 @@
+{
+  "validator": "task-validator",
+  "batch": [1, 2, 3, 4, 5],
+  "status": "approved",
+  "findings": [
+    {
+      "severity": "minor",
+      "category": "content",
+      "task": 1,
+      "section": "TDD Anchor",
+      "issue": "TDD Anchor entries do not follow the template's `path::test_name` — description format. There is no Go test file for this task (pure SQL migration), so the anchor is a list of narrative smoke-check steps instead of named tests. The section explains this reasoning inline, but the format itself deviates from the template's expected pattern.",
+      "fix": "Either keep as-is with the existing justification (acceptable given the task produces no Go tests), or reframe each bullet as a pseudo-anchor with a stable identifier, e.g. `` `smoke::columns_present` — SHOW COLUMNS FROM users contains role, has_access, email, display_name `` so entries are individually referenceable the same way code-task anchors are."
+    },
+    {
+      "severity": "minor",
+      "category": "content",
+      "task": 3,
+      "section": "What to do",
+      "issue": "The 'What to do' section embeds a literal SQL implementation block (the exact `INSERT ... ON DUPLICATE KEY UPDATE` statement for `CreateRequest`) rather than describing the outcome and pointing to Details for the exact statement. Per template/task-creator rules, 'What to do' should state WHAT, not HOW, with code/pseudocode reserved for Details or Implementation hints.",
+      "fix": "Move the SQL block to the Details section (it already largely duplicates content that belongs there) and have 'What to do' reference it, e.g. 'run the exact upsert statement from Decision 5 (see Details) via tx.Exec, inspect RowsAffected()'. Low priority: the literal SQL is genuinely load-bearing here (Decision 5's correctness depends on exact text), so this is a stylistic nit, not a substance issue."
+    },
+    {
+      "severity": "minor",
+      "category": "consistency",
+      "task": 3,
+      "section": "Reviewers",
+      "issue": "Task 3's Reviewers section hardcodes the round number: `work/access-control/logs/working/task-3/code-reviewer-1.json`, `security-auditor-1.json`, `test-reviewer-1.json`. Tasks 1, 2, 4, and 5 all leave `{round}` as a literal placeholder (matching the task template's own convention, where `{round}` is filled in per actual review round during execution, not at task-creation time). Task 3 is the only file in this batch that deviates.",
+      "fix": "Replace the hardcoded `-1.json` suffixes in Task 3's Reviewers section with the `{round}` placeholder, consistent with Tasks 1, 2, 4, and 5 and with the task.md.template convention: `work/access-control/logs/working/task-3/code-reviewer-{round}.json` etc."
+    },
+    {
+      "severity": "minor",
+      "category": "decomposition",
+      "task": 4,
+      "section": "Details / Files",
+      "issue": "Task 4 introduces `server/internal/handler/middleware_test.go` as a new file, which is not listed in tech-spec's Task 4 `Files to modify` (store.go, store_test.go, auth.go, auth_test.go, middleware.go, http.go, main.go). The task file explicitly acknowledges this ('не входит в files_to_modify тех-спека явным списком, но необходим для TDD Anchor этой задачи'), which is the right call for testability, but per the decomposition-quality heuristic a new file not present in tech-spec should still be flagged (task-creator may have reasonably refined the plan, not an error).",
+      "fix": "No action required — the deviation is self-documented and justified (middleware.go needs a co-located test file to satisfy the task's own TDD Anchor). Consider noting this explicitly as a deviation in decisions.md during Task 4 execution, per the Post-completion checklist's 'if you deviated from the spec' item."
+    }
+  ],
+  "stats": {
+    "tasks_checked": 5,
+    "issues_found": 4
+  }
+}

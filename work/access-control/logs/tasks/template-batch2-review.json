@@ -1,0 +1,67 @@
+{
+  "validator": "task-validator",
+  "batch": [6, 7, 8, 9, 10],
+  "status": "approved",
+  "findings": [
+    {
+      "severity": "major",
+      "category": "consistency",
+      "task": 6,
+      "section": "Details / Files",
+      "issue": "Task 6's Details section states `server/internal/handler/http_test.go` 'does not exist yet' and that this task creates it fresh. But Task 4 (wave 3, already-approved in batch 1) has a TDD Anchor test `server/internal/handler/http_test.go::TestWriteAPIDomainError_NoInternalTextInAnyBranch` targeting that exact file — Task 4 executes before Task 6 (wave 3 < wave 5), so the file will already exist with content by the time Task 6 runs. Note: Task 4's own Details/Files list also omits http_test.go, so this inconsistency actually originates in Task 4 (already approved) and surfaces here as a factual error about the codebase state that Task 6 will encounter. If the implementing agent takes 'does not exist yet / create it' literally, it risks overwriting/deleting Task 4's test instead of extending the file.",
+      "fix": "Reword Task 6's Details/Files entry for http_test.go to 'created by Task 4 (see its TestWriteAPIDomainError_NoInternalTextInAnyBranch) — extend it with the route-rewrite tests below, do not overwrite the existing content.' Optionally also fix Task 4's Files list to mention it creates http_test.go, so both tasks agree on the file's origin."
+    },
+    {
+      "severity": "major",
+      "category": "decomposition",
+      "task": 7,
+      "section": "What to do / Details",
+      "issue": "Task 7 bundles 6 files across two fairly separable concerns: (a) client access-gate UI — accessApi.js (new), Panel.jsx bootstrap/status/effect-guard changes, AccessRequestBanner.jsx (new), and the panelApi.js userID-removal route rename; and (b) OAuth security hardening — yandexAuth.js (scope, state, delete persistYandexToken) and AuthCallback.jsx (remove implicit branch, verify state). Per the split-candidate heuristic (>3 files, unrelated changes), this is a plausible split into two tasks. That said, this file grouping mirrors tech-spec.md's own Wave 6/Task 7 'Files to modify' list exactly (line 1064) — task-creator faithfully expanded an already-approved tech-spec task boundary rather than introducing the bundling itself.",
+      "fix": "No action needed at the task-file level unless the team wants to revisit tech-spec's Task 7 boundary — a split (client access-gate vs. OAuth hardening) would need to happen in tech-spec.md's Implementation Tasks first, then be re-decomposed. Flagged for visibility, not necessarily actionable within task-creator's scope."
+    },
+    {
+      "severity": "minor",
+      "category": "content",
+      "task": 6,
+      "section": "Description / What to do",
+      "issue": "Description and 'What to do' both say 'the eight handle* methods' and enumerate them: handleUpsertSettings, handleGetSettings, handleCreateChat, handleListChats, handleDeleteChat, handleRestoreChat, handleCalculate, handleListChatCalculations, handleMarketFeedback — that list has 9 names, and `grep -n \"^func (h \\*APIHandler) handle\" server/internal/handler/http.go` confirms 9 such methods (excluding handleUsers itself). The enumerated list is complete and correct; only the count adjective ('eight') is off by one.",
+      "fix": "Change 'eight' to 'nine' in both the Description and 'What to do' sections."
+    },
+    {
+      "severity": "minor",
+      "category": "content",
+      "task": 7,
+      "section": "What to do",
+      "issue": "Same off-by-one as Task 6: 'убрать параметр userID из всех восьми экспортов' lists 9 function names (getUserSettings, saveUserSettings, listChats, createChat, deleteChat, restoreChat, listChatCalculations, calculateInChat, analyzeMarketWithAI), matching the actual 9 exports in `client/src/utils/panelApi.js`. The list itself is accurate; the count word is wrong.",
+      "fix": "Change 'восьми' to 'девяти'."
+    },
+    {
+      "severity": "minor",
+      "category": "content",
+      "task": 6,
+      "section": "Context Files",
+      "issue": "Context Files omits project.md/architecture.md (no project-knowledge/ directory exists in this repo, confirmed) but, unlike Tasks 7, 9, and 10 in the same batch, does not state this explicitly — it just silently doesn't link them. Minor inconsistency in documentation style within the batch.",
+      "fix": "Add a short note like Task 7/9/10's: 'No project-knowledge/ directory exists in this project yet — code files below substitute for it.'"
+    },
+    {
+      "severity": "minor",
+      "category": "content",
+      "task": 8,
+      "section": "Context Files",
+      "issue": "Same as Task 6 — Context Files omits project.md/architecture.md without noting the project-knowledge/ directory's absence, unlike sibling Tasks 7, 9, 10.",
+      "fix": "Add the same explanatory note used in Task 7/9/10."
+    },
+    {
+      "severity": "minor",
+      "category": "structure",
+      "task": 9,
+      "section": "Verification Steps",
+      "issue": "The '### User' subsection is kept with the text 'Not applicable — this task has no UI-facing behavior...' instead of being omitted. The template instructs 'Omit section if none' for the User subsection, and `verify: [smoke]` in frontmatter confirms no user-facing verification applies to this task.",
+      "fix": "Delete the '### User' subsection entirely, consistent with the template's omit-if-none instruction (Tasks 6's Verification Steps correctly omits it)."
+    }
+  ],
+  "stats": {
+    "tasks_checked": 5,
+    "issues_found": 6
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "validator": "reality-checker",
+  "batch": "cross-task",
+  "status": "approved",
+  "findings": [
+    {
+      "severity": "minor",
+      "category": "hints",
+      "task": 4,
+      "issue": "Task 4's 'What to do' item 6 (server/cmd/main.go) instructs constructing `accessService := service.NewAccessService(userRepo, accessRequestRepo)` with the exact constructor name and argument order spelled out, then in the same breath tells the executor to 'сверить точное имя конструктора с тем, что реально объявил Task 2' (verify against what Task 2 actually declared, don't guess). This is fine in practice because Task 2's own 'What to do' independently commits to the name `NewAccessService` with private fields for `UserRepository`/`AccessRequestRepository` in that order, so the two tasks agree — but the prescriptive code line borders on prescribing the exact call rather than pointing at a pattern, which is why it needed the hedge clause appended.",
+      "fix": "No action required — Task 2 and Task 4 agree on the constructor name/shape, and Task 4 already includes the correct hedge ('сверить... не угадывать'). Optional: shorten the prescriptive line to 'construct AccessService from userRepo/accessRequestRepo per Task 2's constructor' without spelling out the exact call, to keep the hint pointing at a pattern rather than dictating the line."
+    }
+  ],
+  "stats": {
+    "tasks_checked": 15,
+    "claims_verified": 41,
+    "issues_found": 1
+  },
+  "cross_task_checks": {
+    "1_duplicate_accessservice_construction_task4_vs_task5": {
+      "verdict": "resolved",
+      "detail": "Task 4 ('What to do' item 6, and Description point 7) now explicitly owns widening `buildRepositories` in server/cmd/main.go to also return `service.UserRepository`/`service.AccessRequestRepository`, constructing `accessService := service.NewAccessService(userRepo, accessRequestRepo)`, and passing it into `handler.NewAuthHandler(store, cfg, accessService)`. Task 5 ('What to do' item 4, Description) explicitly states it reuses the already-widened `buildRepositories` and already-constructed `accessService`/`userRepo`/`accessRequestRepo` local variables from Task 4, and only adds `AccessHandler` on top — with an explicit escape hatch instructing the executor to stop and report rather than duplicate the work if Task 4 did not actually do this. No contradiction found between the two files' descriptions of who does what. Verified against the current (pre-implementation) server/cmd/main.go: buildRepositories at line 107 currently returns the fixed 3-tuple exactly as both tasks describe, and `authHandler := handler.NewAuthHandler(store, cfg)` at line ~37 currently takes 2 args, consistent with Task 4 being the one to add the 3rd parameter."
+    },
+    "2_hallucinations_from_fix_round_task4_assumptions_about_task2_task3_outputs": {
+      "verdict": "no hallucination found",
+      "detail": "Task 4's new prose assumes `server/internal/service/access.go` will declare a constructor `NewAccessService(userRepo, accessRequestRepo)`. Cross-checked against Task 2's own 'What to do': 'Создать AccessService со скрытыми полями-зависимостями UserRepository и AccessRequestRepository ... конструктор NewAccessService' — Task 2 independently commits to this exact name and this exact field order (UserRepository first, AccessRequestRepository second), so Task 4's assumption matches what Task 2 is instructed to build. Task 4 also carries the appropriate hedge language telling the executor to verify against the actual file rather than assume, which further mitigates residual risk if Task 2's implementation deviates during execution."
+    },
+    "3_appendcalculation_coverage_in_task3": {
+      "verdict": "resolved",
+      "detail": "Task 3's 'What to do' item 6, TDD Anchor (`TestAccessRepoContract_ExistingWritePathsSurviveAccessColumns`), and Acceptance Criteria all now name all three write paths explicitly: UpsertSettings, CreateChat, and AppendCalculation (postgres.go:363), each described as calling upsertUser and each carrying Decision 13 risk. This matches the actual call sites confirmed in postgres.go (upsertUser called at lines 140, 233, 363)."
+    },
+    "4_task8_admin_self_toggle_edge_case": {
+      "verdict": "resolved, internally consistent",
+      "detail": "Task 8's 'Edge cases' section states once, without contradiction, that 'the server does NOT reject this call for an admin target' and that RequireAdmin only checks the caller's role, not the target login, citing tasks/2.md and tasks/5.md for SetAccess having no target-is-admin guard. This was cross-checked against Task 2's actual SetAccess description ('проверяет существование пользователя ... выставляет флаг через UserRepository.SetAccess, затем ... переводит её в approved/rejected') which indeed contains no target-role guard logic. Decision 10 is correctly cited as the reason a stray flip would be harmless (has_access || role=='admin'), not as a server-side rejection mechanism. No remaining trace of the old 'server rejects' framing was found in the file."
+    },
+    "5_task11_decision11_vs_decision13_separation": {
+      "verdict": "resolved",
+      "detail": "tasks/11.md (Security Audit task) now correctly separates the two decisions in both 'What to do' and 'Implementation hints': Decision 11 is described as 'EnsureUser on every login → does its INSERT ... ON DUPLICATE KEY UPDATE column list stay restricted to email/display_name only, never touching role/has_access' (about the SQL upsert's column list), and Decision 13 is described as 'confirm the shared userModel struct (postgres.go) itself was never extended with a Role/HasAccess field in the first place ... a distinct check: this one is about the GORM model's shape, not about what EnsureUser's SQL updates'. The Implementation hints section repeats the same split with correct file/line pointers. No instance of either decision mislabeled as the other was found."
+    },
+    "6_new_file_line_citations_spot_checked": {
+      "verdict": "all spot-checked citations accurate",
+      "checked": [
+        "postgres.go:15-22 userModel (ID, CreatedAt only, TableName()->'users') — confirmed exact match, cited by tasks 3 and 11",
+        "postgres.go:140,233,363 upsertUser call sites (UpsertSettings, CreateChat, AppendCalculation) — confirmed exact match, cited by task 3",
+        "postgres.go:550 upsertUser helper definition — confirmed present (func upsertUser at line 550), cited by task 3 as 'postgres.go:550-555'",
+        "costing.go:15-18 ErrInvalidArgument/ErrNotFound var block — present, off by one line in practice (var block actually spans ~14-17) but immaterial to task correctness, not part of this round's fix set",
+        "costing.go:168-183 house-style interfaces (UserSettingsRepository, ChatRepository, ChatCalculationRepository) — confirmed present in that range, cited by tasks 2, 3, 11",
+        "main.go:69 'mux.HandleFunc(\"/auth/yandex\", authHandler.HandleYandexLogin)' — confirmed exact line match, cited by task 4",
+        "main.go buildRepositories current 3-tuple return shape — confirmed exact match to what tasks 3/4/5 describe as the pre-task-4 baseline",
+        "auth.go:42 HandleYandexLogin, auth.go:421 validateSession, auth.go:459 fetchYandexProfile, auth.go:32 NewAuthHandler(store, cfg) (2-arg, pre-Task-4) — all confirmed exact or near-exact line matches",
+        "http.go:251-266 writeAPIDomainError with existing 400/404/429/503/504 branches (three via strings.Contains: rate_limit_exceeded->429, service_unavailable->503, timeout->504) plus default 500 — confirmed exact match to Decision 17's description, cited by tasks 4, 5, 10, 11",
+        "http.go handleUsers current structure (path TrimPrefix, splitPath, userID:=parts[0], resource:=parts[1]) — confirmed exact match, cited by task 6",
+        "metrics.go normalizePath/looksLikeID current single-condition implementation — confirmed matches task 5's description of what needs a third condition added for Decision 18",
+        "config.go envOrDefault pattern — confirmed matches task 5's CONTACT_EMAIL addition plan"
+      ]
+    }
+  }
+}

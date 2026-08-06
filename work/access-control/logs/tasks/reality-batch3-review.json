@@ -1,0 +1,40 @@
+{
+  "validator": "reality-checker",
+  "batch": [7, 8, 9],
+  "status": "approved",
+  "findings": [
+    {
+      "severity": "minor",
+      "category": "hallucination",
+      "task": 7,
+      "issue": "Task 7 says 'убрать параметр userID из всех восьми экспортов' (eight exports) in the 'What to do' section and 'всех 8 функций' in Details, but then lists nine names (getUserSettings, saveUserSettings, listChats, createChat, deleteChat, restoreChat, listChatCalculations, calculateInChat, analyzeMarketWithAI), and client/src/utils/panelApi.js actually exports exactly nine functions (verified by reading the file, lines 37-79). The numeral is wrong; the explicit name list and cited line range (:37-79) are correct. The error is inherited from code-research.md §9, which also undercounts as '8 endpoint functions'.",
+      "fix": "Change 'восьми'/'8' to 'девяти'/'9' in both places in tasks/7.md; optionally note the miscount in code-research.md §9 for future reference."
+    },
+    {
+      "severity": "minor",
+      "category": "hallucination",
+      "task": 7,
+      "issue": "In the 'Dependencies' note under Details (tasks/7.md line ~253), the access-state endpoint is written as 'POST /api/v1/access/me'. Every other reference to this endpoint in the same file (8 occurrences) and in tech-spec.md's Contract API table (line 558) correctly state it is GET /api/v1/access/me. This single instance has the wrong HTTP method.",
+      "fix": "Change 'POST /api/v1/access/me' to 'GET /api/v1/access/me' at that line."
+    },
+    {
+      "severity": "major",
+      "category": "hallucination",
+      "task": 9,
+      "issue": "Task 9 states three times (Description line ~24-25, Context Files line ~172, Details/Dependencies line ~221) that 'Task 6 (server) adds CONTACT_EMAIL to config.go'. This is factually wrong: per tech-spec.md's Implementation Tasks section (line 1022, Task 5: '...добавить в конфигурацию CONTACT_EMAIL...') and the actual task file work/access-control/tasks/5.md (line 76: 'ContactEmail: envOrDefault(\"CONTACT_EMAIL\", \"\")' in Load()), it is Task 5 that adds CONTACT_EMAIL to config.go. work/access-control/tasks/6.md contains zero mentions of CONTACT_EMAIL — Task 6 only removes the userID segment from /api/v1/users/* routes. The error is functionally harmless because Task 9's depends_on:[8] transitively includes Task 5 through the wave chain (5→6→7→8→9), so the ordering guarantee still holds, but the documentation misattributes which task did the work.",
+      "fix": "Replace 'Task 6' with 'Task 5' in all three locations in tasks/9.md where CONTACT_EMAIL's addition to config.go is attributed."
+    },
+    {
+      "severity": "major",
+      "category": "feasibility",
+      "task": 8,
+      "issue": "The Edge cases bullet on the admin self-toggle is self-contradictory: 'Admin toggling their own account's checkbox must be impossible client-side (disabled), not just discouraged — the server would reject it anyway per US-13 (RequireAdmin still lets an admin's own toggle through since the server-side rule is role-based, not self-check, but Decision 10 additionally makes the UI refuse to send that request for any admin row).' The leading clause asserts the server rejects the call; the parenthetical immediately says the opposite (RequireAdmin lets it through). Cross-checked against work/access-control/tasks/2.md and tasks/5.md (AccessService/AccessHandler specs, SetAccess tests) — there is no server-side logic that rejects a SetAccess call targeting an admin login; only calls from a non-admin caller are rejected (403, tested as TestSetAccess_NonAdminSelfLogin403Unchanged / TestSetAccess_NonAdminOtherLogin403Unchanged, both about the CALLER not being admin, not about the TARGET being admin). Tech-spec's own risk-table mitigation for 'both admins lose access' (line 836) is precisely that the toggle is allowed but harmless because access is computed as has_access || role=='admin' (Decision 10) — not that the toggle itself is server-rejected. An implementer or reviewer reading only the first clause could wrongly assume a server-side guard exists and skip verifying the client-side disable is the sole protection.",
+      "fix": "Remove or rewrite the leading clause 'the server would reject it anyway per US-13' — replace with something like 'the server does not reject this call for an admin target (RequireAdmin only checks the caller's role); the client disable is the only guard against sending it, and Decision 10 makes the resulting flag flip harmless even if sent.'"
+    }
+  ],
+  "stats": {
+    "tasks_checked": 3,
+    "claims_verified": 68,
+    "issues_found": 4
+  }
+}

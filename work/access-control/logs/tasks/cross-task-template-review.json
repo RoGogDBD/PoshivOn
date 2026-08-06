@@ -1,0 +1,67 @@
+{
+  "validator": "task-validator",
+  "batch": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+  "status": "changes_required",
+  "findings": [
+    {
+      "severity": "critical",
+      "category": "resource-sharing",
+      "task": 3,
+      "section": "Description",
+      "issue": "Task 3's Description contains a stale ownership claim, left over from before the fix round that moved AccessService/buildRepositories construction from Task 5 to Task 4: 'Note: buildRepositories in server/cmd/main.go currently returns a fixed 3-tuple ... and is NOT touched by this task — widening it to also return the two new repositories is Task 5's job (wiring AccessHandler and route assembly).' This is now false: Task 4 (tasks/4.md, wave 4, depends_on [2,3]) explicitly owns widening buildRepositories and constructing *service.AccessService, wiring it into NewAuthHandler ('это задача расширяет buildRepositories в main.go... конструирует *service.AccessService... передаёт его в handler.NewAuthHandler'), and Task 5 (tasks/5.md) explicitly defers to that work already being done ('buildRepositories уже расширен Task 4... эта задача не повторяет расширение'). Task 3's note was never updated to reflect the ownership handoff to Task 4 that happened during the fix round which added Task 4's dependency on Task 3.",
+      "fix": "Update Task 3's Description note to say buildRepositories widening (to add UserRepository/AccessRequestRepository) and AccessService construction are Task 4's job, not Task 5's."
+    },
+    {
+      "severity": "critical",
+      "category": "resource-sharing",
+      "task": 5,
+      "section": "Details",
+      "issue": "Task 5 contradicts itself. Its 'What to do' item 4 correctly states buildRepositories and accessService are 'уже расширен Task 4' / 'уже собранный accessService', that Task 5 must reuse the existing local variables, and that re-widening would be a decomposition blocker to report, not repeat. But Task 5's own Details > Files entry for server/cmd/main.go still says: '(правка) — расширить buildRepositories (сейчас возвращает (settingsRepo, chatRepo, calculationRepo, cleanup, err), нужно добавить UserRepository и AccessRequestRepository), собрать AccessService/AccessHandler, ...'. This directly instructs Task 5 to do the widening and AccessService construction that the corrected 'What to do' section (and Task 4) say Task 4 already did. An implementer following the Details/Files checklist (a common shortcut) would redo Task 4's work and risk constructing a second AccessService instance / re-widening buildRepositories, exactly the duplicate-construction bug the fix round was meant to eliminate.",
+      "fix": "Rewrite the server/cmd/main.go bullet in Task 5's Details > Files to say Task 5 only adds AccessHandler construction/registration and middleware wiring on top of the buildRepositories/accessService that Task 4 already built — remove the 'расширить buildRepositories ... собрать AccessService' language."
+    },
+    {
+      "severity": "minor",
+      "category": "consistency",
+      "task": 7,
+      "section": "Details",
+      "issue": "Task 7's Details > Dependencies references Task 8 as 'Волна 7 (Task 8, раздел «Пользователи» для администратора)'. Task 8's actual frontmatter wave is 8 (depends_on: [7]), not 7 — this is a stale wave number, apparently missed by the fix round that bumped waves 4-15 (8.md, 11.md, 14.md, 9.md, 10.md were corrected elsewhere per the prior fix pass, but this forward-reference inside 7.md was not).",
+      "fix": "Change 'Волна 7 (Task 8, ...)' to 'Волна 8 (Task 8, ...)' in Task 7's Details > Dependencies section."
+    },
+    {
+      "severity": "minor",
+      "category": "consistency",
+      "task": 10,
+      "section": "What to do / Acceptance Criteria",
+      "issue": "Task 10 refers twice to reading files 'as they exist now (post-Wave-8)' / 'in its current, post-Wave-8 state' (in 'What to do' and again in Acceptance Criteria). Task 10 depends_on [1..9] and Task 9 is wave 9 (post-fix-round renumbering), so the correct label is post-Wave-9 — 'post-Wave-8' undercounts by one and is a leftover from before the wave bump that moved Task 9 from wave 8 to wave 9.",
+      "fix": "Replace both 'post-Wave-8' occurrences in tasks/10.md with 'post-Wave-9' (or reword as 'post-Task-9' to avoid future wave-renumbering drift)."
+    },
+    {
+      "severity": "minor",
+      "category": "consistency",
+      "task": 11,
+      "section": "What to do",
+      "issue": "Task 11's 'What to do' section lists the decisions to explicitly verdict as 'Decisions 1, 2, 6, 7, 8, 9, 10, 13, 17, 18' — omitting Decision 11 (the EnsureUser admin-demotion invariant, arguably the single most safety-critical decision in the feature). Task 11's own Acceptance Criteria section, by contrast, correctly lists 'Decisions 1, 2, 6, 7, 8, 9, 10, 11, 13, 17, 18' including Decision 11. A prior validator round (logs/tasks/reality-batch4-review.json) had already flagged Task 11 conflating Decision 13 with Decision 11; it looks like the Acceptance Criteria list was corrected but the parallel enumeration in 'What to do' was not updated to match. The substance of Decision 11 is still covered elsewhere in Task 11 (Description's 'EnsureUser's upsert' trace point, and the Implementation hints section has a dedicated Decision 11 entry), so this is an enumeration-consistency gap, not a coverage gap.",
+      "fix": "Add Decision 11 to the explicit decision list in Task 11's 'What to do' section so it matches Acceptance Criteria's list."
+    },
+    {
+      "severity": "minor",
+      "category": "consistency",
+      "task": 10,
+      "section": "Context Files",
+      "issue": "Task 10's Context Files list attributes server/internal/handler/middleware_test.go to '(Task 5)' only. Task 4 is actually the one that creates this file (Task 4's own Details > Files: 'server/internal/handler/middleware_test.go (новый, ... создать рядом с middleware.go)'), and Task 5 only extends it conditionally ('новый или расширяемый, если Task 4 уже завела файл'). Task 12's equivalent file list correctly attributes the same file to '(Task 4/5)', showing the two audit tasks' file-provenance annotations are now inconsistent with each other.",
+      "fix": "Change Task 10's Context Files attribution for middleware_test.go from '(Task 5)' to '(Task 4, 5)' to match Task 4's actual ownership and Task 12's attribution."
+    },
+    {
+      "severity": "minor",
+      "category": "consistency",
+      "task": 12,
+      "section": "What to do",
+      "issue": "Task 12's 'What to do' file list attributes server/internal/handler/auth_test.go to '(Task 5/6)'. Neither Task 5 nor Task 6 lists auth_test.go in their own Details > Files sections; Task 4 is the one that creates it (Task 4's Details > Files: 'server/internal/handler/auth_test.go (новый) — TDD Anchor, httptest.NewServer как заглушка Яндекса'). Task 10's own Context Files list correctly attributes the file to '(Task 4)', so Task 12's attribution is out of sync with both the actual task content and Task 10's parallel audit-task list.",
+      "fix": "Change Task 12's attribution for auth_test.go from '(Task 5/6)' to '(Task 4)'."
+    }
+  ],
+  "stats": {
+    "tasks_checked": 15,
+    "issues_found": 7
+  }
+}

@@ -1,0 +1,76 @@
+{
+  "validator": "task-validator",
+  "batch": [11, 12, 13, 14, 15],
+  "status": "changes_required",
+  "findings": [
+    {
+      "severity": "critical",
+      "category": "structure",
+      "task": 11,
+      "section": "Verification Steps",
+      "issue": "The '## Verification Steps' section is entirely absent. Template and task-creator rules mark this section as mandatory for all tasks (even report-only/audit tasks — see Task 13, which keeps an 'Automated' subsection and explicitly states why Smoke/User are folded in). Task 11 jumps straight from '## Context Files' to '## Details' with no Verification Steps heading at all.",
+      "fix": "Add a '## Verification Steps' section between Context Files and Details. Since this is a report-only audit task, an 'Automated' or equivalent subsection can state how the audit report itself is verified (e.g., report exists at the specified path, covers all Context Files, each of Decisions 1/2/6/7/8/9/10/13/17/18 addressed) — mirror the pattern Task 13 uses to justify folding verification into the task's own execution."
+    },
+    {
+      "severity": "major",
+      "category": "content",
+      "task": 11,
+      "section": "Acceptance Criteria",
+      "issue": "Acceptance Criteria is a single prose paragraph ('Security audit report written, covering all files touched by Tasks 1-9, each Decision's actual implementation verified against its stated intent, findings documented.') rather than a checklist of discrete, testable items. Template and checklist require '- [ ]' formatted, individually testable criteria — this reads as one vague sentence rather than several verifiable outcomes.",
+      "fix": "Break into a checklist, e.g.: '- [ ] Audit report written to work/access-control/logs/working/task-11/', '- [ ] Every file in Context Files reviewed', '- [ ] Each of Decisions 1, 2, 6, 7, 8, 9, 10, 13, 17, 18 explicitly confirmed implemented-or-not with file/function reference', '- [ ] Findings include severity and file:line references'."
+    },
+    {
+      "severity": "critical",
+      "category": "content",
+      "task": 13,
+      "section": "Context Files",
+      "issue": "Context Files omits the mandatory decisions.md link. The section explicitly states 'No decisions.md ... exist in this project ... so neither is linked here' — but decisions.md not yet existing on disk is not a reason to omit the link: it is a forward reference used by every other task's Post-completion step (which instructs writing a report INTO decisions.md), and sibling tasks created in the same session (11, 14) correctly keep the '[decisions.md](../decisions.md)' link despite the file equally not existing yet. This is an inconsistent, incorrect omission, not a deliberate convention.",
+      "fix": "Add '- [decisions.md](../decisions.md)' back to Context Files, consistent with Tasks 11 and 14. Keep the accurate note that no project-knowledge/ directory exists (that part is correct and consistent across all 5 tasks)."
+    },
+    {
+      "severity": "critical",
+      "category": "content",
+      "task": 15,
+      "section": "Context Files",
+      "issue": "Context Files lists only user-spec.md and tech-spec.md — decisions.md (mandatory per template/task-creator convention) is missing entirely, with no explanatory note at all (unlike Task 13, which at least states a rationale). Post-completion for Task 15 explicitly requires writing a report into decisions.md, so the link should exist.",
+      "fix": "Add '- [decisions.md](../decisions.md)' to Context Files, consistent with Tasks 11 and 14."
+    },
+    {
+      "severity": "critical",
+      "category": "consistency",
+      "task": 14,
+      "section": "frontmatter / Verification Steps",
+      "issue": "frontmatter 'verify: []' but the body's '## Verification Steps' section contains a substantial, content-rich '### Smoke' subsection (4 concrete checks: Actions run trigger, test-job gate, docker logs check, schema_migrations query). This is a frontmatter↔body mismatch — verify should reflect the smoke checks actually present.",
+      "fix": "Set frontmatter to 'verify: [smoke]' to match the populated Smoke subsection in Verification Steps."
+    },
+    {
+      "severity": "critical",
+      "category": "consistency",
+      "task": 15,
+      "section": "frontmatter / Verification Steps",
+      "issue": "frontmatter 'verify: []' but the body's '## Verification Steps' section contains both a content-rich '### Smoke' subsection (8 curl/docker/bash checks) and a content-rich '### User' subsection (3 Playwright MCP scenarios). This is a frontmatter↔body mismatch.",
+      "fix": "Set frontmatter to 'verify: [smoke, user]' to match the populated Smoke and User subsections in Verification Steps."
+    },
+    {
+      "severity": "minor",
+      "category": "structure",
+      "task": 11,
+      "section": "Details",
+      "issue": "Details section has no explicit '**Files:**' or '**Edge cases:**' labeled subsections (present: Report location, Dependencies, Scope boundary, What IS in scope, Implementation hints). Content that would belong under 'Edge cases' is spread across the 'Scope boundary' and 'What IS in scope' notes but isn't labeled as such, and there is no Files subsection at all (arguably reasonable for an audit task since Context Files already enumerates every file, but the template still expects the label).",
+      "fix": "Either add explicit '**Files:**' (can point to Context Files as the full list) and '**Edge cases:**' labels, or fold their content into existing prose sections with equivalent labels for consistency with the template."
+    }
+  ],
+  "stats": {
+    "tasks_checked": 4,
+    "tasks_skipped": 1,
+    "skipped_note": "Task 12 intentionally excluded from findings per instructions — already covered by a separate template-batch2 review. Read for cross-task context only.",
+    "issues_found": 7,
+    "critical": 5,
+    "major": 1,
+    "minor": 1,
+    "template_residue_check": "No literal template placeholders found in any of the 5 files (grepped for 'path/to/file.ts', 'Criterion 1/2', 'pytest tests/test_xxx.py', '# Task N', 'other files as needed', 'What we're doing and why', TODO/FIXME/PLACEHOLDER/TBD) — zero matches across tasks 11-15. Tasks 13 and 15 specifically checked for mid-write-race artifacts (duplicate '---' delimiters, duplicate headings, truncated tail, duplicate title) — none found; both files are structurally clean, single frontmatter block, single title.",
+    "tdd_anchor_check": "No task in this batch (11-15) has a TDD Anchor section, correctly, since all are audit/QA/deploy non-code tasks. No fabricated test file paths found.",
+    "ac_carry_forward_check": "Task 13's Acceptance Criteria list is byte-identical (diff-verified) to tech-spec.md's global Acceptance Criteria section, Phase-1-scoped portion only, correctly excluding the 'Критерии Phase 2' sub-list.",
+    "avp_check": "Task 15's Smoke/User checklist content matches and appropriately elaborates on tech-spec's Final Wave Task 15 bullet list and Agent Verification Plan tooling; no items dropped."
+  }
+}
