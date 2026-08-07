@@ -44,6 +44,11 @@ echo "recorded: $(q "SELECT GROUP_CONCAT(version ORDER BY version) FROM schema_m
 echo "=== 4. seed pre-existing user rows ==="
 q "INSERT INTO users (id) VALUES ('legacy_user'), ('RoGogDBD');"
 echo "pre-existing users: $(q "SELECT GROUP_CONCAT(id ORDER BY id) FROM users;")"
+# Captured BEFORE 004 runs so step 8 can compare against the real pre-migration
+# value. Comparing to NOW() instead would be tautological: users.created_at has
+# no ON UPDATE clause, so `created_at < NOW()` holds for a recreated row too.
+PRE_CREATED_AT="$(q "SELECT UNIX_TIMESTAMP(created_at) FROM users WHERE id='RoGogDBD';")"
+echo "RoGogDBD.created_at before 004: $PRE_CREATED_AT"
 
 echo "=== 5. run the real app against $DB_NAME (migrate.go applies 004 alone) ==="
 docker rm -f poshivon_app_scen_b >/dev/null 2>&1
@@ -52,14 +57,32 @@ docker run -d --name poshivon_app_scen_b --network poshivon_default \
   -e DB_USER=poshivon -e DB_PASSWORD=poshivon \
   -e APP_HOST=0.0.0.0 -e APP_PORT=8080 poshivon-app >/dev/null || exit 1
 sleep 10
+# The container must be inspectable and must have produced output BEFORE we grep
+# it. Without these two guards a `docker logs` failure (container not found, host
+# flake) yields an empty stream, the grep finds no error string, and the check
+# passes vacuously without ever having read a real log.
+if ! docker inspect poshivon_app_scen_b >/dev/null 2>&1; then
+  echo "FAIL  container poshivon_app_scen_b not inspectable — cannot judge the app log"
+  exit 1
+fi
+applog="$(docker logs poshivon_app_scen_b 2>&1)"
+logrc=$?
+if [ "$logrc" -ne 0 ]; then
+  echo "FAIL  'docker logs' exited $logrc — log was never read"
+  exit 1
+fi
+if [ -z "$applog" ]; then
+  echo "FAIL  app log is empty — nothing was actually inspected"
+  exit 1
+fi
 echo "--- app log ---"
-docker logs poshivon_app_scen_b 2>&1 | tail -10
+echo "$applog" | tail -10
 echo "--- migration error check ---"
-if docker logs poshivon_app_scen_b 2>&1 | grep -q "Ошибка применения миграций"; then
+if echo "$applog" | grep -q "Ошибка применения миграций"; then
   echo "FAIL  app logged a migration error"
   exit 1
 fi
-echo "PASS  no 'Ошибка применения миграций' in app log"
+echo "PASS  no 'Ошибка применения миграций' in app log (log non-empty, $(echo "$applog" | wc -l) line(s) read)"
 
 echo "=== 6. only 004 was newly applied ==="
 echo "schema_migrations now: $(q "SELECT GROUP_CONCAT(version ORDER BY version) FROM schema_migrations;")"
@@ -88,8 +111,11 @@ sc "pre-existing RoGogDBD promoted to admin, has_access untouched" "admin|0" \
   "$(q "SELECT CONCAT(role,'|',has_access) FROM users WHERE id='RoGogDBD';")"
 sc "RoGogDBD row not duplicated" "1" \
   "$(q "SELECT COUNT(*) FROM users WHERE id='RoGogDBD';")"
-sc "created_at of pre-existing row preserved (row not recreated)" "1" \
-  "$(q "SELECT COUNT(*) FROM users WHERE id='RoGogDBD' AND created_at < NOW();")"
+# Compared against the value captured in step 4, not against NOW(): only an
+# exact match proves ON DUPLICATE KEY UPDATE did an in-place UPDATE rather than
+# a delete+reinsert, which would have reset created_at to the migration time.
+sc "created_at of pre-existing row preserved (row not recreated)" "$PRE_CREATED_AT" \
+  "$(q "SELECT UNIX_TIMESTAMP(created_at) FROM users WHERE id='RoGogDBD';")"
 
 echo
 echo "=== 9. idempotency on the scenario-B database ==="
