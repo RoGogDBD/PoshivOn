@@ -20,9 +20,10 @@ import (
 // миграциями 001..004. Обязателен parseTime=true — контракт читает TIMESTAMP в time.Time.
 // Без переменной DB-половина контракта пропускается (t.Skip), Memory-половина идёт всегда.
 //
-// Пример:
+// Форма значения (подставьте свои учётные данные — держать здесь рабочую пару логин/пароль
+// не нужно даже для локальной БД, чтобы её нельзя было скопировать отсюда как готовую):
 //
-//	TEST_DB_DSN='poshivon:poshivon@tcp(127.0.0.1:3306)/poshivon_test?parseTime=true&charset=utf8mb4'
+//	TEST_DB_DSN='<user>:<password>@tcp(<host>:<port>)/<database>?parseTime=true&charset=utf8mb4'
 const testDBDSNEnv = "TEST_DB_DSN"
 
 // accessRepoFactory отдаёт пару репозиториев одного хранилища. Один и тот же набор
