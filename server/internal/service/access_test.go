@@ -444,6 +444,9 @@ func TestAccessService_SetAccess_Grant_SetsFlagAndApprovesRequestWithDecidedBy(t
 	if stored.Status != requestStatusApproved || stored.DecidedBy != "rogogdbd" || stored.DecidedAt == nil {
 		t.Fatalf("request was not approved with decided_by/decided_at: %+v", stored)
 	}
+	if requestRepo.getCalls != 0 {
+		t.Fatalf("status is taken from the UserRecord join, not a second GetRequest: %d calls", requestRepo.getCalls)
+	}
 }
 
 func TestAccessService_SetAccess_Revoke_UnsetsFlagAndRejectsRequest(t *testing.T) {
@@ -476,6 +479,9 @@ func TestAccessService_SetAccess_Revoke_UnsetsFlagAndRejectsRequest(t *testing.T
 	stored := requestRepo.requests["ivan"]
 	if stored.Status != requestStatusRejected || stored.DecidedBy != "second-admin" {
 		t.Fatalf("request was not rejected with the deciding admin: %+v", stored)
+	}
+	if requestRepo.getCalls != 0 {
+		t.Fatalf("status is taken from the UserRecord join, not a second GetRequest: %d calls", requestRepo.getCalls)
 	}
 }
 
@@ -516,6 +522,10 @@ func TestAccessService_SetAccess_NoExistingRequest_DoesNotCallDecideRequest(t *t
 	if len(requestRepo.decideCalls) != 0 {
 		t.Fatalf("DecideRequest must not be called at all, got %+v", requestRepo.decideCalls)
 	}
+	// «Заявки нет» тоже определяется по снимку из GetUser — второго чтения заявки не будет.
+	if requestRepo.getCalls != 0 {
+		t.Fatalf("AccessRequestRepository must not be read at all, got %d GetRequest calls", requestRepo.getCalls)
+	}
 }
 
 func TestAccessService_SetAccess_FlagUpdateFails_DoesNotDecideRequest(t *testing.T) {
@@ -553,14 +563,27 @@ func TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls
 			_, err := svc.GetAccessState(ctx, "")
 			return err
 		},
+		"GetAccessState с пробельным логином": func(ctx context.Context, svc *AccessService) error {
+			_, err := svc.GetAccessState(ctx, "   ")
+			return err
+		},
 		"CreateRequest с пустым логином": func(ctx context.Context, svc *AccessService) error {
 			return svc.CreateRequest(ctx, "")
+		},
+		"CreateRequest с пробельным логином": func(ctx context.Context, svc *AccessService) error {
+			return svc.CreateRequest(ctx, "   ")
 		},
 		"SetAccess с пустым логином": func(ctx context.Context, svc *AccessService) error {
 			return svc.SetAccess(ctx, "", true, "rogogdbd")
 		},
+		"SetAccess с пробельным логином": func(ctx context.Context, svc *AccessService) error {
+			return svc.SetAccess(ctx, "   ", true, "rogogdbd")
+		},
 		"SetAccess без указания администратора": func(ctx context.Context, svc *AccessService) error {
 			return svc.SetAccess(ctx, "ivan", true, "")
+		},
+		"SetAccess с пробельным администратором": func(ctx context.Context, svc *AccessService) error {
+			return svc.SetAccess(ctx, "ivan", true, "   ")
 		},
 	}
 
