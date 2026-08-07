@@ -12,6 +12,16 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+// userModel — «скелет» строки users для upsertUser: только ID и CreatedAt.
+//
+// ИНВАРИАНТ (Decision 13): сюда НЕЛЬЗЯ добавлять колонки доступа (role, has_access, email,
+// display_name). upsertUser вставляет эту модель целиком из трёх существующих путей записи
+// (UpsertSettings, CreateChat, AppendCalculation). Появись здесь поле Role — GORM включит
+// role=<пустая строка> в их INSERT, и каждый из них упадёт на констрейнте из 004_access_control.up.sql:
+// ERROR 4025 (23000): CONSTRAINT chk_users_role failed (проверено на живой MariaDB 11.4).
+// То есть сохранение настроек, создание чата и расчёт перестанут работать для любого, кто
+// ещё не проходил через EnsureUser. Колонки доступа читает и пишет userAccessModel ниже —
+// отдельная модель на ту же таблицу.
 type userModel struct {
 	ID        string    `gorm:"column:id;primaryKey"`
 	CreatedAt time.Time `gorm:"column:created_at"`
@@ -20,6 +30,52 @@ type userModel struct {
 func (userModel) TableName() string {
 	return "users"
 }
+
+// userAccessModel отображает колонки доступа той же таблицы users. Существует отдельно от
+// userModel ровно по причине из инварианта выше. CreatedAt здесь нет намеренно: строку
+// создаёт только EnsureUser, дату проставляет DEFAULT CURRENT_TIMESTAMP, а читается она
+// через userAccessRow.
+type userAccessModel struct {
+	ID          string         `gorm:"column:id;primaryKey"`
+	Role        string         `gorm:"column:role"`
+	HasAccess   bool           `gorm:"column:has_access"`
+	Email       sql.NullString `gorm:"column:email"`
+	DisplayName sql.NullString `gorm:"column:display_name"`
+}
+
+func (userAccessModel) TableName() string {
+	return "users"
+}
+
+// userAccessRow — результат чтения users вместе со статусом заявки. Отдельный тип от
+// userAccessModel, потому что status/created_at приезжают из access_requests через LEFT JOIN
+// и в таблице users колонок с такими именами нет.
+type userAccessRow struct {
+	ID            string         `gorm:"column:id"`
+	Role          string         `gorm:"column:role"`
+	HasAccess     bool           `gorm:"column:has_access"`
+	Email         sql.NullString `gorm:"column:email"`
+	DisplayName   sql.NullString `gorm:"column:display_name"`
+	CreatedAt     time.Time      `gorm:"column:created_at"`
+	RequestStatus sql.NullString `gorm:"column:request_status"`
+	RequestedAt   *time.Time     `gorm:"column:requested_at"`
+}
+
+type accessRequestModel struct {
+	UserID    string         `gorm:"column:user_id;primaryKey"`
+	Status    string         `gorm:"column:status"`
+	CreatedAt time.Time      `gorm:"column:created_at"`
+	DecidedAt *time.Time     `gorm:"column:decided_at"`
+	DecidedBy sql.NullString `gorm:"column:decided_by"`
+}
+
+func (accessRequestModel) TableName() string {
+	return "access_requests"
+}
+
+// requestStatusPending повторяет значение из service: одноимённая константа там
+// неэкспортирована, а статусы ходят через границу обычными строками.
+const requestStatusPending = "pending"
 
 type userSettingsModel struct {
 	UserID           string         `gorm:"column:user_id;primaryKey"`
@@ -97,6 +153,8 @@ func NewPostgresRepository(db *gorm.DB) *PostgresRepository {
 var _ service.UserSettingsRepository = (*PostgresRepository)(nil)
 var _ service.ChatRepository = (*PostgresRepository)(nil)
 var _ service.ChatCalculationRepository = (*PostgresRepository)(nil)
+var _ service.UserRepository = (*PostgresRepository)(nil)
+var _ service.AccessRequestRepository = (*PostgresRepository)(nil)
 
 func (r *PostgresRepository) UpsertSettings(ctx context.Context, userID string, settings service.UserSettings) error {
 	legacyBasePricesJSON, err := json.Marshal(map[string]int64{})
@@ -545,6 +603,194 @@ func ensureAffected(affected int64, chatID string) error {
 		return fmt.Errorf("chat %q not found: %w", chatID, service.ErrNotFound)
 	}
 	return nil
+}
+
+// --- UserRepository -----------------------------------------------------------------
+
+// EnsureUser вызывается на каждом входе. Список обновляемых колонок ограничен email и
+// display_name (Decision 11): попади в него role или has_access — второй вход
+// администратора после выкатки сбросил бы его роль в 'user', и управление доступом
+// потерялось бы вместе с последним администратором. Значения role/has_access участвуют
+// только во вставке новой строки.
+func (r *PostgresRepository) EnsureUser(ctx context.Context, login, email, displayName string) error {
+	record := userAccessModel{
+		ID:          login,
+		Role:        string(service.RoleUser),
+		HasAccess:   false,
+		Email:       nullableString(email),
+		DisplayName: nullableString(displayName),
+	}
+
+	err := r.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "id"}},
+		DoUpdates: clause.Assignments(map[string]any{
+			"email":        record.Email,
+			"display_name": record.DisplayName,
+		}),
+	}).Create(&record).Error
+	if err != nil {
+		return fmt.Errorf("ensure user: %w", err)
+	}
+	return nil
+}
+
+func (r *PostgresRepository) GetUser(ctx context.Context, login string) (service.UserRecord, error) {
+	var row userAccessRow
+	// Scan, а не First: под Table+Select GORM не отдаёт ErrRecordNotFound однородно,
+	// а число прочитанных строк однозначно и не зависит от версии.
+	result := r.selectUsers(ctx).Where("u.id = ?", login).Scan(&row)
+	if result.Error != nil {
+		return service.UserRecord{}, fmt.Errorf("query user: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return service.UserRecord{}, fmt.Errorf("user %q not found: %w", login, service.ErrNotFound)
+	}
+	return toUserRecord(row), nil
+}
+
+func (r *PostgresRepository) ListUsers(ctx context.Context) ([]service.UserRecord, error) {
+	var rows []userAccessRow
+	// LEFT JOIN, а не INNER: в списке должны быть и те, кто просто вошёл и заявку не подавал.
+	err := r.selectUsers(ctx).Order("u.created_at DESC, u.id ASC").Scan(&rows).Error
+	if err != nil {
+		return nil, fmt.Errorf("query users: %w", err)
+	}
+
+	items := make([]service.UserRecord, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, toUserRecord(row))
+	}
+	return items, nil
+}
+
+// SetAccess переключает флаг доступа. Пустой результат UPDATE сам по себе о существовании
+// пользователя ничего не говорит: MariaDB считает затронутой только реально изменённую
+// строку, поэтому повторная выдача уже выданного доступа тоже даёт 0. Отличить «нет такого
+// логина» от «значение и так было таким» можно только отдельным чтением — оно и делается,
+// но лишь на нулевой ветке.
+func (r *PostgresRepository) SetAccess(ctx context.Context, login string, granted bool) error {
+	result := r.db.WithContext(ctx).
+		Model(&userAccessModel{}).
+		Where("id = ?", login).
+		Update("has_access", granted)
+	if result.Error != nil {
+		return fmt.Errorf("update user access: %w", result.Error)
+	}
+	if result.RowsAffected > 0 {
+		return nil
+	}
+
+	var exists int64
+	if err := r.db.WithContext(ctx).Model(&userAccessModel{}).Where("id = ?", login).Count(&exists).Error; err != nil {
+		return fmt.Errorf("check user exists: %w", err)
+	}
+	if exists == 0 {
+		return fmt.Errorf("user %q not found: %w", login, service.ErrNotFound)
+	}
+	return nil
+}
+
+// --- AccessRequestRepository ----------------------------------------------------------
+
+// createRequestSQL — оператор из Decision 5 дословно. Через сырой SQL, а не через
+// clause.OnConflict: условные ветки IF(...) в ON DUPLICATE KEY UPDATE GORM выразить не умеет.
+//
+// Число задетых строк здесь — контракт, а не деталь: 1 — вставлена новая заявка, 2 —
+// существующая реально изменена (была решена, вернулась в pending), 0 — IF оставил значения
+// прежними, то есть заявка уже на рассмотрении. Это семантика «affected rows» драйвера
+// go-sql-driver/mysql; она верна, пока DSN не включает clientFoundRows=true — сегодня
+// server/internal/db/db.go его не задаёт (buildDSN, параметры parseTime/charset/collation/
+// multiStatements). С clientFoundRows=true драйвер стал бы возвращать число совпавших строк,
+// нулевая ветка исчезла бы, и повторная подача при заявке на рассмотрении перестала бы
+// отклоняться.
+//
+// decided_by и decided_at в UPDATE-ветке не участвуют и переживают повторную подачу —
+// на этом держится след прошлого решения.
+const createRequestSQL = `INSERT INTO access_requests (user_id, status, created_at)
+VALUES (?, 'pending', ?)
+ON DUPLICATE KEY UPDATE
+  status     = IF(status = 'pending', status, VALUES(status)),
+  created_at = IF(status = 'pending', created_at, VALUES(created_at))`
+
+func (r *PostgresRepository) CreateRequest(ctx context.Context, login string) error {
+	result := r.db.WithContext(ctx).Exec(createRequestSQL, login, time.Now().UTC())
+	if result.Error != nil {
+		return fmt.Errorf("upsert access request: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("access request for user %q is already pending: %w", login, service.ErrConflict)
+	}
+	return nil
+}
+
+func (r *PostgresRepository) GetRequest(ctx context.Context, login string) (service.AccessRequest, error) {
+	var record accessRequestModel
+	result := r.db.WithContext(ctx).
+		Model(&accessRequestModel{}).
+		Where("user_id = ?", login).
+		Scan(&record)
+	if result.Error != nil {
+		return service.AccessRequest{}, fmt.Errorf("query access request: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return service.AccessRequest{}, fmt.Errorf("access request for user %q not found: %w", login, service.ErrNotFound)
+	}
+
+	return service.AccessRequest{
+		UserID:    record.UserID,
+		Status:    record.Status,
+		CreatedAt: record.CreatedAt,
+		DecidedAt: record.DecidedAt,
+		DecidedBy: record.DecidedBy.String,
+	}, nil
+}
+
+// DecideRequest фиксирует решение по уже существующей заявке. Отсутствие строки — no-op, а
+// не ошибка (Decision 5): администратор вправе выдать доступ и тому, кто заявку не подавал,
+// и заводить её задним числом не нужно. Поэтому RowsAffected здесь не проверяется.
+func (r *PostgresRepository) DecideRequest(ctx context.Context, login, status, decidedBy string) error {
+	err := r.db.WithContext(ctx).
+		Model(&accessRequestModel{}).
+		Where("user_id = ?", login).
+		Updates(map[string]any{
+			"status":     status,
+			"decided_at": time.Now().UTC(),
+			"decided_by": decidedBy,
+		}).Error
+	if err != nil {
+		return fmt.Errorf("decide access request: %w", err)
+	}
+	return nil
+}
+
+// selectUsers — общий запрос для GetUser и ListUsers: одна строка users плюс статус её
+// заявки. Держим в одном месте, чтобы список и карточка не разошлись в наборе полей.
+func (r *PostgresRepository) selectUsers(ctx context.Context) *gorm.DB {
+	return r.db.WithContext(ctx).
+		Table("users AS u").
+		Select("u.id, u.role, u.has_access, u.email, u.display_name, u.created_at, " +
+			"ar.status AS request_status, ar.created_at AS requested_at").
+		Joins("LEFT JOIN access_requests ar ON ar.user_id = u.id")
+}
+
+func toUserRecord(row userAccessRow) service.UserRecord {
+	return service.UserRecord{
+		Login:         row.ID,
+		DisplayName:   row.DisplayName.String,
+		Email:         row.Email.String,
+		Role:          service.Role(row.Role),
+		HasAccess:     row.HasAccess,
+		RequestStatus: row.RequestStatus.String,
+		RequestedAt:   row.RequestedAt,
+		CreatedAt:     row.CreatedAt,
+	}
+}
+
+// nullableString пишет пустую строку как NULL: колонки email и display_name объявлены
+// NULL-able, и «Яндекс адреса не отдал» честнее хранить как отсутствие значения, чем как
+// пустую строку — иначе два разных состояния сливаются в одно.
+func nullableString(value string) sql.NullString {
+	return sql.NullString{String: value, Valid: value != ""}
 }
 
 func upsertUser(tx *gorm.DB, userID string) error {
