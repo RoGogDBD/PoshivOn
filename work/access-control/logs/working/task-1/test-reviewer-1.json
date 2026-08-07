@@ -1,0 +1,50 @@
+{
+  "task": 1,
+  "round": 1,
+  "reviewer": "migration-test-reviewer",
+  "mode": "full",
+  "review_target": "server/migrations/004_access_control.up.sql plus the three verification scripts committed as this task's executable test harness: verify_004.sh, reapply_004.sh, scenario_b.sh (work/access-control/logs/working/task-1/).",
+  "verdict": "pass",
+  "summary": "All three scripts were read in full and then actually executed against the live poshivon_db (mariadb:11.4) and poshivon_app containers already running in this environment — not just statically reviewed. verify_004.sh (22 assertions), reapply_004.sh, and scenario_b.sh all ran to completion and reported ALL CHECKS PASSED / IDEMPOTENCY OK / SCENARIO B PASSED, matching the implementer's report. Every major finding from the round-1 design-mode review (test-reviewer-design-1.json) is now concretely closed in the script text and confirmed working live: full column definitions (Type/Null/Default) are asserted for role and has_access via information_schema, not presence; the FK check is scoped to constraint_schema=DATABASE() + table_name='access_requests' + constraint_name='fk_access_requests_user' on both join sides, which cannot false-positive against the identically-shaped pre-existing FKs on user_settings/chats/calculations; the admin seed is checked with three separate assertions (COUNT=2, BINARY-scoped identity IN, BINARY-scoped identity NOT IN), closing the case-insensitive-collation false-positive risk the design review raised; reapply_004.sh captures the mariadb client's actual exit code and greps its stdout+stderr for ERROR before ever re-reading state, so a silently-failing second run can't masquerade as idempotent; and scenario_b.sh builds the real deployment path (001-003 applied and recorded in schema_migrations, real pre-existing legacy_user and RoGogDBD rows inserted, then the actual poshivon-app binary run against that state so migrate.go applies 004 alone) and asserts both that legacy_user backfills to role='user'/has_access=0 (not NULL) and that pre-existing RoGogDBD is promoted to role='admin' while has_access is deliberately left at 0 — the exact asymmetry the implementer's report called out, and I confirmed it is a real, correctly-predicted consequence of the ON DUPLICATE KEY UPDATE clause only touching role. Two new minor robustness gaps were found empirically during my own executions, not present in the design-mode review, and are documented below; neither is blocking because the substantive schema/data assertions that actually protect the migration's guarantees are fail-closed and were verified live.",
+  "checklist_results": [
+    {
+      "item": "verify_004.sh asserts full column definitions (Type/Null/Default) for role and has_access, not just presence",
+      "result": "confirmed",
+      "detail": "Lines 44-48: asserts 'varchar(16)|NO|'\\''user'\\''' for role and 'tinyint(1)|NO|0' for has_access via information_schema.columns (column_type, is_nullable, column_default). Ran live against poshivon: both PASS."
+    },
+    {
+      "item": "FK check scoped tightly (CONSTRAINT_SCHEMA + TABLE_NAME='access_requests' + CONSTRAINT_NAME) so it can't false-positive against user_settings/chats/calculations",
+      "result": "confirmed",
+      "detail": "Lines 82-91: WHERE clause filters k.constraint_schema=DATABASE(), k.table_name='access_requests', k.constraint_name='fk_access_requests_user', joined to referential_constraints on constraint_schema+constraint_name+table_name. Cannot match the three pre-existing identically-shaped FKs on other tables. Ran live: PASS."
+    },
+    {
+      "item": "admin-seed check asserts both COUNT(*)=2 AND case-sensitive identity (BINARY) as separate assertions",
+      "result": "confirmed, exceeds requirement",
+      "detail": "Lines 116-123: three separate assertions — COUNT(*)=2, BINARY-id IN (expected two) = 2, and BINARY-id NOT IN (expected two) = 0. The third assertion is stronger than what the design review asked for (it directly rules out a third admin row of unexpected casing, not just relying on the COUNT/identity combination). All three PASS live."
+    },
+    {
+      "item": "reapply_004.sh checks the client's exit code and greps for ERROR in output, not just re-reads state",
+      "result": "confirmed",
+      "detail": "Lines 17-35: captures `rc=$?` from the mariadb client invocation and `out` from its combined stdout/stderr, asserts rc==0 and `echo \"$out\" | grep -qi error` finds nothing, before calling verify_004.sh to re-check state. Ran live: both PASS, empty output on second run."
+    },
+    {
+      "item": "scenario_b.sh inserts a pre-existing non-admin row and verifies correct backfill, and verifies a pre-existing admin row's has_access is left untouched",
+      "result": "confirmed",
+      "detail": "Line 45 seeds legacy_user and RoGogDBD as bare rows (id only) on top of 001+002+003 before 004 ever runs. Section 8 (lines 80-92) asserts legacy_user backfills to role='user',has_access=0 (not NULL, checked both directly and via an IS NULL count), and RoGogDBD backfills to admin|0 specifically — role promoted, has_access left at 0 (not 1) because ON DUPLICATE KEY UPDATE only sets role, exactly the asymmetry the implementer's report describes. Ran live against a freshly built poshivon_b database via the real poshivon-app binary: all 5 scenario-B-specific assertions PASS."
+    }
+  ],
+  "findings": [
+    {
+      "severity": "minor",
+      "area": "scenario_b.sh-log-check-fragility",
+      "description": "Empirically observed during this review, not hypothetical: on the first live run of scenario_b.sh, `docker run -d --name poshivon_app_scen_b ...` apparently did not leave a queryable container by the time `docker logs poshivon_app_scen_b` executed a few lines later (output was 'Error response from daemon: No such container: poshivon_app_scen_b' instead of the app's startup log). The script's check at that point — `docker logs ... | grep -q \"Ошибка применения миграций\"` — reported PASS 'no migration error in app log', which is vacuously true: the Docker daemon error message does not contain that Russian string either, so the check cannot distinguish 'app started cleanly' from 'we never saw the app's log at all'. A second full run of the script completed cleanly with the real startup line present and all downstream checks passing, so this looks like transient Docker/container-naming flakiness in this specific shared multi-container host, not a bug in the migration or in the substantive assertions. It doesn't invalidate the round's conclusion: the schema and data assertions run afterward (steps 7-8, which are fail-closed comparisons against exact expected values) would have failed hard if 004 had not actually applied — and on both runs those did correctly reflect ground truth. Still, the specific 'no migration error' assertion as written can pass without ever having inspected real log content.",
+      "recommendation": "Harden the check to fail closed on a missing/erroring container: e.g. `docker inspect poshivon_app_scen_b >/dev/null 2>&1 || { echo FAIL; exit 1; }` before the `docker logs | grep` step, or capture `docker logs` combined with its own exit code and require it to be 0 with non-empty output before evaluating the grep. Not blocking for this round given the downstream assertions already provide the real safety net."
+    },
+    {
+      "severity": "minor",
+      "area": "scenario_b.sh-created_at-assertion",
+      "description": "The check labeled 'created_at of pre-existing row preserved (row not recreated)' (line 91-92) asserts `created_at < NOW()`, which is tautological: `users.created_at` is declared `TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP` with no `ON UPDATE CURRENT_TIMESTAMP` clause (confirmed in 0001_init.sql and 002_costing_schema.up.sql) and no down-migrations exist to roll back. Any row — whether the original pre-existing RoGogDBD row was preserved by the UPDATE branch of `ON DUPLICATE KEY UPDATE`, or hypothetically dropped and freshly re-inserted by a broken migration — would have a created_at that is `< NOW()` by the time this SELECT runs. The assertion therefore cannot actually distinguish 'preserved' from 'recreated', despite its label claiming to prove exactly that. In practice this is low-risk because `INSERT ... ON DUPLICATE KEY UPDATE` on a PRIMARY KEY conflict is a genuine in-place UPDATE in MySQL/MariaDB semantics, never a delete+reinsert, so there is no realistic code path where the row is actually recreated — but the test as written doesn't verify that property itself.",
+      "recommendation": "Capture the pre-existing row's created_at value before applying 004 (e.g. right after the seed INSERT in step 4) into a shell variable, then assert equality against that captured value after 004 runs, rather than a relative-to-NOW() comparison. This would make the assertion load-bearing instead of tautological."
+    }
+  ]
+}
