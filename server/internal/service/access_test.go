@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -549,6 +550,53 @@ func TestAccessService_SetAccess_FlagUpdateFails_DoesNotDecideRequest(t *testing
 	}
 }
 
+func TestAccessService_LoginAtColumnWidth_IsAccepted(t *testing.T) {
+	t.Parallel()
+
+	// Граница включающая: ровно maxLoginLength символов в users.id ещё помещаются,
+	// иначе проверка длины отрезала бы валидные логины.
+	login := strings.Repeat("a", maxLoginLength)
+	userRepo := newUserRepoStub()
+	svc := NewAccessService(userRepo, newAccessRequestRepoStub())
+
+	if err := svc.EnsureUser(context.Background(), login, "ivan@example.com", "Иван"); err != nil {
+		t.Fatalf("a login of exactly the column width must be accepted, got %v", err)
+	}
+	if len(userRepo.ensureCalls) != 1 || userRepo.ensureCalls[0].login != login {
+		t.Fatalf("login was not passed through: %+v", userRepo.ensureCalls)
+	}
+}
+
+func TestAccessService_SetAccess_DecideFails_ReportsErrorAfterFlagIsWritten(t *testing.T) {
+	t.Parallel()
+
+	// Зафиксированное поведение, а не идеал: флаг и заявка пишутся разными запросами без
+	// общей транзакции, поэтому упавший DecideRequest оставляет уже изменённый has_access.
+	// Вызывающая сторона видит ошибку и не должна считать, что доступ остался прежним.
+	// Атомарность этой пары — вопрос уровня репозитория (Task 3), не сервиса.
+	repoErr := errors.New("decide failed")
+	userRepo := newUserRepoStub(UserRecord{
+		Login:         "ivan",
+		Role:          RoleUser,
+		HasAccess:     false,
+		RequestStatus: requestStatusPending,
+	})
+	requestRepo := newAccessRequestRepoStub(AccessRequest{UserID: "ivan", Status: requestStatusPending})
+	requestRepo.decideErr = repoErr
+	svc := NewAccessService(userRepo, requestRepo)
+
+	err := svc.SetAccess(context.Background(), "ivan", true, "rogogdbd")
+	if !errors.Is(err, repoErr) {
+		t.Fatalf("expected the repository error to be wrapped, got %v", err)
+	}
+	if !userRepo.users["ivan"].HasAccess {
+		t.Fatalf("the flag write already happened and is not rolled back: %+v", userRepo.users["ivan"])
+	}
+	if requestRepo.requests["ivan"].Status != requestStatusPending {
+		t.Fatalf("a failed decision must leave the request untouched: %+v", requestRepo.requests["ivan"])
+	}
+}
+
 func TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls(t *testing.T) {
 	t.Parallel()
 
@@ -584,6 +632,24 @@ func TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls
 		},
 		"SetAccess с пробельным администратором": func(ctx context.Context, svc *AccessService) error {
 			return svc.SetAccess(ctx, "ivan", true, "   ")
+		},
+		"EnsureUser с логином длиннее users.id": func(ctx context.Context, svc *AccessService) error {
+			return svc.EnsureUser(ctx, strings.Repeat("a", maxLoginLength+1), "ivan@example.com", "Иван")
+		},
+		"GetAccessState с логином длиннее users.id": func(ctx context.Context, svc *AccessService) error {
+			_, err := svc.GetAccessState(ctx, strings.Repeat("a", maxLoginLength+1))
+			return err
+		},
+		"CreateRequest с логином длиннее users.id": func(ctx context.Context, svc *AccessService) error {
+			return svc.CreateRequest(ctx, strings.Repeat("a", maxLoginLength+1))
+		},
+		"SetAccess с логином длиннее users.id": func(ctx context.Context, svc *AccessService) error {
+			return svc.SetAccess(ctx, strings.Repeat("a", maxLoginLength+1), true, "rogogdbd")
+		},
+		"логин из кириллицы длиннее users.id": func(ctx context.Context, svc *AccessService) error {
+			// Байт здесь вдвое больше, чем символов: проверка должна считать символы,
+			// иначе граница разойдётся с тем, как ширину колонки понимает MariaDB.
+			return svc.EnsureUser(ctx, strings.Repeat("я", maxLoginLength+1), "", "")
 		},
 	}
 
