@@ -15,6 +15,8 @@ import (
 var (
 	ErrInvalidArgument = errors.New("invalid argument")
 	ErrNotFound        = errors.New("not found")
+	ErrForbidden       = errors.New("forbidden")
+	ErrConflict        = errors.New("conflict")
 )
 
 type BatchDiscount struct {
