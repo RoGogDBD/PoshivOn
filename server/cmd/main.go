@@ -14,7 +14,6 @@ import (
 	"github.com/RoGogDBD/PoshivOn/internal/repository"
 	"github.com/RoGogDBD/PoshivOn/internal/service"
 	"github.com/RoGogDBD/PoshivOn/migrations"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
@@ -59,8 +58,9 @@ func main() {
 	}
 
 	apiHandler := handler.NewAPIHandler(costingService, deepSeekClient)
+	accessHandler := handler.NewAccessHandler(accessService, cfg.ContactEmail)
 
-	mux := newMux(authHandler, apiHandler)
+	mux := newMux(cfg, authHandler, apiHandler, accessHandler, accessService, handler.StoreSessionResolver(store))
 
 	handlerWithCORS := handler.WithCORS(handler.CORSConfig{
 		AllowedOrigins: splitCSV(cfg.AllowedOrigins),
@@ -78,33 +78,31 @@ func main() {
 	}
 }
 
-// newMux собирает таблицу маршрутов. Вынесено из main() отдельной функцией ради того,
-// чтобы состав маршрутов проверялся тестом (main_test.go), а не только компилятором:
-// go build ловит ссылку на удалённый обработчик, но не забытую регистрацию — а именно
-// рассинхрон между удалением HandleYandexLogin и его регистрацией тех-спек уже ловил
-// однажды на собственной валидации. Обёртки уровня всего сервера (CORS, метрики) остаются
-// в main(): здесь только маршруты.
-func newMux(authHandler *handler.AuthHandler, apiHandler *handler.APIHandler) *http.ServeMux {
-	mux := http.NewServeMux()
-
-	apiHandler.Register(mux)
-
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		// Простейший healthcheck для проверки доступности сервиса.
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
+// newMux — единственное место, где конфигурация превращается в зависимости обвязки.
+// Сама таблица маршрутов и цепочки middleware живут в handler.BuildRoutes: её вызывают и
+// main(), и тесты пакета handler, поэтому проверяется фактическая сборка, а не её копия.
+//
+// Здесь остаётся ровно перевод cfg → RouteDeps, и именно он — то место, где ошибка проводки
+// (забытый cfg.CookieSecure, неразобранный CSV) скомпилировалась бы и осталась незамеченной
+// всеми тестами пакета handler, которые RouteDeps собирают руками. Отсюда отдельный тест на
+// него в main_test.go. Обёртки уровня всего сервера (CORS, метрики) — в main().
+func newMux(
+	cfg *config.Config,
+	authHandler *handler.AuthHandler,
+	apiHandler *handler.APIHandler,
+	accessHandler *handler.AccessHandler,
+	accessService *service.AccessService,
+	resolveSession handler.SessionResolver,
+) *http.ServeMux {
+	return handler.BuildRoutes(handler.RouteDeps{
+		Auth:           authHandler,
+		API:            apiHandler,
+		Access:         accessHandler,
+		AccessService:  accessService,
+		ResolveSession: resolveSession,
+		AllowedOrigins: splitCSV(cfg.AllowedOrigins),
+		CookieSecure:   cfg.CookieSecure,
 	})
-	mux.Handle("/metrics", promhttp.Handler())
-	// Маршрута /auth/yandex здесь нет намеренно: приём готового OAuth-токена от клиента
-	// удалён вместе с обработчиком (Decision 7) — он создавал сессию, не проверяя, какому
-	// приложению выдан токен, а из сессии теперь выводится роль администратора.
-	mux.HandleFunc("/auth/yandex/code", authHandler.HandleYandexCode)
-	mux.HandleFunc("/auth/status", authHandler.HandleStatus)
-	mux.HandleFunc("/auth/me", authHandler.HandleMe)
-	mux.HandleFunc("/auth/refresh", authHandler.HandleRefresh)
-	mux.HandleFunc("/auth/logout", authHandler.HandleLogout)
-
-	return mux
 }
 
 func splitCSV(value string) []string {

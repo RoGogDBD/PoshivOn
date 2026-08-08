@@ -39,15 +39,19 @@ type AccessState struct {
 
 // UserRecord — строка users вместе со статусом её заявки (join с access_requests).
 // HasAccess — сырой флаг из БД; итоговое право доступа считает только AccessService.
+//
+// JSON-теги — потому что запись уходит клиенту как есть в GET /api/v1/admin/users
+// (`{items:[UserRecord]}` из таблицы «Контракт API»); домен здесь несёт разметку так же,
+// как её несут UserSettings и CalculationResult в costing.go.
 type UserRecord struct {
-	Login         string
-	DisplayName   string
-	Email         string
-	Role          Role
-	HasAccess     bool
-	RequestStatus string
-	RequestedAt   *time.Time
-	CreatedAt     time.Time
+	Login         string     `json:"login"`
+	DisplayName   string     `json:"display_name"`
+	Email         string     `json:"email"`
+	Role          Role       `json:"role"`
+	HasAccess     bool       `json:"has_access"`
+	RequestStatus string     `json:"request_status"`
+	RequestedAt   *time.Time `json:"requested_at"`
+	CreatedAt     time.Time  `json:"created_at"`
 }
 
 // AccessRequest — строка access_requests: одна на пользователя (Decision 5).
@@ -128,6 +132,20 @@ func (s *AccessService) GetAccessState(ctx context.Context, login string) (Acces
 		HasAccess:     hasEffectiveAccess(user),
 		RequestStatus: user.RequestStatus,
 	}, nil
+}
+
+// ListUsers отдаёт всех, кто когда-либо входил, — список для администратора (US-7).
+//
+// Записи проходят насквозь, без применения Decision 10: HasAccess здесь остаётся сырой
+// колонкой. Подмена её итоговым правом показала бы администратору собственную галочку
+// выставленной, хотя в базе она снята, — и он не понимал бы, что именно снимает у себя и
+// у второго администратора.
+func (s *AccessService) ListUsers(ctx context.Context) ([]UserRecord, error) {
+	users, err := s.userRepo.ListUsers(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list users: %w", err)
+	}
+	return users, nil
 }
 
 // CreateRequest подаёт заявку на доступ. Пользователю, у которого доступ уже есть

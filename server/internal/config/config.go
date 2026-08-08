@@ -32,6 +32,10 @@ type Config struct {
 	AllowedOrigins  string
 	RefreshTTLHours int
 
+	// ContactEmail показывается на плашке пользователю без доступа: куда писать, чтобы
+	// доступ выдали. Пустое значение — штатная конфигурация, плашка тогда без контакта.
+	ContactEmail string
+
 	DeepSeekAPIKey      string
 	DeepSeekAPIEndpoint string
 	DeepSeekModel       string
@@ -76,6 +80,7 @@ func Load() (*Config, error) {
 
 		AllowedOrigins:  envOrDefault("CORS_ALLOWED_ORIGINS", ""),
 		RefreshTTLHours: envInt("REFRESH_TTL_HOURS", 720),
+		ContactEmail:    envOrDefault("CONTACT_EMAIL", ""),
 
 		DeepSeekAPIKey:      envOrDefault("DEEPSEEK_API_KEY", ""),
 		DeepSeekAPIEndpoint: envOrDefault("DEEPSEEK_API_ENDPOINT", "https://api.deepseek.com/v1/chat/completions"),

@@ -34,6 +34,7 @@ type userRepoStub struct {
 
 	ensureErr    error
 	getUserErr   error
+	listUsersErr error
 	setAccessErr error
 }
 
@@ -82,6 +83,9 @@ func (u *userRepoStub) GetUser(_ context.Context, login string) (UserRecord, err
 
 func (u *userRepoStub) ListUsers(_ context.Context) ([]UserRecord, error) {
 	u.listUsersCalls++
+	if u.listUsersErr != nil {
+		return nil, u.listUsersErr
+	}
 	records := make([]UserRecord, 0, len(u.users))
 	for _, record := range u.users {
 		records = append(records, record)
@@ -244,6 +248,68 @@ func TestAccessService_GetAccessState_UnknownLogin_ReturnsErrNotFound(t *testing
 	}
 	if state.HasAccess {
 		t.Fatalf("failed lookup must not report access")
+	}
+}
+
+// TestAccessService_ListUsers_PassesRecordsThroughUnmodified: список для администратора
+// отдаёт сырые строки хранилища. Именно сырые: has_access здесь — колонка, а не итоговое
+// право (Decision 10 применяется только в GetAccessState), иначе администратор видел бы у
+// себя галочку, которой в базе нет, и не понимал бы, что именно он снимает.
+func TestAccessService_ListUsers_PassesRecordsThroughUnmodified(t *testing.T) {
+	t.Parallel()
+
+	repo := newUserRepoStub(
+		UserRecord{Login: "ivanov", Role: RoleUser, HasAccess: false, RequestStatus: requestStatusPending},
+		UserRecord{Login: "admin", Role: RoleAdmin, HasAccess: false},
+	)
+	svc := NewAccessService(repo, newAccessRequestRepoStub())
+
+	records, err := svc.ListUsers(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if repo.listUsersCalls != 1 {
+		t.Fatalf("expected exactly one repository call, got %d", repo.listUsersCalls)
+	}
+	if len(records) != 2 {
+		t.Fatalf("expected 2 records, got %d", len(records))
+	}
+
+	byLogin := make(map[string]UserRecord, len(records))
+	for _, record := range records {
+		byLogin[record.Login] = record
+	}
+	if got := byLogin["ivanov"]; got.RequestStatus != requestStatusPending || got.HasAccess {
+		t.Errorf("user record was altered in transit: %+v", got)
+	}
+	if got := byLogin["admin"]; got.HasAccess {
+		t.Errorf("admin's raw has_access column must stay false, got %+v", got)
+	}
+	if got := byLogin["admin"]; got.Role != RoleAdmin {
+		t.Errorf("expected role %q, got %q", RoleAdmin, got.Role)
+	}
+}
+
+// TestAccessService_ListUsers_RepositoryFailureIsPropagated: сбой хранилища не превращается
+// в пустой список — администратор получил бы «пользователей нет» вместо ошибки и решил бы,
+// что выдавать доступ некому.
+func TestAccessService_ListUsers_RepositoryFailureIsPropagated(t *testing.T) {
+	t.Parallel()
+
+	failure := errors.New("dial tcp 127.0.0.1:3306: connect: connection refused")
+	repo := newUserRepoStub()
+	repo.listUsersErr = failure
+	svc := NewAccessService(repo, newAccessRequestRepoStub())
+
+	records, err := svc.ListUsers(context.Background())
+	if err == nil {
+		t.Fatalf("repository failure was swallowed")
+	}
+	if !errors.Is(err, failure) {
+		t.Fatalf("wrapped error lost the cause: %v", err)
+	}
+	if records != nil {
+		t.Errorf("expected no records alongside an error, got %v", records)
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/RoGogDBD/PoshivOn/internal/auth"
 	"github.com/RoGogDBD/PoshivOn/internal/service"
@@ -90,8 +91,19 @@ type stubUserRepo struct {
 	log       *callLog
 	users     map[string]service.UserRecord
 	ensured   []stubEnsureCall
-	getErr    error
 	ensureErr error
+	// getErr срабатывает на любом логине, getErrByLogin — только на своём. Разница
+	// принципиальна: RequireAdmin/RequireAccess сами зовут GetUser на логине вызывающего,
+	// поэтому безусловная ошибка отклоняет запрос ещё в middleware и до кода хендлера дело
+	// не доходит — тест «хендлер не течёт» доказывал бы тогда совсем другое утверждение.
+	getErr        error
+	getErrByLogin map[string]error
+	listErr       error
+	setAccessErr  error
+	// requests — необязательная связка с хранилищем заявок. Непустая заставляет GetUser и
+	// ListUsers подставлять request_status так же, как это делает join в настоящих
+	// репозиториях; без неё (юнит-тесты middleware) статус заявки просто пуст.
+	requests *stubRequestRepo
 }
 
 type stubEnsureCall struct {
@@ -132,22 +144,47 @@ func (r *stubUserRepo) GetUser(_ context.Context, login string) (service.UserRec
 	if r.getErr != nil {
 		return service.UserRecord{}, r.getErr
 	}
+	if err, ok := r.getErrByLogin[login]; ok {
+		return service.UserRecord{}, err
+	}
 	record, ok := r.users[login]
 	if !ok {
 		return service.UserRecord{}, fmt.Errorf("user %q not found: %w", login, service.ErrNotFound)
 	}
-	return record, nil
+	return r.withRequestStatus(record), nil
 }
 
 func (r *stubUserRepo) ListUsers(_ context.Context) ([]service.UserRecord, error) {
+	if r.listErr != nil {
+		return nil, r.listErr
+	}
 	items := make([]service.UserRecord, 0, len(r.users))
 	for _, record := range r.users {
-		items = append(items, record)
+		items = append(items, r.withRequestStatus(record))
 	}
 	return items, nil
 }
 
+// withRequestStatus повторяет join users × access_requests из настоящих репозиториев:
+// request_status в строке пользователя — производное от заявки, а не самостоятельное поле.
+func (r *stubUserRepo) withRequestStatus(record service.UserRecord) service.UserRecord {
+	if r.requests == nil {
+		return record
+	}
+	request, ok := r.requests.requests[record.Login]
+	if !ok {
+		return record
+	}
+	requestedAt := request.CreatedAt
+	record.RequestStatus = request.Status
+	record.RequestedAt = &requestedAt
+	return record
+}
+
 func (r *stubUserRepo) SetAccess(_ context.Context, login string, granted bool) error {
+	if r.setAccessErr != nil {
+		return r.setAccessErr
+	}
 	record, ok := r.users[login]
 	if !ok {
 		return fmt.Errorf("user %q not found: %w", login, service.ErrNotFound)
@@ -157,21 +194,68 @@ func (r *stubUserRepo) SetAccess(_ context.Context, login string, granted bool) 
 	return nil
 }
 
-type stubRequestRepo struct{}
-
-func (r *stubRequestRepo) CreateRequest(_ context.Context, _ string) error { return nil }
-
-func (r *stubRequestRepo) GetRequest(_ context.Context, login string) (service.AccessRequest, error) {
-	return service.AccessRequest{}, fmt.Errorf("access request for user %q not found: %w", login, service.ErrNotFound)
+// stubRequestRepo повторяет наблюдаемое поведение обеих реализаций Decision 5: заявка на
+// рассмотрении повторной подачей не сдвигается (ErrConflict), после решения — возвращается
+// в pending, а решение по несуществующей заявке ошибкой не считается.
+type stubRequestRepo struct {
+	requests  map[string]service.AccessRequest
+	createErr error
 }
 
-func (r *stubRequestRepo) DecideRequest(_ context.Context, _, _, _ string) error { return nil }
+func newStubRequestRepo() *stubRequestRepo {
+	return &stubRequestRepo{requests: make(map[string]service.AccessRequest)}
+}
+
+func (r *stubRequestRepo) CreateRequest(_ context.Context, login string) error {
+	if r.createErr != nil {
+		return r.createErr
+	}
+	if r.requests == nil {
+		r.requests = make(map[string]service.AccessRequest)
+	}
+	existing, ok := r.requests[login]
+	if ok && existing.Status == "pending" {
+		return fmt.Errorf("access request for user %q is already pending: %w", login, service.ErrConflict)
+	}
+	existing.UserID = login
+	existing.Status = "pending"
+	existing.CreatedAt = time.Now().UTC()
+	r.requests[login] = existing
+	return nil
+}
+
+func (r *stubRequestRepo) GetRequest(_ context.Context, login string) (service.AccessRequest, error) {
+	request, ok := r.requests[login]
+	if !ok {
+		return service.AccessRequest{}, fmt.Errorf("access request for user %q not found: %w", login, service.ErrNotFound)
+	}
+	return request, nil
+}
+
+func (r *stubRequestRepo) DecideRequest(_ context.Context, login, status, decidedBy string) error {
+	r.decide(login, status, decidedBy)
+	return nil
+}
+
+// decide используется и как реализация интерфейса, и как подготовка состояния в тестах
+// («заявка уже отклонена») — без похода через админский маршрут.
+func (r *stubRequestRepo) decide(login, status, decidedBy string) {
+	request, ok := r.requests[login]
+	if !ok {
+		return
+	}
+	decidedAt := time.Now().UTC()
+	request.Status = status
+	request.DecidedAt = &decidedAt
+	request.DecidedBy = decidedBy
+	r.requests[login] = request
+}
 
 var _ service.UserRepository = (*stubUserRepo)(nil)
 var _ service.AccessRequestRepository = (*stubRequestRepo)(nil)
 
 func newAccessService(repo *stubUserRepo) *service.AccessService {
-	return service.NewAccessService(repo, &stubRequestRepo{})
+	return service.NewAccessService(repo, newStubRequestRepo())
 }
 
 // resolverReturning — стаб проверки сессии. Через него проходят случаи, недостижимые без
@@ -707,6 +791,175 @@ func TestRequireSameOrigin_MutatingMethodsCovered(t *testing.T) {
 			if next.calls != 0 {
 				t.Errorf("следующий обработчик вызван %d раз, ожидалось 0", next.calls)
 			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------------------
+// Middleware поверх реально собранных маршрутов (BuildRoutes — та же функция, что в main.go).
+//
+// Тесты выше проверяют middleware в изоляции: «функция ведёт себя так». Тесты ниже проверяют
+// другое утверждение — «эта функция действительно навешена на этот префикс». Task 4 оставила
+// middleware написанными и покрытыми, но ни к чему не подключёнными, и ни один тест этого
+// не заметил.
+// ---------------------------------------------------------------------------------------
+
+// TestRequireAccess_AdminWithoutFlagPasses: администратор с has_access=false проходит на
+// закрытые RequireAccess маршруты (US-14, Decision 10) — тот же инвариант, что в юнит-тесте
+// выше, но на реально навешенной цепочке.
+func TestRequireAccess_AdminWithoutFlagPasses(t *testing.T) {
+	fixture := newRouteFixture(t, fixtureOptions{users: []service.UserRecord{
+		userRecord("RoGogDBD", service.RoleAdmin, false),
+	}})
+
+	recorder := fixture.do(apiRequest{
+		method: http.MethodGet,
+		path:   "/api/v1/users/RoGogDBD/chats",
+		as:     "RoGogDBD",
+	})
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("статус = %d, ожидался 200 (тело: %s)", recorder.Code, recorder.Body.String())
+	}
+}
+
+// TestRequireSameOrigin_Matrix — полная матрица Decision 8 на реально собранных маршрутах.
+// В каждой ветке проверяется не только код ответа, но и то, что флаг доступа не изменился:
+// отказ, случившийся после записи, отличался бы от отказа до неё только этим.
+func TestRequireSameOrigin_Matrix(t *testing.T) {
+	const allowedOrigin = "https://app.example"
+
+	cases := []struct {
+		name           string
+		allowedOrigins []string
+		cookieSecure   bool
+		method         string
+		origin         string
+		noOrigin       bool
+		wantStatus     int
+	}{
+		{
+			name:           "без заголовка Origin при непустом списке",
+			allowedOrigins: []string{allowedOrigin},
+			cookieSecure:   true,
+			method:         http.MethodPost,
+			noOrigin:       true,
+			wantStatus:     http.StatusForbidden,
+		},
+		{
+			name:           "посторонний Origin при непустом списке",
+			allowedOrigins: []string{allowedOrigin},
+			cookieSecure:   true,
+			method:         http.MethodPost,
+			origin:         "https://evil.example",
+			wantStatus:     http.StatusForbidden,
+		},
+		{
+			name:           "разрешённый Origin при непустом списке проходит",
+			allowedOrigins: []string{allowedOrigin},
+			cookieSecure:   true,
+			method:         http.MethodPost,
+			origin:         allowedOrigin,
+			wantStatus:     http.StatusNoContent,
+		},
+		{
+			name:         "Origin совпадает с r.Host при пустом списке — проходит (same-origin fallback)",
+			cookieSecure: false,
+			method:       http.MethodPost,
+			origin:       "http://" + fixtureHost,
+			wantStatus:   http.StatusNoContent,
+		},
+		{
+			name:         "посторонний Origin при пустом списке — всё равно 403, а не пропуск",
+			cookieSecure: false,
+			method:       http.MethodPost,
+			origin:       "http://evil.example",
+			wantStatus:   http.StatusForbidden,
+		},
+		{
+			name:         "без заголовка Origin при пустом списке",
+			cookieSecure: false,
+			method:       http.MethodPost,
+			noOrigin:     true,
+			wantStatus:   http.StatusForbidden,
+		},
+		{
+			name:         "схема не та, что в конфигурации",
+			cookieSecure: true,
+			method:       http.MethodPost,
+			origin:       "http://" + fixtureHost,
+			wantStatus:   http.StatusForbidden,
+		},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			fixture := newRouteFixture(t, fixtureOptions{
+				allowedOrigins: testCase.allowedOrigins,
+				cookieSecure:   testCase.cookieSecure,
+				users: []service.UserRecord{
+					userRecord("ivanov", service.RoleUser, false),
+					userRecord("RoGogDBD", service.RoleAdmin, false),
+				},
+			})
+			before := fixture.accessSnapshot()
+
+			recorder := fixture.do(apiRequest{
+				method:   testCase.method,
+				path:     "/api/v1/admin/users/ivanov/access",
+				body:     `{"granted":true}`,
+				as:       "RoGogDBD",
+				origin:   testCase.origin,
+				noOrigin: testCase.noOrigin,
+			})
+
+			if recorder.Code != testCase.wantStatus {
+				t.Fatalf("статус = %d, ожидался %d (тело: %s)", recorder.Code, testCase.wantStatus, recorder.Body.String())
+			}
+			if testCase.wantStatus == http.StatusForbidden {
+				fixture.assertAccessUnchanged(before)
+			} else if !fixture.hasAccess("ivanov") {
+				t.Fatalf("запрос принят, но флаг доступа не выставлен — проверяется не тот путь")
+			}
+		})
+	}
+}
+
+// TestRequireSameOrigin_MatrixSafeMethod: GET исключён из проверки — посторонний Origin
+// на чтении не блокируется, иначе сломалась бы обычная навигация.
+func TestRequireSameOrigin_MatrixSafeMethod(t *testing.T) {
+	cases := []struct {
+		name     string
+		origin   string
+		noOrigin bool
+	}{
+		{name: "посторонний Origin", origin: "https://evil.example"},
+		{name: "без заголовка Origin", noOrigin: true},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			fixture := newRouteFixture(t, fixtureOptions{
+				allowedOrigins: []string{"http://" + fixtureHost},
+				users: []service.UserRecord{
+					userRecord("ivanov", service.RoleUser, false),
+					userRecord("RoGogDBD", service.RoleAdmin, false),
+				},
+			})
+			before := fixture.accessSnapshot()
+
+			recorder := fixture.do(apiRequest{
+				method:   http.MethodGet,
+				path:     "/api/v1/admin/users",
+				as:       "RoGogDBD",
+				origin:   testCase.origin,
+				noOrigin: testCase.noOrigin,
+			})
+
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("статус = %d, ожидался 200 (метод GET из проверки исключён)", recorder.Code)
+			}
+			fixture.assertAccessUnchanged(before)
 		})
 	}
 }
