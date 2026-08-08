@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -88,11 +89,15 @@ func TestMain(m *testing.M) {
 
 // purgeContractFixtures убирает строки, созданные этим файлом. Удаления users достаточно:
 // user_settings, chats, calculations и access_requests висят на нём через FK ON DELETE CASCADE.
+//
+// Сравниваем через LOWER(), а не просто LIKE: после миграции 005 users.id имеет сортировку
+// utf8mb4_nopad_bin, то есть LIKE стал регистрозависимым, а тест на регистрозависимость
+// логина создаёт строки с префиксом в верхнем регистре — простой LIKE их бы не убрал.
 func purgeContractFixtures() {
 	if testDB == nil || testDBErr != nil {
 		return
 	}
-	testDB.Exec("DELETE FROM users WHERE id LIKE ?", contractFixturePrefix+"%")
+	testDB.Exec("DELETE FROM users WHERE LOWER(id) LIKE ?", contractFixturePrefix+"%")
 }
 
 // runAgainstBothStores прогоняет одну contract-функцию по обеим реализациям.
@@ -415,6 +420,112 @@ func contractSetAccessRepeatedGrantIsNotNotFound(t *testing.T, factory accessRep
 	}
 }
 
+func TestAccessRepoContract_SetAccessRevokeWhenAlreadyRevoked(t *testing.T) {
+	runAgainstBothStores(t, contractSetAccessRevokeWhenAlreadyRevoked)
+}
+
+// Сверх списка TDD Anchor, обратное направление к SetAccessRepeatedGrantIsNotNotFound.
+// Свежесозданный пользователь уже has_access=false, поэтому первый же отзыв доступа не
+// меняет ни одной строки — сценарий совершенно рядовой (администратор снимает галочку у
+// того, кому её и не выдавали), и он не должен выглядеть как «логин не найден».
+func contractSetAccessRevokeWhenAlreadyRevoked(t *testing.T, factory accessRepoFactory) {
+	users, _ := factory()
+	ctx := context.Background()
+	login := newLogin(t)
+
+	if err := users.EnsureUser(ctx, login, "noop@example.com", "Noop"); err != nil {
+		t.Fatalf("EnsureUser: %v", err)
+	}
+	if err := users.SetAccess(ctx, login, false); err != nil {
+		t.Fatalf("SetAccess(false) on an already-revoked user: %v — отзыв несуществующего доступа не ошибка", err)
+	}
+
+	record, err := users.GetUser(ctx, login)
+	if err != nil {
+		t.Fatalf("GetUser: %v", err)
+	}
+	if record.HasAccess {
+		t.Error("HasAccess = true, want false")
+	}
+}
+
+func TestAccessRepoContract_LoginIdentityIsCaseAndSpaceSensitive(t *testing.T) {
+	runAgainstBothStores(t, contractLoginIdentityIsCaseAndSpaceSensitive)
+}
+
+// Регрессия на присвоение чужой личности через сортировку (миграция 005).
+//
+// До 005 users.id наследовал utf8mb4_uca1400_ai_ci, и логин, отличающийся только регистром,
+// акцентом или концевым пробелом, попадал в ЧУЖУЮ строку users: вход под 'rogogdbd' отдавал
+// строку администратора 'RoGogDBD' вместе с role='admin' и has_access=1. Проверено живьём
+// на схеме до 005 — запрос по 'rogogdbd' возвращал именно админскую строку.
+//
+// Тест идёт по обоим хранилищам: у MemoryRepository ключи мапы всегда были побайтовыми, и
+// после 005 обе реализации наконец сходятся в понимании того, что такое «тот же логин».
+func contractLoginIdentityIsCaseAndSpaceSensitive(t *testing.T, factory accessRepoFactory) {
+	users, _ := factory()
+	ctx := context.Background()
+
+	variants := []struct {
+		name    string
+		variant func(base string) string
+	}{
+		{"upper case", strings.ToUpper},
+		{"trailing space", func(base string) string { return base + " " }},
+	}
+
+	for _, testCase := range variants {
+		t.Run(testCase.name, func(t *testing.T) {
+			privileged := newLogin(t)
+			lookalike := testCase.variant(privileged)
+			if lookalike == privileged {
+				t.Fatalf("variant %q produced the same login — тест ничего не проверяет", testCase.name)
+			}
+
+			if err := users.EnsureUser(ctx, privileged, "owner@example.com", "Owner"); err != nil {
+				t.Fatalf("EnsureUser(privileged): %v", err)
+			}
+			if err := users.SetAccess(ctx, privileged, true); err != nil {
+				t.Fatalf("SetAccess(privileged): %v", err)
+			}
+
+			// Ключевое утверждение: похожий логин не должен разрешаться в чужую строку.
+			if _, err := users.GetUser(ctx, lookalike); !errors.Is(err, service.ErrNotFound) {
+				t.Fatalf("GetUser(%q) error = %v, want service.ErrNotFound — похожий логин попал в чужую строку", lookalike, err)
+			}
+
+			if err := users.EnsureUser(ctx, lookalike, "other@example.com", "Other"); err != nil {
+				t.Fatalf("EnsureUser(lookalike): %v", err)
+			}
+
+			other, err := users.GetUser(ctx, lookalike)
+			if err != nil {
+				t.Fatalf("GetUser(lookalike): %v", err)
+			}
+			if other.Login != lookalike {
+				t.Errorf("Login = %q, want %q — вернулась не та строка", other.Login, lookalike)
+			}
+			if other.HasAccess {
+				t.Error("HasAccess = true, want false — похожий логин унаследовал чужой доступ")
+			}
+			if other.Email != "other@example.com" {
+				t.Errorf("Email = %q, want %q", other.Email, "other@example.com")
+			}
+
+			owner, err := users.GetUser(ctx, privileged)
+			if err != nil {
+				t.Fatalf("GetUser(privileged) after the lookalike logged in: %v", err)
+			}
+			if !owner.HasAccess {
+				t.Error("HasAccess = false, want true — вход похожего логина затронул исходную строку")
+			}
+			if owner.Email != "owner@example.com" {
+				t.Errorf("Email = %q, want %q — похожий логин переписал чужой профиль", owner.Email, "owner@example.com")
+			}
+		})
+	}
+}
+
 // --- ListUsers ----------------------------------------------------------------------
 
 func TestAccessRepoContract_ListUsersIncludesLoginOnlyUsers(t *testing.T) {
@@ -655,13 +766,11 @@ func TestAccessRepoContract_CreateRequestRowsAffectedSemantics(t *testing.T) {
 		t.Fatalf("EnsureUser: %v", err)
 	}
 
-	// Тот же оператор, что выполняет CreateRequest. Проверяем именно числа, на которых
-	// держится Decision 5: они верны, только пока DSN не включает clientFoundRows=true.
-	const upsert = `INSERT INTO access_requests (user_id, status, created_at)
-VALUES (?, 'pending', ?)
-ON DUPLICATE KEY UPDATE
-  status     = IF(status = 'pending', status, VALUES(status)),
-  created_at = IF(status = 'pending', created_at, VALUES(created_at))`
+	// Именно тот оператор, что выполняет CreateRequest — берём саму константу, а не её
+	// копию: копия разошлась бы с рабочим запросом молча, и тест продолжил бы «проверять»
+	// уже несуществующий SQL. Проверяем числа, на которых держится Decision 5: они верны,
+	// только пока DSN не включает clientFoundRows=true.
+	upsert := createRequestSQL
 
 	insert := db.WithContext(ctx).Exec(upsert, login, time.Now().UTC())
 	if insert.Error != nil {
@@ -763,6 +872,161 @@ func TestAccessRepoContract_ExistingWritePathsSurviveAccessColumns(t *testing.T)
 		}
 		assertUserRowIsValid(t, db, login)
 	})
+}
+
+// accessWriteStore — хранилище целиком: обе новые роли плюс три существующих пути записи.
+// Оба репозитория его удовлетворяют, поэтому поведение путей записи по отношению к строке
+// пользователя проверяется одним набором тестов, как и всё остальное в этом файле.
+type accessWriteStore interface {
+	service.UserRepository
+	service.AccessRequestRepository
+	UpsertSettings(ctx context.Context, userID string, settings service.UserSettings) error
+	CreateChat(ctx context.Context, chat service.Chat) (service.Chat, error)
+	AppendCalculation(ctx context.Context, result service.CalculationResult) error
+}
+
+func runWriteStoreAgainstBothStores(t *testing.T, contract func(t *testing.T, store accessWriteStore)) {
+	t.Helper()
+
+	t.Run("memory", func(t *testing.T) {
+		contract(t, NewMemoryRepository())
+	})
+	t.Run("postgres", func(t *testing.T) {
+		contract(t, NewPostgresRepository(openTestDB(t)))
+	})
+}
+
+// writePathCases — три существующих пути записи, каждый из которых заводит строку
+// пользователя (upsertUser в PostgresRepository, touchUserRow в MemoryRepository).
+func writePathCases(ctx context.Context, store accessWriteStore) []struct {
+	Name string
+	Run  func(login string) error
+} {
+	return []struct {
+		Name string
+		Run  func(login string) error
+	}{
+		{
+			Name: "UpsertSettings",
+			Run: func(login string) error {
+				return store.UpsertSettings(ctx, login, service.DefaultUserSettings())
+			},
+		},
+		{
+			Name: "CreateChat",
+			Run: func(login string) error {
+				now := time.Now().UTC().Truncate(time.Second)
+				_, err := store.CreateChat(ctx, service.Chat{
+					UserID:    login,
+					ID:        fmt.Sprintf("chat-%d", loginCounter.Add(1)),
+					Title:     "Новый чат",
+					CreatedAt: now,
+					UpdatedAt: now,
+				})
+				return err
+			},
+		},
+		{
+			Name: "AppendCalculation",
+			Run: func(login string) error {
+				return store.AppendCalculation(ctx, service.CalculationResult{
+					UserID:       login,
+					ChatID:       fmt.Sprintf("chat-%d", loginCounter.Add(1)),
+					GarmentType:  "dress",
+					MaterialType: "cotton",
+					Urgency:      "normal",
+					MarketStatus: "ok",
+					Quantity:     1,
+					PricePerUnit: 1000,
+					Subtotal:     1000,
+					Total:        1000,
+					CreatedAt:    time.Now().UTC().Truncate(time.Second),
+				})
+			},
+		},
+	}
+}
+
+func TestAccessRepoContract_WritePathsCreateUserRow(t *testing.T) {
+	runWriteStoreAgainstBothStores(t, contractWritePathsCreateUserRow)
+}
+
+// Существующие пути записи заводят строку пользователя сами — в MariaDB иначе не пройдёт
+// FK, а в памяти иначе такой пользователь выпал бы из ListUsers. Проверяем, что заведённая
+// ими строка выглядит одинаково в обоих хранилищах: обычная роль и никакого доступа.
+func contractWritePathsCreateUserRow(t *testing.T, store accessWriteStore) {
+	ctx := context.Background()
+
+	for _, writePath := range writePathCases(ctx, store) {
+		t.Run(writePath.Name, func(t *testing.T) {
+			login := newLogin(t)
+			if err := writePath.Run(login); err != nil {
+				t.Fatalf("%s for a brand-new user: %v", writePath.Name, err)
+			}
+
+			record, err := store.GetUser(ctx, login)
+			if err != nil {
+				t.Fatalf("GetUser after %s: %v — путь записи не завёл строку пользователя", writePath.Name, err)
+			}
+			if record.Role != service.RoleUser {
+				t.Errorf("Role = %q, want %q", record.Role, service.RoleUser)
+			}
+			if record.HasAccess {
+				t.Error("HasAccess = true, want false — путь записи не должен выдавать доступ")
+			}
+
+			list, err := store.ListUsers(ctx)
+			if err != nil {
+				t.Fatalf("ListUsers: %v", err)
+			}
+			found := false
+			for _, item := range list {
+				if item.Login == login {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("ListUsers does not contain %q, created via %s", login, writePath.Name)
+			}
+		})
+	}
+}
+
+func TestAccessRepoContract_WritePathsPreserveAdminRoleAndAccess(t *testing.T) {
+	runWriteStoreAgainstBothStores(t, contractWritePathsPreserveAdminRoleAndAccess)
+}
+
+// Тот же риск Decision 11, что и у EnsureUser, но на путях записи: они трогают ту же строку
+// users. Заведение строки обязано быть «создать, если нет» и ничего не переписывать —
+// иначе сохранение настроек или первый же расчёт разжаловали бы администратора.
+func contractWritePathsPreserveAdminRoleAndAccess(t *testing.T, store accessWriteStore) {
+	ctx := context.Background()
+
+	for _, writePath := range writePathCases(ctx, store) {
+		t.Run(writePath.Name, func(t *testing.T) {
+			login := newLogin(t)
+			if err := store.EnsureUser(ctx, login, "admin@example.com", "Admin"); err != nil {
+				t.Fatalf("EnsureUser: %v", err)
+			}
+			seedAdmin(t, store, login)
+
+			if err := writePath.Run(login); err != nil {
+				t.Fatalf("%s: %v", writePath.Name, err)
+			}
+
+			record, err := store.GetUser(ctx, login)
+			if err != nil {
+				t.Fatalf("GetUser: %v", err)
+			}
+			if record.Role != service.RoleAdmin {
+				t.Errorf("Role = %q, want %q — %s разжаловал администратора", record.Role, service.RoleAdmin, writePath.Name)
+			}
+			if !record.HasAccess {
+				t.Errorf("HasAccess = false, want true — %s снял флаг доступа", writePath.Name)
+			}
+		})
+	}
 }
 
 // assertUserRowIsValid проверяет, что строка, созданную существующим upsertUser, БД

@@ -668,26 +668,72 @@ func (r *PostgresRepository) ListUsers(ctx context.Context) ([]service.UserRecor
 // строку, поэтому повторная выдача уже выданного доступа тоже даёт 0. Отличить «нет такого
 // логина» от «значение и так было таким» можно только отдельным чтением — оно и делается,
 // но лишь на нулевой ветке.
+//
+// Проверяем при этом не факт существования строки, а её постусловие — что has_access уже
+// равен granted. Разница не косметическая: между UPDATE и проверкой параллельный EnsureUser
+// (он срабатывает на каждом входе) может создать строку с has_access=false, и проверка
+// «строка есть» отчиталась бы об успехе там, где флаг не записан, — администратор увидел бы
+// подтверждение выдачи доступа, которой не произошло. Сверка значения такой ответ исключает:
+// успех возвращается, только когда в БД лежит запрошенное значение.
 func (r *PostgresRepository) SetAccess(ctx context.Context, login string, granted bool) error {
+	applied, err := r.updateAccessFlag(ctx, login, granted)
+	if err != nil {
+		return err
+	}
+	if applied {
+		return nil
+	}
+
+	var row struct {
+		HasAccess bool `gorm:"column:has_access"`
+	}
+	check := r.db.WithContext(ctx).
+		Model(&userAccessModel{}).
+		Select("has_access").
+		Where("id = ?", login).
+		Scan(&row)
+	if check.Error != nil {
+		return fmt.Errorf("check user access: %w", check.Error)
+	}
+	if check.RowsAffected == 0 {
+		return fmt.Errorf("user %q not found: %w", login, service.ErrNotFound)
+	}
+	if row.HasAccess == granted {
+		// Значение и так было запрошенным — UPDATE не изменил ни одной строки законно.
+		return nil
+	}
+
+	// Строка появилась (или её значение изменилось) уже после нашего UPDATE. Повторяем
+	// запись один раз: гонка возможна только на переходе «логина не было — логин появился»,
+	// поэтому второй промах означал бы не гонку, а неисправность, и его лучше показать.
+	//
+	// Эта ветка намеренно не покрыта автотестом: чтобы в неё попасть, нужна настоящая гонка
+	// между двумя соединениями, а подделка её через хук превратила бы тест в проверку хука.
+	// Она проверена мутацией — updateAccessFlag временно заставляли всегда сообщать «строка
+	// не задета»: без сверки постусловия SetAccess возвращал успех, не записав флаг, со
+	// сверкой возвращает ошибку «did not apply». Ошибка намеренно без sentinel'а из service:
+	// это не доменная ситуация, а сбой записи, и наверх она должна идти как 500, а не как
+	// осмысленный отказ.
+	applied, err = r.updateAccessFlag(ctx, login, granted)
+	if err != nil {
+		return err
+	}
+	if !applied {
+		return fmt.Errorf("set access for user %q did not apply", login)
+	}
+	return nil
+}
+
+// updateAccessFlag выполняет сам UPDATE и сообщает, изменил ли он строку.
+func (r *PostgresRepository) updateAccessFlag(ctx context.Context, login string, granted bool) (bool, error) {
 	result := r.db.WithContext(ctx).
 		Model(&userAccessModel{}).
 		Where("id = ?", login).
 		Update("has_access", granted)
 	if result.Error != nil {
-		return fmt.Errorf("update user access: %w", result.Error)
+		return false, fmt.Errorf("update user access: %w", result.Error)
 	}
-	if result.RowsAffected > 0 {
-		return nil
-	}
-
-	var exists int64
-	if err := r.db.WithContext(ctx).Model(&userAccessModel{}).Where("id = ?", login).Count(&exists).Error; err != nil {
-		return fmt.Errorf("check user exists: %w", err)
-	}
-	if exists == 0 {
-		return fmt.Errorf("user %q not found: %w", login, service.ErrNotFound)
-	}
-	return nil
+	return result.RowsAffected > 0, nil
 }
 
 // --- AccessRequestRepository ----------------------------------------------------------
