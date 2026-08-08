@@ -1,14 +1,14 @@
 feature: access-control
 mode: solo-dispatcher   # no TeamCreate tool available in this environment; main session acts as lead directly, spawning Agent-tool teammates/reviewers and resuming via SendMessage
 total_waves: 13
-last_completed_wave: 3
-next_wave: 4
+last_completed_wave: 4
+next_wave: 5
 stop_after_wave: 11   # user approved waves 1-11 automatically; wave 12 (Deploy) requires explicit go-ahead
 tasks:
   1: done
   2: done
   3: done
-  4: planned
+  4: done
   5: planned
   6: planned
   7: planned
