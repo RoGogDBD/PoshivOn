@@ -1,0 +1,61 @@
+{
+  "status": "changes_required",
+  "summary": "Full mode, live re-run (fresh retry after a prior session-limit interruption). go build/vet/gofmt clean; `go test ./... -race -count=1` passes 100% (0 FAIL, 0 SKIP) against both MemoryRepository and a live MariaDB 11.4 with TEST_DB_DSN set. All 12 required TDD Anchor tests are present and meaningfully exercise real behavior (no mocks anywhere in this package — real DB / real map-backed store). I independently re-ran the implementer's claimed mutation testing myself (not just trusted the report): reintroducing `Role` on `userModel` and reintroducing `role`/`has_access` into `EnsureUser`'s `DoUpdates` both reproduce the exact failures claimed (ERROR 4025 CHECK violation; admin-demotion assertion), and both reverts are byte-identical to the pre-mutation state, confirmed by diff. No artifact of either broken version survives in the committed code (61e9c51) or the current working tree. One genuine coverage gap found: `MemoryRepository.touchUserRow` — new logic wired into three write paths by this task — has zero test coverage anywhere in the codebase, not even incidental, which also leaves an admin-preservation risk on the Memory backend (used for APP_STORAGE=memory in production, not just tests) unverified. Also noting for the record: the working tree currently has uncommitted changes beyond 61e9c51 (a race-hardened SetAccess in postgres.go + one new test) discovered mid-review; they don't affect the Decision 11/13 findings but should be reconciled/committed before this task is considered closed.",
+  "findings": [
+    {
+      "severity": "major",
+      "category": "missing_coverage",
+      "location": "server/internal/repository/memory.go:344-354 (touchUserRow); no coverage in server/internal/repository/access_repo_test.go",
+      "issue": "touchUserRow is new logic added by this task, called from MemoryRepository.UpsertSettings (:54), .CreateChat (:75), and .AppendCalculation (:159) to replicate upsertUser's 'create a bare user row on first write' behavior. It has zero test coverage — direct or incidental — anywhere in the repository or service packages. The only test that exercises the equivalent Postgres behavior, TestAccessRepoContract_ExistingWritePathsSurviveAccessColumns, is explicitly DB-only: it constructs NewPostgresRepository(db) directly and bypasses the runAgainstBothStores/factory pattern every other contract test in the file uses, so it never touches MemoryRepository. TestAccessRepoContract_ListUsersIncludesLoginOnlyUsers, the only test that checks 'login-only' visibility in ListUsers, only calls EnsureUser — never UpsertSettings/CreateChat/AppendCalculation — so it doesn't reach touchUserRow either. Outside this file: service/costing_test.go uses local stubs (chatRepoStub/settingsRepoStub), not MemoryRepository; service/access_test.go only mentions MemoryRepository in a comment. Litmus test: if touchUserRow's body were emptied (a no-op), UpsertSettings/CreateChat/AppendCalculation on MemoryRepository would still succeed silently (settings/chats still get stored), and no test in the entire suite would notice that ListUsers() then silently drops that user — exactly the regression Decision 2/3 of the tech-spec exist to prevent ('список «все пользователи» не увидел бы как раз тех, ради кого фича делается', task text lines 29-30). Worse: MemoryRepository is not just a test double — it backs APP_STORAGE=memory in production (task text line 42) — so a future bug in touchUserRow that overwrites an existing row instead of skipping it (e.g. an accidentally-inverted `if _, ok := ...; ok { return }` check) would silently demote an admin through this path exactly like the Decision 11 bug the Postgres side is explicitly guarded against, and nothing would catch it.",
+      "recommendation": "Add two MemoryRepository-specific tests in access_repo_test.go (not run against Postgres, since the CHECK-constraint angle is already covered by the DB-only test — this is about Memory-store parity, a different risk): (1) contractTouchUserRowCreatesLoginOnlyUser-equivalent: call repo.UpsertSettings(ctx, login, service.DefaultUserSettings()) on a fresh NewMemoryRepository(), then repo.ListUsers(ctx) and assert the login appears with Role==service.RoleUser and HasAccess==false — mirroring what TestAccessRepoContract_ExistingWritePathsSurviveAccessColumns checks on Postgres but through ListUsers instead of a raw column read, since Memory has no CHECK constraint to violate. Repeat for CreateChat and AppendCalculation (table-driven is fine, one t.Run per write path). (2) contractTouchUserRowPreservesExistingAdmin: EnsureUser + seedAdmin(t, users, login) to seed an admin row on MemoryRepository, then call UpsertSettings (or CreateChat) for that same login, then GetUser and assert Role stays RoleAdmin and HasAccess stays true — the Memory-side equivalent of TestAccessRepoContract_EnsureUserPreservesAdminRoleAndAccess, since touchUserRow's early-return-if-exists is the only thing currently protecting this path and it is presently unverified."
+    },
+    {
+      "severity": "minor",
+      "category": "anti_pattern",
+      "location": "server/internal/repository/access_repo_test.go:659-663 (TestAccessRepoContract_CreateRequestRowsAffectedSemantics)",
+      "issue": "This DB-only test hardcodes its own local `const upsert = \"INSERT INTO access_requests ...\"` literal, byte-for-byte duplicating the package-level `createRequestSQL` constant already defined in postgres.go:709-713 (same package, directly referenceable). The test asserts RowsAffected semantics (1/0/2) against its own copy of the SQL, not against the actual statement CreateRequest executes. If createRequestSQL in postgres.go were edited (e.g. someone tweaks the IF-condition) without updating this test's copy, this specific test would keep passing on stale semantics while silently no longer verifying the real code path — the drift would only be caught indirectly, if at all, by contractCreateRequestConflictWhilePending's coarser error-only assertion.",
+      "recommendation": "Replace the local `const upsert = ...` literal with a direct reference to the existing package-level `createRequestSQL` constant (`db.WithContext(ctx).Exec(createRequestSQL, login, time.Now().UTC())`), so this test exercises the exact statement the production code runs rather than a hand-maintained copy of it."
+    },
+    {
+      "severity": "minor",
+      "category": "missing_coverage",
+      "location": "server/internal/repository/postgres.go:706-716 (new, uncommitted SetAccess race-recheck branch)",
+      "issue": "Discovered mid-review: the working tree currently has uncommitted changes on top of commit 61e9c51 (git diff --stat shows postgres.go +58/-10, access_repo_test.go +29; git status confirms both files modified, not staged/committed). The uncommitted SetAccess rewrite adds a second-attempt UPDATE branch that returns a bespoke, unwrapped error (`fmt.Errorf(\"set access for user %q did not apply\", login)`, not wrapping any service.Err* sentinel) when a concurrent write causes the value-comparison recheck to also miss. This branch requires a genuine race (a row appearing or its has_access value changing between the initial UPDATE and the recheck SELECT) that no test in the suite can trigger deterministically, so it is currently unreachable by any test and its error-wrapping behavior is unverified — a caller of SetAccess has no defined way to distinguish this outcome from any other internal error today, so the risk is low, but it is new logic with zero coverage.",
+      "recommendation": "Either accept this branch as an intentionally untested defensive fallback and say so in the comment (it already documents the reasoning well, just not the untested status), or wrap the returned error with service.ErrNotFound-adjacent handling and add a table note that this path is exercised only by manual/theoretical race analysis, not automated tests. This is not blocking, but flag to the orchestrator: this file's uncommitted state should be reconciled with the implementer and land in a commit before Task 3 is closed — the code currently reviewed and tested live is not identical to what 61e9c51 records."
+    }
+  ],
+  "informational": [
+    {
+      "note": "SetAccess two-write-sequence non-atomicity (decisions.md, carried from Task 2): confirmed this is correctly out of Task 3's repository-layer scope, not a gap. UserRepository.SetAccess and AccessRequestRepository.DecideRequest remain two independent, unrelated interface methods in both PostgresRepository and MemoryRepository — Task 3 introduced no single repository-layer operation that performs both writes together (GORM's SetAccess only ever touches has_access; it never reaches access_requests). The 'two separate calls, no transaction' behavior lives entirely in AccessService.SetAccess (Task 2's service layer), which decisions.md already records as pinned by a Task 2 test ('TestAccessService_SetAccess_DecideFails_ReportsErrorAfterFlagIsWritten', confirmed present and passing in the live run). There is nothing at the repository layer to test for this specific concern, since there's no combined write to pin — reintroducing this as a repository-layer requirement would ask the tests to verify a code path that doesn't exist yet."
+    },
+    {
+      "note": "Mutation testing was independently reproduced live by this review, not merely trusted from the implementer's self-report. Backed up postgres.go; (1) added `Role string \\`gorm:\"column:role\"\\`` to userModel and ran TestAccessRepoContract_ExistingWritePathsSurviveAccessColumns — all three subtests (UpsertSettings, CreateChat, AppendCalculation) failed with the exact claimed error, `Error 4025 (23000): CONSTRAINT chk_users_role failed`; (2) reverted (diff against backup confirmed byte-identical), then broadened EnsureUser's DoUpdates map to include role/has_access and ran TestAccessRepoContract_EnsureUserPreservesAdminRoleAndAccess — the postgres subtest failed with 'Role = \"user\", want \"admin\"' and 'HasAccess = false, want true' exactly as claimed, while the memory subtest correctly kept passing (a Postgres-only mutation, as expected since Memory is a separate implementation); reverted again, diff against backup confirmed byte-identical. Both mutations are caught deterministically by structural assertions (not timing-dependent), so coverage of Decision 11 and Decision 13 is genuine and durable, not a one-time manual confirmation that happens to be true today."
+    }
+  ],
+  "metrics": {
+    "filesReviewed": 3,
+    "testRun": {
+      "command": "go build ./... && go vet ./... && gofmt -l . && go test ./... -race -count=1 -v (TEST_DB_DSN set against live mariadb:11.4, migrations 001-004 applied)",
+      "result": "PASS",
+      "totalTopLevelTests": 18,
+      "failed": 0,
+      "skipped": 0,
+      "repositoryPackageDuration": "1.14s",
+      "servicePackageDuration": "1.02s",
+      "dbBackedSubtestsConfirmedRun": true
+    },
+    "litmusTest": {
+      "checked": 18,
+      "passed": 18,
+      "failed": 0,
+      "note": "2 of 18 (Decision 11 admin-preservation, Decision 13 CHECK-constraint regression) verified via live re-mutation by this review, not just code reading; remaining 16 verified by reading — all assert on real GetUser/GetRequest/ListUsers results from a real DB or real in-memory store, no mocking anywhere in this package."
+    },
+    "coverageAssessment": "adequate",
+    "pyramidBalance": {
+      "unit": 0,
+      "integration": 18,
+      "e2e": 0,
+      "assessment": "healthy for this package's declared role — tech-spec Testing Strategy explicitly classifies access_repo_test.go as integration tests (real DB + real in-memory store, no unit-level mocking expected here); business-logic unit coverage lives in Task 2's service package, out of this review's scope."
+    }
+  }
+}

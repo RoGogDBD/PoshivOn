@@ -1,0 +1,79 @@
+{
+  "task": "access-control / Task 3 — репозитории доступа",
+  "reviewer": "code-reviewer",
+  "round": 1,
+  "verdict": "pass_with_findings",
+  "summary": "Both PostgresRepository and MemoryRepository correctly implement UserRepository and AccessRequestRepository per tech-spec Data Models. Verified live: build/vet/gofmt clean, full contract suite passes against MemoryRepository unconditionally and against a real MariaDB (poshivon_test, brought up via docker compose) with TEST_DB_DSN set — confirmed via -v output that no postgres-factory subtest was SKIPed when the DSN was set, and that every postgres-factory subtest correctly SKIPs when it is unset. userModel is unchanged (ID+CreatedAt only, invariant comment present); no leftover mutation-test artifact found. SetAccess's RowsAffected==0 handling is correct. Decision 5's upsert SQL is byte-identical to the tech-spec block, and server/internal/db/db.go's buildDSN confirmed not to set clientFoundRows, so the 1/2/0 RowsAffected semantics the code and tests rely on are real. touchUserRow is correctly scoped and safe. Two non-blocking findings below, both narrow-window / inherited rather than new defects introduced by this task's write paths.",
+  "verified_claims": [
+    {
+      "claim": "userModel (postgres.go) is unchanged — ID + CreatedAt only, a separate userAccessModel maps to the same users table for access columns",
+      "status": "confirmed",
+      "evidence": "postgres.go:25-28 — struct has exactly ID, CreatedAt, with an invariant comment (lines 15-24) citing Decision 13 and ERROR 4025. userAccessModel (lines 38-48) is a distinct type with its own TableName() returning \"users\"."
+    },
+    {
+      "claim": "Mutation test (temporary Role field on userModel) was reverted cleanly, no leftover in final code",
+      "status": "confirmed",
+      "evidence": "grep for TODO/FIXME/XXX/DEBUG/mutation across internal/repository/*.go returned nothing; userModel struct body confirmed to contain only ID and CreatedAt fields; git log shows a single clean commit (61e9c51) for this task with no evidence of reverted debug code left behind."
+    },
+    {
+      "claim": "SetAccess does NOT map bare RowsAffected==0 to ErrNotFound; falls back to an existence COUNT only on the zero branch",
+      "status": "confirmed_correct",
+      "evidence": "postgres.go:671-691. Live-verified via TestAccessRepoContract_SetAccessRepeatedGrantIsNotNotFound (PASS on both memory and postgres): granting access twice in a row (has_access already true) does not return ErrNotFound, because the COUNT existence check on the zero-RowsAffected branch correctly distinguishes 'no such login' from 'value already matched'."
+    },
+    {
+      "claim": "touchUserRow (MemoryRepository) added to UpsertSettings/CreateChat/AppendCalculation, flagged as a deviation",
+      "status": "assessed_safe",
+      "evidence": "memory.go:340-354. Early-returns if the login already exists (no overwrite of role/has_access on an existing row — mirrors upsertUser's DoNothing:true exactly), and is only ever called from within a section that already holds r.mu.Lock() (UpsertSettings:54, CreateChat:75, AppendCalculation:159), so no double-lock/deadlock risk. It closes a real Memory/Postgres parity gap: without it, MemoryRepository.ListUsers would omit users created only via these three pre-existing write paths, while PostgresRepository (via the existing upsertUser helper) would include them. Correctly scoped; no functional defect found."
+    },
+    {
+      "claim": "CreateRequest's RowsAffected 1/2/0 semantics depend on clientFoundRows NOT being set in the DSN",
+      "status": "confirmed",
+      "evidence": "server/internal/db/db.go:58-71 buildDSN sets only parseTime, charset, collation, multiStatements — no clientFoundRows param. Live-verified via TestAccessRepoContract_CreateRequestRowsAffectedSemantics (PASS): insert=1, while-pending repeat=0, after-rejected resubmit=2, matching Decision 5 exactly."
+    },
+    {
+      "claim": "Decision 5 upsert SQL run verbatim",
+      "status": "confirmed",
+      "evidence": "createRequestSQL constant (postgres.go:709-713) is character-for-character identical to the SQL block in tech-spec.md lines 198-204 and task 3.md lines 111-116."
+    }
+  ],
+  "findings": [
+    {
+      "id": "CR-1",
+      "severity": "minor",
+      "dimension": "Error Handling & Logging / Concurrency",
+      "location": "server/internal/repository/postgres.go:671-691 (SetAccess)",
+      "description": "SetAccess's fallback existence check has a narrow TOCTOU window: if `UPDATE ... WHERE id = ?` returns 0 rows because the login does not yet exist, and a concurrent EnsureUser inserts that exact login between the UPDATE and the follow-up `COUNT(*)`, the COUNT will see the row and SetAccess returns nil (success) — but the actual has_access flag was never set to `granted`, since the row didn't exist at UPDATE time. The caller believes the grant/revoke succeeded when it silently no-op'd.",
+      "impact": "In practice unreachable through the described admin flow, since the admin UI only ever offers logins already present in ListUsers (i.e., already existing rows) — an admin cannot target a login that hasn't logged in yet. But SetAccess is a general repository method with no such precondition documented or enforced, so any future caller that grants access to a login that may not have logged in yet (e.g., a pre-provisioning feature) could hit this silently.",
+      "recommendation": "Either document the precondition explicitly (SetAccess assumes the row already exists; callers must not race it against EnsureUser for the same login) or make the reconciliation atomic — e.g., wrap the UPDATE + COUNT in a single transaction with appropriate isolation, or express the whole thing as one query (e.g., check row existence via `SELECT ... FOR UPDATE` before the UPDATE). Given the current call site is exclusively AccessService.SetAccess acting on logins already returned by GetUser earlier in the same method, this is low urgency; flagging for awareness rather than requesting a fix."
+    },
+    {
+      "id": "CR-2",
+      "severity": "low/informational",
+      "dimension": "Cross-File Consistency",
+      "location": "server/internal/repository/memory.go (usersByLogin, requestsByLogin — both keyed by plain Go string)",
+      "description": "MemoryRepository's login-keyed maps are case-sensitive Go map keys, while PostgresRepository's users.id inherits the database's default collation `utf8mb4_uca1400_ai_ci` (case- and accent-insensitive) — this is the same collation gap flagged by the security auditor in Task 1's review and carried forward in decisions.md as a note for Task 4. Concretely: `EnsureUser(ctx, \"User1\", ...)` followed by `EnsureUser(ctx, \"user1\", ...)` creates two separate rows in MemoryRepository but collides into one row in PostgresRepository — a real behavioral divergence between the two stores the task requires to 'match exactly'.",
+      "impact": "Not exercised by the contract suite: access_repo_test.go's newLogin() deliberately generates only lowercase fixture logins, with a comment (lines 40-42) explicitly citing this exact collation concern as the reason. So the suite passing does not mean this parity gap is closed — it means the suite was written to avoid tripping over it. This is an inherited/pre-existing risk (not introduced by this task's logic), but this is the task that actually built MemoryRepository's login-keyed storage, so it's a reasonable place to record the gap explicitly rather than leave it implicit.",
+      "recommendation": "No action required for this task specifically — Task 1's report already scoped normalization/case-folding as a decision for Task 4 (EnsureUser's call site) rather than the repository layer. Worth a one-line note in this task's decisions.md entry (carried-forward risks section) so Task 4/5 authors don't have to rediscover it: MemoryRepository does not replicate MariaDB's case-insensitive collation, so case-varying logins behave differently between the two stores."
+    }
+  ],
+  "non_issues_checked": [
+    "No SQL injection surface — all raw SQL (CreateRequest, seedAdmin test helper) uses bound `?` placeholders, no string interpolation of caller-supplied values.",
+    "Compile-time interface assertions present for both interfaces on both types (postgres.go:153-157, memory.go:44-48).",
+    "No new heavy resources introduced; PostgresRepository still wraps the single shared *gorm.DB.",
+    "gofmt clean, go vet clean.",
+    "EnsureUser's ON DUPLICATE KEY UPDATE column list is verified to exclude role/has_access both by code read and by the passing TestAccessRepoContract_EnsureUserPreservesAdminRoleAndAccess test.",
+    "TDD Anchor coverage complete: all 14 anchor test cases present, plus 3 additional defensive tests (SetAccessRepeatedGrantIsNotNotFound, GetRequestUnknownLoginNotFound, CreateRequestRowsAffectedSemantics).",
+    "The SetAccess snapshot race and no-rollback-across-two-writes items carried forward from Task 2's decisions.md are correctly left alone here — they live in AccessService (Task 2's fixed interface boundary), not in this task's repository methods, and addressing them would require changing the UserRepository/AccessRequestRepository interface contract, which is out of this task's scope."
+  ],
+  "verification_performed": [
+    "docker compose up -d db (poshivon_db was not running; brought up successfully, poshivon_test database and 004 migration schema already present in the persistent volume)",
+    "go build ./... — clean (golang:1.25-alpine, --network host)",
+    "go vet ./... — clean",
+    "gofmt -l . — no output",
+    "go test ./internal/repository/... -v -count=1 with TEST_DB_DSN set — all TestAccessRepoContract_* pass on both memory and postgres subtests, plus the two DB-only tests (CreateRequestRowsAffectedSemantics, ExistingWritePathsSurviveAccessColumns/{UpsertSettings,CreateChat,AppendCalculation})",
+    "go test ./internal/repository/... -v -count=1 without TEST_DB_DSN — confirmed every postgres-factory subtest and both DB-only tests SKIP, memory subtests still PASS",
+    "go test ./... -count=1 (full suite, no DSN) — all packages ok, no regressions in internal/service",
+    "Read server/internal/db/db.go in full to confirm buildDSN's query params",
+    "Read server/internal/service/access.go in full to confirm interface signatures match repository implementations"
+  ]
+}
