@@ -1,0 +1,42 @@
+{
+  "status": "changes_required",
+  "summary": "Test design is unusually strong: all 11 TDD-anchor tests are present plus roughly 20 additional edge-case tests, every one has a concrete behavioral assertion, and the five flagged design choices (SessionStore interface, ResolveSession/StoreSessionResolver, RequireSameOrigin's secure param, RequireAccess/RequireAdmin routing through AccessService.GetAccessState, UpdateSessionTokens keeping its current signature) all check out as sound and are genuinely pinned by tests that would fail if the underlying logic regressed. One real gap survives: no test exercises the actual server/cmd/main.go route table, so the security-critical claim 'POST /auth/yandex is gone' and 'RequireSameOrigin actually guards /auth/yandex/code in production' are only proven against hand-built local muxes inside the test files, not the real one — this leaves one specific regression direction (handler kept, only the registration forgotten) completely undetected by any automated check in this task.",
+  "findings": [
+    {
+      "severity": "major",
+      "category": "missing_coverage",
+      "location": "server/internal/handler/auth_test.go:695-712 (TestAuthHandlerHasNoLegacyTokenEntryPoint) and :260-346 (MissingOriginRejected/ForeignOriginRejected/AllowedOriginPasses)",
+      "issue": "None of the four test files exercise the mux actually assembled by server/cmd/main.go. TestAuthHandlerHasNoLegacyTokenEntryPoint builds its own http.NewServeMux() inside the test and simply never registers a '/auth/yandex' route — that proves the test's own reimplementation 404s, not that main.go's real registration line is gone. Likewise TestHandleYandexCode_MissingOriginRejected/ForeignOriginRejected/AllowedOriginPasses wrap RequireSameOrigin around handler.HandleYandexCode manually inside the test, not around whatever main.go actually wires. The task text itself explains why this matters: 'именно рассинхрон между удалением метода и его регистрацией тех-спек поймал на собственной валидации (round-2)', and pins the safety net entirely on `go build ./...`. That build check only catches ONE direction of the regression — HandleYandexLogin deleted but main.go still calls it (compile error). It does NOT catch the opposite and equally plausible mistake: the implementer leaves HandleYandexLogin defined (so go build passes) but forgets to delete `mux.HandleFunc(\"/auth/yandex\", authHandler.HandleYandexLogin)` from main.go. In that scenario every test in this suite still passes, go build still passes, yet the shipped server keeps exposing the exact login-CSRF/privilege-escalation surface Decision 7 exists to remove — with zero automated coverage catching it. Given the acceptance criteria literally list 'POST /auth/yandex возвращает 404' and 'Origin-проверка ... в том числе на POST /auth/yandex/code' as criteria of this task, and given this specific failure mode was already caught once by a human/validator, leaving it uncovered a second time is a real gap, not a hypothetical one.",
+      "recommendation": "Either (a) extract the route table construction out of main() into a small testable function — e.g. `func newMux(cfg *config.Config, auth *handler.AuthHandler, api *handler.APIHandler) *http.ServeMux` in a non-main package or in cmd with a `main_test.go` — and add one test that POSTs to '/auth/yandex' against the real assembled mux expecting 404, plus one test confirming RequireSameOrigin actually rejects an unguarded-Origin POST to the real '/auth/yandex/code' registration; or (b) if extracting is out of scope for this task, explicitly record in decisions.md that this specific regression direction (kept-handler + forgotten-registration) is closed only by manual diff review of main.go, not by CI, so reviewers know not to rely on 'tests are green' alone for this AC line."
+    },
+    {
+      "severity": "minor",
+      "category": "missing_coverage",
+      "location": "server/internal/handler/auth_test.go (TestHandleYandexCode_CreatesUserBeforeAnyPanelAction and TestHandleYandexCode_EnsureUserFailureCreatesNoSession)",
+      "issue": "The ordering assertion (EnsureUser before CreateSession) and the 'EnsureUser fails ⇒ no session' case are both covered, but the reverse failure mode is not: EnsureUser succeeds (user row upserted) and the subsequent store.CreateSession then fails. Since EnsureUser is an idempotent upsert (Decision 11), this is low-risk — a retried login just upserts again — but it is currently unverified whether HandleYandexCode fails cleanly (500, no cookies set, as the sibling failure tests already check) in that ordering, or leaves some other side effect.",
+      "recommendation": "Add a case to stubSessionStore (createErr) exercised with a HandleYandexCode call where repo.ensured succeeds but store.createErr is set; assert 500, no cookies set, and that repo.ensured still recorded exactly one call (documenting the accepted trade-off explicitly rather than leaving it silently untested)."
+    },
+    {
+      "severity": "minor",
+      "category": "anti_pattern",
+      "location": "server/internal/handler/middleware_test.go:339-357 (TestRequireAuth_IdentityMissingCodeDoesNotTriggerClientRetry)",
+      "issue": "retrySlugs := []string{\"access_cookie_missing\", \"access_expired\", \"access_mismatch\"} is a hand-copied literal of client/src/utils/yandexAuth.js:14-16's shouldRefreshAuth list. The test correctly protects the current contract, but nothing ties the two lists together mechanically — if the client list is edited later without a matching edit here, this Go test keeps passing while silently no longer testing the real contract it claims to guard.",
+      "recommendation": "No cheap cross-language fix exists; at minimum keep the existing code comment pointing at the exact client file/lines (already present) and consider a lightweight CI grep/assertion elsewhere in the repo that fails loudly if yandexAuth.js's retry list and this literal diverge, so a future editor of the JS file gets a signal instead of relying on remembering to update this Go test too."
+    }
+  ],
+  "metrics": {
+    "filesReviewed": 4,
+    "litmusTest": {
+      "checked": 33,
+      "passed": 33,
+      "failed": 0
+    },
+    "coverageAssessment": "adequate",
+    "pyramidBalance": {
+      "unit": 30,
+      "integration": 3,
+      "e2e": 0,
+      "assessment": "healthy"
+    }
+  }
+}

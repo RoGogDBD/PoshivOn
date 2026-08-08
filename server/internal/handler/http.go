@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 
@@ -248,20 +249,44 @@ func writeAPIError(w http.ResponseWriter, status int, message string) {
 	writeAPIJSON(w, status, map[string]string{"error": message})
 }
 
+// writeAPIDomainError отображает доменную ошибку на HTTP-ответ. Наружу уходит только
+// категория фиксированным текстом, исходная ошибка остаётся в логе сервера (Decision 17):
+// до этого каждая ветка отдавала err.Error(), а ошибки репозитория обёрнуты SQL-контекстом
+// и попадали клиенту целиком. Правило одно на все ветки, включая существовавшие раньше, —
+// иначе в одной функции жили бы две конвенции.
 func writeAPIDomainError(w http.ResponseWriter, err error) {
+	status, code := classifyDomainError(err)
+	log.Printf("api error: status=%d code=%s err=%v", status, code, err)
+	writeAPIError(w, status, code)
+}
+
+func classifyDomainError(err error) (int, string) {
+	// Через эту функцию проходит каждый ответ об ошибке API, а ниже по веткам вызывается
+	// err.Error() — на nil это паника. Сегодня все вызывающие проверяют ошибку до вызова,
+	// но цена страховки здесь одна строка, а цена её отсутствия — 500 с паникой в проде.
+	if err == nil {
+		return http.StatusInternalServerError, "internal_error"
+	}
+
 	switch {
 	case errors.Is(err, service.ErrInvalidArgument):
-		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return http.StatusBadRequest, "invalid_request"
+	case errors.Is(err, service.ErrForbidden):
+		return http.StatusForbidden, "forbidden"
 	case errors.Is(err, service.ErrNotFound):
-		writeAPIError(w, http.StatusNotFound, err.Error())
+		return http.StatusNotFound, "not_found"
+	case errors.Is(err, service.ErrConflict):
+		return http.StatusConflict, "conflict"
+	// Три ветки ниже сопоставляются по тексту ошибки DeepSeek-клиента: своих сентинелов
+	// он не выставляет. Сопоставление хрупкое, но теперь хотя бы не утекает в ответ.
 	case strings.Contains(strings.ToLower(err.Error()), "rate_limit_exceeded"):
-		writeAPIError(w, http.StatusTooManyRequests, err.Error())
+		return http.StatusTooManyRequests, "rate_limited"
 	case strings.Contains(strings.ToLower(err.Error()), "service_unavailable"):
-		writeAPIError(w, http.StatusServiceUnavailable, err.Error())
+		return http.StatusServiceUnavailable, "service_unavailable"
 	case strings.Contains(strings.ToLower(err.Error()), "timeout"):
-		writeAPIError(w, http.StatusGatewayTimeout, err.Error())
+		return http.StatusGatewayTimeout, "timeout"
 	default:
-		writeAPIError(w, http.StatusInternalServerError, err.Error())
+		return http.StatusInternalServerError, "internal_error"
 	}
 }
 

@@ -1,0 +1,28 @@
+{
+  "status": "changes_required",
+  "summary": "Full re-run confirms every implementer claim: `go test ./... -race -count=1` against live MariaDB (TEST_DB_DSN) is green — 40 top-level tests / 110 results across cmd, internal/auth, internal/handler, 0 SKIP, 0 FAIL, costing_test.go unaffected; gofmt/go vet/go build are clean. The design-review major finding (no test exercised the real server/cmd/main.go route table) is genuinely fixed, not just claimed: main() calls newMux(...) at cmd/main.go:63 and newMux is the sole route-table constructor (cmd/main.go:87) — not a parallel/unused function. I independently reproduced the implementer's mutation #7 myself (re-added mux.HandleFunc(\"/auth/yandex\", authHandler.HandleYandexLogin) plus a trivial stub method) and TestNewMux_LegacyTokenRouteIsGone failed exactly as claimed, then reverted to a byte-identical file (verified by md5sum). I also independently reproduced three more of the seven claimed mutations — dropping the admin bypass in hasEffectiveAccess, bypassing the empty-CORS-allowlist same-origin fallback, and removing the fail-closed yandex_login check in RequireAuth — all three were caught by TestRequireAccess_AdminBypassesHasAccessFalse, TestRequireSameOrigin_EmptyAllowlistFallsBackToHost, and TestRequireAuth_NullIdentitySession respectively, and all three files were byte-identical after revert. Design-review Minor 1 (EnsureUser-succeeds/CreateSession-fails ordering) is now covered by TestHandleYandexCode_SessionFailureAfterEnsureUser and behaves exactly as claimed: 500, repo.ensured called exactly once, no session persisted, no cookies set, no leaked SQL error text. All 11 TDD Anchor tests are present and each has a real behavioral assertion, not a structural one. One new, previously-invisible gap survives round 1: two of the negative-path login tests (TestHandleYandexCode_ProfileFailureCreatesNoSession, TestHandleYandexCode_EmptyLoginCreatesNoSession) only assert `rec.Code != http.StatusNoContent` instead of the actual expected status/slug (502 `yandex_profile_failed`) that HandleYandexCode returns for both branches — a regression to the wrong non-204 status (e.g. 400 instead of 502) would pass silently.",
+  "findings": [
+    {
+      "severity": "minor",
+      "category": "missing_coverage",
+      "location": "server/internal/handler/auth_test.go:350-375 (TestHandleYandexCode_ProfileFailureCreatesNoSession) and :379-397 (TestHandleYandexCode_EmptyLoginCreatesNoSession)",
+      "issue": "Both tests assert only `if rec.Code == http.StatusNoContent { t.Fatalf(...) }` — i.e. 'not a 204' — rather than the actual status code and error slug the implementation returns for these branches (auth.go:116 and :124: `writeError(w, http.StatusBadGateway, \"yandex_profile_failed\")` for both the profile-fetch failure and the empty-login case). This is a real litmus-test gap: if a future change accidentally returned e.g. 400 or 401 instead of 502 for either branch, or changed the error slug to something else, both tests would keep passing unchanged, since 'not 204' is true for any non-success status. The rest of each test (no session created, no cookies set, EnsureUser not called) is solid and would still catch a regression to success — only the specific status/slug contract for these two 502 branches is unverified. This matters because both HandleYandexCode_EnsureUserFailureCreatesNoSession and HandleYandexCode_SessionFailureAfterEnsureUser (the two 500-status siblings, correctly asserting `rec.Code != http.StatusInternalServerError`) show the stronger pattern was already known and used elsewhere in the same file — these two are the outliers.",
+      "recommendation": "In TestHandleYandexCode_ProfileFailureCreatesNoSession, replace the loose check with `if rec.Code != http.StatusBadGateway { t.Fatalf(\"статус = %d, ожидался 502\", rec.Code) }` and add `if got := errorCode(t, rec); got != \"yandex_profile_failed\" { t.Errorf(\"код ошибки = %q, ожидался yandex_profile_failed\", got) }` (errorCode helper already exists in middleware_test.go, same package). Apply the identical pair of assertions to TestHandleYandexCode_EmptyLoginCreatesNoSession, since it exercises the same status/slug pair via the same code path (auth.go:122-126)."
+    }
+  ],
+  "metrics": {
+    "filesReviewed": 10,
+    "litmusTest": {
+      "checked": 40,
+      "passed": 38,
+      "failed": 2
+    },
+    "coverageAssessment": "excellent",
+    "pyramidBalance": {
+      "unit": 34,
+      "integration": 8,
+      "e2e": 0,
+      "assessment": "healthy"
+    }
+  }
+}

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/RoGogDBD/PoshivOn/internal/auth"
 	"github.com/RoGogDBD/PoshivOn/internal/config"
+	"github.com/RoGogDBD/PoshivOn/internal/service"
 )
 
 const (
@@ -23,79 +25,70 @@ const (
 	refreshCookieName = "ya_refresh"
 )
 
-type AuthHandler struct {
-	store      *auth.Store
-	cfg        *config.Config
-	httpClient *http.Client
+// SessionFinder — минимум, нужный проверке сессии. Отдельный от SessionStore интерфейс:
+// middleware читает сессию и ничего в ней не меняет, и сужение прав здесь бесплатно.
+type SessionFinder interface {
+	FindByRefreshHash(refreshHash string) (*auth.Session, error)
 }
 
-func NewAuthHandler(store *auth.Store, cfg *config.Config) *AuthHandler {
+// SessionStore — то, что обработчикам входа нужно от хранилища сессий. Интерфейс, а не
+// *auth.Store, по двум причинам: обработчики не должны знать про SQL, и без этого шва
+// handler-тесты требовали бы живой MariaDB, тогда как по замыслу они идут всегда.
+// Прод передаёт сюда *auth.Store — сигнатура NewAuthHandler от этого не меняется.
+type SessionStore interface {
+	SessionFinder
+	CreateSession(session *auth.Session) error
+	UpdateSessionTokens(
+		sessionID uint64,
+		refreshHash string,
+		accessToken string,
+		refreshToken sql.NullString,
+		accessExpiresAt time.Time,
+		refreshExpiresAt time.Time,
+	) error
+	RevokeByRefreshHash(refreshHash string) error
+}
+
+var _ SessionStore = (*auth.Store)(nil)
+
+// AuthHandler обслуживает /auth/*. accessService нужен ровно для одного: завести строку
+// users при входе (Decision 11) — проверки прав живут в middleware, не здесь.
+type AuthHandler struct {
+	store         SessionStore
+	cfg           *config.Config
+	accessService *service.AccessService
+	httpClient    *http.Client
+}
+
+func NewAuthHandler(store SessionStore, cfg *config.Config, accessService *service.AccessService) *AuthHandler {
 	return &AuthHandler{
-		store: store,
-		cfg:   cfg,
+		store:         store,
+		cfg:           cfg,
+		accessService: accessService,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
 		},
 	}
 }
 
-func (h *AuthHandler) HandleYandexLogin(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodOptions {
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-	if r.Method != http.MethodPost {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-
-	payload, err := readJSON(r.Body)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json")
-		return
-	}
-
-	accessToken := strings.TrimSpace(getString(payload, "access_token"))
-	if accessToken == "" {
-		writeError(w, http.StatusBadRequest, "access_token_required")
-		return
-	}
-
-	expiresIn := parseExpiresIn(payload)
-	if expiresIn <= 0 {
-		expiresIn = 3600
-	}
-	accessExpiresAt := time.Now().UTC().Add(time.Duration(expiresIn) * time.Second)
-
-	refreshToken := generateToken()
-	refreshHash := auth.HashRefreshToken(refreshToken)
-	refreshTTL := time.Duration(h.cfg.RefreshTTLHours) * time.Hour
-	refreshExpiresAt := time.Now().UTC().Add(refreshTTL)
-
-	session := &auth.Session{
-		RefreshTokenHash:  refreshHash,
-		YandexAccessToken: accessToken,
-		AccessExpiresAt:   accessExpiresAt,
-		RefreshExpiresAt:  refreshExpiresAt,
-		CreatedAt:         time.Now().UTC(),
-		UpdatedAt:         time.Now().UTC(),
-	}
-
-	if refreshFromYandex := strings.TrimSpace(getString(payload, "refresh_token")); refreshFromYandex != "" {
-		session.YandexRefreshToken = sql.NullString{String: refreshFromYandex, Valid: true}
-	}
-
-	if err := h.store.CreateSession(session); err != nil {
-		writeError(w, http.StatusInternalServerError, "session_create_failed")
-		return
-	}
-
-	h.setAccessCookie(w, accessToken, expiresIn)
-	h.setRefreshCookie(w, refreshToken, int(refreshTTL.Seconds()))
-
-	w.WriteHeader(http.StatusNoContent)
+// authFailure — причина отказа, уже переведённая в ответ: статус и машиночитаемый слаг.
+// Шаги входа возвращают её вместо того, чтобы писать в ResponseWriter самим, — так ответ
+// формируется в одном месте, а шаги остаются проверяемыми по возвращаемому значению.
+type authFailure struct {
+	status int
+	code   string
 }
 
+// yandexTokens — результат обмена кода. ExpiresIn здесь уже нормализован: значение уходит
+// и в срок жизни сессии, и в MaxAge куки, и расходиться этим двум нельзя.
+type yandexTokens struct {
+	AccessToken  string
+	RefreshToken string
+	ExpiresIn    int64
+}
+
+// HandleYandexCode — вход по коду авторизации. Функция только оркеструет шаги и пишет
+// ответ; каждый шаг ниже отвечает за одну задачу.
 func (h *AuthHandler) HandleYandexCode(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusNoContent)
@@ -106,16 +99,40 @@ func (h *AuthHandler) HandleYandexCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	code, redirectURI, failure := h.readLoginRequest(r)
+	if failure != nil {
+		writeError(w, failure.status, failure.code)
+		return
+	}
+
+	tokens, profile, failure := h.establishIdentity(r.Context(), code, redirectURI)
+	if failure != nil {
+		writeError(w, failure.status, failure.code)
+		return
+	}
+
+	session, refreshCookie, refreshTTL := h.newLoginSession(tokens, profile)
+	if err := h.store.CreateSession(session); err != nil {
+		log.Printf("вход: не удалось сохранить сессию: %v", err)
+		writeError(w, http.StatusInternalServerError, "session_create_failed")
+		return
+	}
+
+	h.issueSessionCookies(w, tokens.AccessToken, tokens.ExpiresIn, refreshCookie, refreshTTL)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// readLoginRequest разбирает тело запроса на вход и подставляет redirect_uri из
+// конфигурации, если клиент его не прислал.
+func (h *AuthHandler) readLoginRequest(r *http.Request) (string, string, *authFailure) {
 	payload, err := readJSON(r.Body)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json")
-		return
+		return "", "", &authFailure{http.StatusBadRequest, "invalid_json"}
 	}
 
 	code := strings.TrimSpace(getString(payload, "code"))
 	if code == "" {
-		writeError(w, http.StatusBadRequest, "code_required")
-		return
+		return "", "", &authFailure{http.StatusBadRequest, "code_required"}
 	}
 
 	redirectURI := strings.TrimSpace(getString(payload, "redirect_uri"))
@@ -123,48 +140,96 @@ func (h *AuthHandler) HandleYandexCode(w http.ResponseWriter, r *http.Request) {
 		redirectURI = h.cfg.YandexRedirectURI
 	}
 	if redirectURI == "" {
-		writeError(w, http.StatusBadRequest, "redirect_uri_required")
-		return
+		return "", "", &authFailure{http.StatusBadRequest, "redirect_uri_required"}
 	}
 
-	accessToken, refreshToken, expiresIn, err := h.exchangeCodeWithYandex(r.Context(), code, redirectURI)
+	return code, redirectURI, nil
+}
+
+// establishIdentity меняет код на токены, узнаёт, кто вошёл, и заводит ему строку users.
+// Все три шага здесь, потому что у них общий инвариант: пока личность не установлена и не
+// сохранена, сессии и кук быть не должно — отсюда возврат отказа, а не частичного успеха.
+func (h *AuthHandler) establishIdentity(ctx context.Context, code, redirectURI string) (yandexTokens, *yandexProfile, *authFailure) {
+	accessToken, refreshToken, expiresIn, err := h.exchangeCodeWithYandex(ctx, code, redirectURI)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, "yandex_exchange_failed")
-		return
+		log.Printf("вход: обмен кода не удался: %v", err)
+		return yandexTokens{}, nil, &authFailure{http.StatusUnauthorized, "yandex_exchange_failed"}
 	}
-
 	if expiresIn <= 0 {
 		expiresIn = 3600
 	}
-	accessExpiresAt := time.Now().UTC().Add(time.Duration(expiresIn) * time.Second)
+	tokens := yandexTokens{AccessToken: accessToken, RefreshToken: refreshToken, ExpiresIn: expiresIn}
 
-	refreshTokenCookie := generateToken()
-	refreshHash := auth.HashRefreshToken(refreshTokenCookie)
+	// Единственный за весь вход поход за профилем (Decision 1): дальше личность живёт
+	// в строке сессии и на горячем пути к Яндексу никто не ходит.
+	profile, err := h.fetchYandexProfile(ctx, accessToken)
+	if err != nil {
+		log.Printf("вход: не удалось получить профиль Яндекса: %v", err)
+		return yandexTokens{}, nil, &authFailure{http.StatusBadGateway, "yandex_profile_failed"}
+	}
+	// Сессия без логина неотличима от домиграционной и была бы отвергнута первым же
+	// RequireAuth (Decision 2). Проще не заводить её вовсе, чем выдать куки, с которыми
+	// пользователь не сможет сделать ничего.
+	if profile.Login == "" {
+		log.Printf("вход: профиль Яндекса не содержит логина")
+		return yandexTokens{}, nil, &authFailure{http.StatusBadGateway, "yandex_profile_failed"}
+	}
+
+	// Строка users заводится до сессии и до кук: пользователь, вошедший в систему, где его
+	// нет, не смог бы ни подать заявку, ни попасть в админский список (Decision 11).
+	if h.accessService == nil {
+		log.Printf("вход: AccessService не сконфигурирован")
+		return yandexTokens{}, nil, &authFailure{http.StatusInternalServerError, "user_ensure_failed"}
+	}
+	if err := h.accessService.EnsureUser(ctx, profile.Login, profile.Email, profile.Name); err != nil {
+		log.Printf("вход: не удалось завести пользователя: %v", err)
+		return yandexTokens{}, nil, &authFailure{http.StatusInternalServerError, "user_ensure_failed"}
+	}
+
+	return tokens, profile, nil
+}
+
+// newLoginSession собирает строку сессии по установленной личности и выдаёт значение
+// refresh-куки вместе со сроком её жизни. Возвращает именно значение куки, а не хеш:
+// в БД уходит хеш, клиенту — исходный токен, и путать их нельзя.
+func (h *AuthHandler) newLoginSession(tokens yandexTokens, profile *yandexProfile) (*auth.Session, string, time.Duration) {
+	now := time.Now().UTC()
+	refreshCookie := generateToken()
 	refreshTTL := time.Duration(h.cfg.RefreshTTLHours) * time.Hour
-	refreshExpiresAt := time.Now().UTC().Add(refreshTTL)
 
 	session := &auth.Session{
-		RefreshTokenHash:  refreshHash,
-		YandexAccessToken: accessToken,
-		AccessExpiresAt:   accessExpiresAt,
-		RefreshExpiresAt:  refreshExpiresAt,
-		CreatedAt:         time.Now().UTC(),
-		UpdatedAt:         time.Now().UTC(),
+		RefreshTokenHash:  auth.HashRefreshToken(refreshCookie),
+		YandexAccessToken: tokens.AccessToken,
+		AccessExpiresAt:   now.Add(time.Duration(tokens.ExpiresIn) * time.Second),
+		RefreshExpiresAt:  now.Add(refreshTTL),
+		CreatedAt:         now,
+		UpdatedAt:         now,
+		YandexLogin:       sql.NullString{String: profile.Login, Valid: true},
 	}
 
-	if refreshToken != "" {
-		session.YandexRefreshToken = sql.NullString{String: refreshToken, Valid: true}
-	}
+	// Пустые email и имя — не ошибка входа (default_email у Яндекса необязателен):
+	// в колонку уходит NULL, а не пустая строка, чтобы «нет значения» и «пустое значение»
+	// не смешивались.
+	session.YandexEmail = nullableString(profile.Email)
+	session.YandexDisplayName = nullableString(profile.Name)
+	session.YandexRefreshToken = nullableString(tokens.RefreshToken)
 
-	if err := h.store.CreateSession(session); err != nil {
-		writeError(w, http.StatusInternalServerError, "session_create_failed")
-		return
-	}
+	return session, refreshCookie, refreshTTL
+}
 
+// issueSessionCookies выставляет пару кук сессии. Общая для входа и для ротации: разойтись
+// в атрибутах этим двум местам нельзя, иначе после рефреша куки станут другими.
+func (h *AuthHandler) issueSessionCookies(w http.ResponseWriter, accessToken string, expiresIn int64, refreshCookie string, refreshTTL time.Duration) {
 	h.setAccessCookie(w, accessToken, expiresIn)
-	h.setRefreshCookie(w, refreshTokenCookie, int(refreshTTL.Seconds()))
+	h.setRefreshCookie(w, refreshCookie, int(refreshTTL.Seconds()))
+}
 
-	w.WriteHeader(http.StatusNoContent)
+// nullableString: пустая строка — это NULL в колонке, а не пустое значение.
+func nullableString(value string) sql.NullString {
+	if value == "" {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: value, Valid: true}
 }
 
 func (h *AuthHandler) HandleStatus(w http.ResponseWriter, r *http.Request) {
@@ -173,7 +238,7 @@ func (h *AuthHandler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err := h.validateSession(r)
+	_, err := ResolveSession(h.store, r)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, err.Error())
 		return
@@ -188,7 +253,7 @@ func (h *AuthHandler) HandleMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, err := h.validateSession(r)
+	session, err := ResolveSession(h.store, r)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, err.Error())
 		return
@@ -210,67 +275,87 @@ func (h *AuthHandler) HandleRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	refreshToken, err := readCookie(r, refreshCookieName)
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "refresh_cookie_missing")
-		return
-	}
-
-	refreshHash := auth.HashRefreshToken(refreshToken)
-	session, err := h.store.FindByRefreshHash(refreshHash)
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "session_not_found")
-		return
-	}
-
-	now := time.Now().UTC()
-	if session.RevokedAt.Valid || session.RefreshExpiresAt.Before(now) {
-		writeError(w, http.StatusUnauthorized, "session_expired")
-		return
-	}
-
-	if !session.YandexRefreshToken.Valid {
-		writeError(w, http.StatusConflict, "reauth_required")
+	session, failure := h.sessionForRefresh(r)
+	if failure != nil {
+		writeError(w, failure.status, failure.code)
 		return
 	}
 
 	newAccessToken, newRefreshToken, expiresIn, err := h.refreshWithYandex(r.Context(), session.YandexRefreshToken.String)
 	if err != nil {
+		log.Printf("ротация: обновление токена у Яндекса не удалось: %v", err)
 		writeError(w, http.StatusUnauthorized, "yandex_refresh_failed")
 		return
 	}
-
 	if expiresIn <= 0 {
 		expiresIn = 3600
 	}
 
-	accessExpiresAt := now.Add(time.Duration(expiresIn) * time.Second)
-	rotatedRefresh := generateToken()
-	rotatedRefreshHash := auth.HashRefreshToken(rotatedRefresh)
-	refreshTTL := time.Duration(h.cfg.RefreshTTLHours) * time.Hour
-	refreshExpiresAt := now.Add(refreshTTL)
+	rotatedRefresh, refreshTTL, err := h.rotateSessionTokens(session, newAccessToken, newRefreshToken, expiresIn)
+	if err != nil {
+		log.Printf("ротация: не удалось обновить сессию: %v", err)
+		writeError(w, http.StatusInternalServerError, "session_update_failed")
+		return
+	}
 
+	h.issueSessionCookies(w, newAccessToken, expiresIn, rotatedRefresh, refreshTTL)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// rotateSessionTokens записывает вращённые токены и возвращает значение новой refresh-куки
+// вместе со сроком её жизни.
+//
+// За профилем здесь никто не ходит: личность уже лежит в строке сессии и переживает ротацию
+// сама — UpdateSessionTokens не трогает её колонки (Decision 1). Повторный запрос к Яндексу
+// на каждом рефреше вернул бы ровно ту зависимость, ради устранения которой личность и
+// переехала в БД.
+func (h *AuthHandler) rotateSessionTokens(session *auth.Session, accessToken, newRefreshToken string, expiresIn int64) (string, time.Duration, error) {
+	now := time.Now().UTC()
+	rotatedRefresh := generateToken()
+	refreshTTL := time.Duration(h.cfg.RefreshTTLHours) * time.Hour
+
+	// Яндекс не всегда присылает новый refresh-токен — тогда остаётся прежний, иначе
+	// следующая ротация станет невозможной.
 	updatedYandexRefresh := session.YandexRefreshToken
 	if newRefreshToken != "" {
 		updatedYandexRefresh = sql.NullString{String: newRefreshToken, Valid: true}
 	}
 
-	if err := h.store.UpdateSessionTokens(
+	err := h.store.UpdateSessionTokens(
 		session.ID,
-		rotatedRefreshHash,
-		newAccessToken,
+		auth.HashRefreshToken(rotatedRefresh),
+		accessToken,
 		updatedYandexRefresh,
-		accessExpiresAt,
-		refreshExpiresAt,
-	); err != nil {
-		writeError(w, http.StatusInternalServerError, "session_update_failed")
-		return
+		now.Add(time.Duration(expiresIn)*time.Second),
+		now.Add(refreshTTL),
+	)
+	return rotatedRefresh, refreshTTL, err
+}
+
+// sessionForRefresh находит сессию, которую вообще можно вращать. Отдельно от самой
+// ротации: причин отказа четыре, и в одной функции с обновлением токенов они тонут.
+func (h *AuthHandler) sessionForRefresh(r *http.Request) (*auth.Session, *authFailure) {
+	refreshToken, err := readCookie(r, refreshCookieName)
+	if err != nil {
+		return nil, &authFailure{http.StatusUnauthorized, errRefreshCookieMissing.Error()}
 	}
 
-	h.setAccessCookie(w, newAccessToken, expiresIn)
-	h.setRefreshCookie(w, rotatedRefresh, int(refreshTTL.Seconds()))
+	session, err := h.store.FindByRefreshHash(auth.HashRefreshToken(refreshToken))
+	if err != nil || session == nil {
+		return nil, &authFailure{http.StatusUnauthorized, errSessionNotFound.Error()}
+	}
 
-	w.WriteHeader(http.StatusNoContent)
+	if session.RevokedAt.Valid || session.RefreshExpiresAt.Before(time.Now().UTC()) {
+		return nil, &authFailure{http.StatusUnauthorized, errSessionExpired.Error()}
+	}
+
+	// Сессия, заведённая без refresh-токена Яндекса, вращаться не может — только заново
+	// пройти вход.
+	if !session.YandexRefreshToken.Valid {
+		return nil, &authFailure{http.StatusConflict, "reauth_required"}
+	}
+
+	return session, nil
 }
 
 func (h *AuthHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {
@@ -418,42 +503,72 @@ func (h *AuthHandler) clearCookie(w http.ResponseWriter, name string) {
 	})
 }
 
-func (h *AuthHandler) validateSession(r *http.Request) (*auth.Session, error) {
+// Причины отказа проверки сессии. Значения — контракт с клиентом: shouldRefreshAuth
+// (client/src/utils/yandexAuth.js:14-16) матчит access_cookie_missing/access_expired/
+// access_mismatch по точному тексту и на них запускает повтор через /auth/refresh.
+// Переименование любого из них молча ломает retry-логику клиента.
+var (
+	errAccessCookieMissing  = errors.New("access_cookie_missing")
+	errRefreshCookieMissing = errors.New("refresh_cookie_missing")
+	errSessionNotFound      = errors.New("session_not_found")
+	errSessionExpired       = errors.New("session_expired")
+	errAccessExpired        = errors.New("access_expired")
+	errAccessMismatch       = errors.New("access_mismatch")
+)
+
+// SessionResolver отвечает на вопрос «чья это сессия» по одному запросу. Тип нужен, чтобы
+// RequireAuth не зависел ни от AuthHandler, ни от конкретного хранилища.
+type SessionResolver func(r *http.Request) (*auth.Session, error)
+
+// StoreSessionResolver — прод-реализация резолвера поверх хранилища сессий.
+func StoreSessionResolver(finder SessionFinder) SessionResolver {
+	return func(r *http.Request) (*auth.Session, error) {
+		return ResolveSession(finder, r)
+	}
+}
+
+// ResolveSession — бывший (*AuthHandler).validateSession, вынесенный в функцию: ровно те же
+// проверки в том же порядке, но вызывать её может и middleware, у которого экземпляра
+// AuthHandler нет и быть не должно.
+func ResolveSession(finder SessionFinder, r *http.Request) (*auth.Session, error) {
 	accessToken, err := readCookie(r, accessCookieName)
 	if err != nil {
-		return nil, errors.New("access_cookie_missing")
+		return nil, errAccessCookieMissing
 	}
 
 	refreshToken, err := readCookie(r, refreshCookieName)
 	if err != nil {
-		return nil, errors.New("refresh_cookie_missing")
+		return nil, errRefreshCookieMissing
 	}
 
 	refreshHash := auth.HashRefreshToken(refreshToken)
-	session, err := h.store.FindByRefreshHash(refreshHash)
-	if err != nil {
-		return nil, errors.New("session_not_found")
+	session, err := finder.FindByRefreshHash(refreshHash)
+	if err != nil || session == nil {
+		return nil, errSessionNotFound
 	}
 
 	now := time.Now().UTC()
 	if session.RevokedAt.Valid || session.RefreshExpiresAt.Before(now) {
-		return nil, errors.New("session_expired")
+		return nil, errSessionExpired
 	}
 
 	if session.AccessExpiresAt.Before(now) {
-		return nil, errors.New("access_expired")
+		return nil, errAccessExpired
 	}
 
 	if session.YandexAccessToken != accessToken {
-		return nil, errors.New("access_mismatch")
+		return nil, errAccessMismatch
 	}
 
 	return session, nil
 }
 
+// yandexProfile — то, что берётся из ответа login.yandex.ru/info. Email добавлен ради
+// колонки users.email и письма администраторам в Phase 2 (Decision 12).
 type yandexProfile struct {
 	Name  string `json:"name"`
 	Login string `json:"login"`
+	Email string `json:"email"`
 }
 
 func (h *AuthHandler) fetchYandexProfile(ctx context.Context, accessToken string) (*yandexProfile, error) {
@@ -487,12 +602,23 @@ func (h *AuthHandler) fetchYandexProfile(ctx context.Context, accessToken string
 		return nil, err
 	}
 
+	return parseYandexProfile(payload), nil
+}
+
+// parseYandexProfile достаёт из ответа Яндекса то, что нужно нам. Отдельно от похода по
+// сети: разбор — чистая функция, и проверять его без поднятого сервера дешевле.
+func parseYandexProfile(payload map[string]interface{}) *yandexProfile {
 	login := strings.TrimSpace(getString(payload, "login"))
 	displayName := strings.TrimSpace(getString(payload, "display_name"))
 	realName := strings.TrimSpace(getString(payload, "real_name"))
 	firstName := strings.TrimSpace(getString(payload, "first_name"))
 	lastName := strings.TrimSpace(getString(payload, "last_name"))
+	// default_email извлекается тем же паттерном, что login и name, и так же необязателен:
+	// его отсутствие — не ошибка входа (Decision 12).
+	email := strings.TrimSpace(getString(payload, "default_email"))
 
+	// Имя собирается по убыванию точности: как человек себя назвал, затем настоящее имя,
+	// затем имя с фамилией, и только в крайнем случае логин.
 	name := displayName
 	if name == "" {
 		name = realName
@@ -507,7 +633,8 @@ func (h *AuthHandler) fetchYandexProfile(ctx context.Context, accessToken string
 	return &yandexProfile{
 		Name:  name,
 		Login: login,
-	}, nil
+		Email: email,
+	}
 }
 
 func parseSameSite(value string) http.SameSite {

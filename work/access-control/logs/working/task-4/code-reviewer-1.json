@@ -1,0 +1,52 @@
+{
+  "status": "changes_required",
+  "summary": "The five specific claims I was asked to verify all hold: newMux is genuinely what main() calls (confirmed by reading main.go and by reproducing the mutation myself — re-adding a /auth/yandex registration in a scratch copy makes TestNewMux_LegacyTokenRouteIsGone fail exactly as claimed); *auth.Store satisfies SessionStore/SessionFinder with zero adapters and the NewAuthHandler call site is unchanged; UpdateSessionTokens's SQL correctly omits identity columns from SET (MariaDB leaves unmentioned columns untouched — verified against the live schema) and HandleRefresh needed no changes; and none of classifyDomainError's 8 branches can leak err.Error() into the response body, with every branch logged server-side (confirmed against the pre-task version, which leaked err.Error() in every branch AND never logged at all — this is a real fix, not just a refactor). go build/vet/gofmt are clean and the full live-DB test suite (cmd, internal/auth, internal/handler, internal/repository, internal/service) passes with -race, 0 failures. The one real defect: HandleYandexCode grew from 70 lines (pre-task) to 111 lines during this task, crossing the project's own >100-line critical threshold, and now does six distinct jobs (input validation, OAuth code exchange, profile fetch, user provisioning, session construction, cookie issuance) in one function body. Two adjacent functions this task touched (HandleRefresh, fetchYandexProfile) were already over the >50-line major threshold before the task and were marginally lengthened further without being split up.",
+  "findings": [
+    {
+      "file": "server/internal/handler/auth.go",
+      "line": 74,
+      "severity": "critical",
+      "category": "maintainability",
+      "issue": "HandleYandexCode spans lines 74-184 — 111 lines, measured by matching the opening func line to the closing brace. This is a regression introduced by this task: the pre-task version (git HEAD) was 70 lines. The severity anchor for this review explicitly marks functions >100 lines as critical. The function does at least six distinct jobs sequentially: method/JSON validation, redirect_uri resolution, OAuth code exchange, single profile fetch, login-empty guard, AccessService.EnsureUser call, cookie-expiry defaulting, auth.Session construction (with three separate NullString-if-non-empty branches), CreateSession, and finally two SetCookie calls plus the 204 response.",
+      "impact": "A function this size is hard to hold in your head during review or a future incident, and every additional early-return path (there are 7 in this function) adds a place where a future edit can accidentally skip a step — e.g. forgetting to guard a cookie write behind a new failure branch. It also makes the function resistant to unit testing in isolation: the existing tests exercise it only end-to-end through httptest, because there's no smaller unit to test directly.",
+      "recommendation": "Extract at minimum: (1) a helper that turns a yandexProfile + tokens into an *auth.Session (the three NullString branches + expiry math), and (2) the OAuth exchange + profile fetch + EnsureUser sequence into a single 'establishIdentity' step that returns either a ready-to-persist session or a classified failure. That alone would bring the orchestrating function under 50 lines and make the session-construction logic independently testable without an httptest server."
+    },
+    {
+      "file": "server/internal/handler/auth.go",
+      "line": 223,
+      "severity": "major",
+      "category": "maintainability",
+      "issue": "HandleRefresh is 72 lines (lines 223-294). This predates the task (68 lines at HEAD) and was lengthened by 4 lines (a comment block) by this diff without being split up. The severity anchor marks functions >50 lines as major regardless of when the violation was introduced, and this task touched the function directly.",
+      "impact": "Same class of risk as the HandleYandexCode finding, at smaller scale: token rotation, expiry math, and cookie issuance are interleaved in one function, making it harder to unit-test the rotation logic without going through the full HTTP handler.",
+      "recommendation": "Lower priority than HandleYandexCode since it's pre-existing debt only marginally touched here — worth folding into the same extraction pass (e.g. a shared 'issueTokenCookies' helper) rather than fixing in isolation."
+    },
+    {
+      "file": "server/internal/handler/auth.go",
+      "line": 509,
+      "severity": "major",
+      "category": "maintainability",
+      "issue": "fetchYandexProfile is 55 lines (lines 509-563), already 53 lines pre-task and grown by 2 lines (the new default_email extraction) in this diff. Exceeds the >50-line major threshold.",
+      "impact": "Minor at this size, but it's the third function in the same file over the threshold, suggesting the file as a whole would benefit from decomposition rather than case-by-case patches.",
+      "recommendation": "Low priority fix on its own; consider addressing together with the HandleYandexCode extraction since both touch profile-to-session mapping."
+    },
+    {
+      "file": "server/internal/handler/http.go",
+      "line": 263,
+      "severity": "minor",
+      "category": "error-handling",
+      "issue": "classifyDomainError has no nil guard on its err parameter. This task rewrote the entire function body (compare against git HEAD, which also lacked a guard but is being fully replaced here), so it was a natural point to add defensive handling. If any current or future call site ever invokes writeAPIDomainError(w, nil) — e.g. a future refactor that forgets an `if err != nil` check before the call — classifyDomainError falls through every errors.Is(nil, X) branch (all false) into the strings.Contains(strings.ToLower(err.Error()), ...) branches, which call .Error() on a nil interface and panic.",
+      "impact": "Currently unreachable: every one of the 12 call sites across http.go and middleware.go is guarded by a preceding `if err != nil` or constructs a fresh non-nil error. But it's a latent landmine in code that handles all error responses for the API surface — a single future call site added without the same discipline turns a client request into a 500 with no response at all (panic recovers only if some outer recovery middleware exists, which was not found in main.go).",
+      "recommendation": "Add `if err == nil { return http.StatusInternalServerError, \"internal_error\" }` as the first line of classifyDomainError. Trivial, and removes an entire class of future panic risk from the function every API error path funnels through."
+    },
+    {
+      "file": "server/internal/handler/http.go",
+      "line": 76,
+      "severity": "minor",
+      "category": "cross-file-consistency",
+      "issue": "Decision 17 (and this task's own point 8 / AC list) states the fixed-text-instead-of-err.Error() treatment applies to writeAPIDomainError specifically; four sites at lines 76, 101, 144, and 196 still call `writeAPIError(w, http.StatusBadRequest, err.Error())` directly for decodeJSON failures, bypassing writeAPIDomainError entirely and putting the raw error text (Go's JSON decoder error, e.g. field names from json tags) into the 400 response body.",
+      "impact": "Low actual severity — these are JSON-syntax/schema errors reflecting the client's own malformed input, not SQL or infrastructure details — but it means the 'no internal text in any API error response' property this task establishes for the domain-error path does not hold uniformly across the same handler file's error responses. A reviewer skimming for 'is Decision 17 fully applied' would find a partial answer.",
+      "recommendation": "Already tracked in decisions.md as deferred to Task 6 ('If Task 6 будет переписывать эти маршруты — стоит заодно свести и их к фиксированным кодам'), which is a reasonable scope boundary given this task's stated diff surface is limited to writeAPIDomainError. Flagging for visibility only — no action required in this round unless Task 6's scope is reconsidered."
+    }
+  ],
+  "clean_check": null
+}
