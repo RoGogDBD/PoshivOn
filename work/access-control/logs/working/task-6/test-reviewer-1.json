@@ -1,0 +1,85 @@
+{
+  "status": "changes_required",
+  "mode": "full",
+  "summary": "All four design-round findings were verified genuinely fixed by reading the actual post-implementation code (not trusting the implementer's report): the two legacy-URL/bare-200 tests now use the new no-segment URL and assert real owner-scoped response bodies; the DELETE-foreign-chat-id subtest was proven to carry real signal by reproducing mutation M3 myself (broke MemoryRepository.DeleteChat's owner scoping, confirmed exactly that one subtest failed while its five siblings stayed green, reverted byte-identical); TestHandleUsers_NoAccess_403 now asserts the attacker's own space stayed empty in addition to the victim's. I additionally reproduced mutation M4 (legacy-segment tolerance) myself and confirmed all 10 TestRegisterRoutes_LegacyUserIDSegment_NotFound subtests fail exactly as claimed, with the failure output reproducing the live IDOR (petrov's real chat data and settings served to ivanov). Full suite is green against real MariaDB. The one substantive gap found in this round is pre-existing and not introduced by Task 6, but the task's own Edge Cases section explicitly names it as something that 'must keep working unchanged': handleCalculate's DeepSeek-integration branch (h.deepseek != nil && masterpiece mode) and handleMarketFeedback's actual AnalyzeMarketFeedback success path have zero test coverage anywhere in the repository — every handler-package fixture constructs NewAPIHandler with a nil DeepSeek client, and there is no deepseek_test.go at all. The claim that these branches 'keep working unchanged' is true only by never being executed by any test.",
+  "clean_check": null,
+  "findings": [
+    {
+      "severity": "minor",
+      "category": "missing_coverage",
+      "location": "server/internal/handler/http.go:178-197 (handleCalculate, DeepSeek masterpiece branch) and :233 (handleMarketFeedback's h.deepseek.AnalyzeMarketFeedback success path); no test file exercises either with a configured DeepSeek client",
+      "issue": "tasks/6.md's Edge Cases section explicitly calls out: 'handleMarketFeedback's existing h.deepseek == nil branch (503) and handleCalculate's DeepSeek-integration branch must keep working unchanged — only the owner-resolution step before them changes.' The 503 branch is tested (TestHandleUsers_WithAccess_200_OwnerScoped's 'POST /market-feedback 503, а не 404' subtest). The actual DeepSeek-integration branches are not: grep across server/internal/handler/*_test.go and server/internal/service/*_test.go for 'deepseek'/'DeepSeek' finds only http_test.go, and every routeFixture/newRouteFixture construction passes NewAPIHandler(..., nil) — deepseek is always nil in every handler test. There is also no server/internal/service/deepseek_test.go at all. So the acceptance-criteria/edge-case claim 'only owner-resolution changed, these branches keep working' is asserted by the task text but never checked by any test with the branch actually taken. This predates Task 6 (the branch logic itself is untouched by this task's diff) and closing it fully is out of this task's scope, but it means a future regression in the owner-resolution interaction with these branches specifically (e.g. userID passed to h.costing.GetUserSettings inside the masterpiece branch, or to handleMarketFeedback's settings fallback) would not be caught by anything in this suite.",
+      "recommendation": "Not blocking for Task 6, but worth a follow-up: add a fixture variant that constructs NewAPIHandler with a stub/fake DeepSeekClient (an interface seam would be needed if DeepSeekClient is a concrete struct — check service/deepseek.go for whether AnalyzeMarketFeedback is already behind an interface APIHandler could accept) and one integration test asserting that POST chats/{id}/calculate with calculation_mode=masterpiece and a configured DeepSeek client (a) still resolves userID from the session identity, not any other channel, and (b) populates result.AIFeedback from the stub. Concrete assertion: `if result.AIFeedback == nil { t.Fatal(...) }` plus a user_id/owner check identical in spirit to the other WithAccess subtests."
+    }
+  ],
+  "designRoundFindingsVerification": [
+    {
+      "designFinding": "Major — access_test.go TestUsersRoutesAreClosedByAccessChain and middleware_test.go TestRequireAccess_AdminWithoutFlagPasses used legacy URLs and bare 200 assertions for the access-granted case",
+      "verification": "CONFIRMED FIXED. Read both tests in full post-implementation. TestUsersRoutesAreClosedByAccessChain (access_test.go:877-917) now requests path \"/api/v1/users/chats\" (new no-segment form), seeds fixture.seedChat(\"petrov\", \"chat-petrov\", ...) directly into the store (bypassing the route under test), and for the wantStatus==200 case decodes the body and asserts payload.Items[0].UserID==\"petrov\" && payload.Items[0].ID==\"chat-petrov\" — not a bare status check. TestRequireAccess_AdminWithoutFlagPasses (middleware_test.go:814-834) does the identical pattern: new URL, fixture.seedChat(\"RoGogDBD\", \"chat-admin\", ...), and asserts payload.Items[0].UserID==\"RoGogDBD\" && ID==\"chat-admin\". Both would fail if owner resolution reverted to reading from the URL or returned the wrong owner's data — genuine litmus pass, not just a URL-shape fix that reintroduced a weaker assertion."
+    },
+    {
+      "designFinding": "Minor — openapi.yaml has zero test coverage, accepted as-is",
+      "verification": "CONFIRMED NO REGRESSION. grep -rn openapi across server/**/*.go returns zero hits (still true post-implementation) — no test references, parses, or silently depends on openapi.yaml. Manually diffed server/api/openapi.yaml against HEAD: the five /api/v1/users/{userID}/... paths are correctly renamed to drop the segment (and their `parameters:` userID entries removed), and the four Task-5 /api/v1/access/* + /api/v1/admin/* paths are present. This matches tasks/6.md's 'What to do' section. Gap remains real but is unchanged from the design round's assessment — nothing new to flag."
+    },
+    {
+      "designFinding": "Minor — DELETE-foreign-chat-id subtest in TestHandleUsers_ForeignOwnerUnreachable was coincidentally green pre-implementation for an unrelated reason; implementer claims mutation M3 (breaking MemoryRepository.DeleteChat's owner scoping) now makes it fail",
+      "verification": "CONFIRMED FIXED, reproduced myself rather than trusting the report. Edited server/internal/repository/memory.go's DeleteChat to scan across all owners' chatsByID maps for a matching chatID instead of scoping by the passed-in userID (i.e. removed the ownership check). Ran `go test ./internal/handler/... -run TestHandleUsers_ForeignOwnerUnreachable -v`: exactly the 'идентификатор чужого чата на удалении' subtest failed (got 204 instead of 404), all 5 sibling subtests in the same test function stayed green — precise blast radius matching the claim. Reverted via git checkout and confirmed `git diff --stat` on memory.go was empty afterward (byte-identical, and this file had no pre-existing uncommitted task-6 changes to lose)."
+    },
+    {
+      "designFinding": "Minor — TestHandleUsers_NoAccess_403 should also assert the attacker's (ivanov's) own space stayed empty, not just the victim's",
+      "verification": "CONFIRMED PRESENT. http_test.go:393-397: after the loop of three 403 assertions, the test calls `fixture.assertUntouched(\"petrov\", \"chat-petrov\", before, 1)` (victim untouched, as before) followed by a new `fixture.assertUntouched(\"ivanov\", \"chat-petrov\", nil, 0)` with an explanatory comment ('И в собственном пространстве Иванова тоже ничего не появилось: реализация, которая сначала пишет от имени вызывающего, а отказывает потом, отличалась бы только этим.') — exactly the hardening the design round asked for."
+    }
+  ],
+  "mutationReproductions": [
+    {
+      "mutation": "M3 — MemoryRepository.DeleteChat scans all owners instead of scoping by userID",
+      "selfReported": "Should fail exactly the DELETE-foreign-chat-id subtest",
+      "reproducedIndependently": true,
+      "result": "CONFIRMED as claimed. See designRoundFindingsVerification entry above for detail. File reverted byte-identical (confirmed via empty git diff --stat)."
+    },
+    {
+      "mutation": "M4 — legacy URL tolerated by stripping the extra leading segment",
+      "selfReported": "Should fail all 10 TestRegisterRoutes_LegacyUserIDSegment_NotFound subtests",
+      "reproducedIndependently": true,
+      "result": "CONFIRMED as claimed. Edited handleUsers in http.go to strip parts[0] and re-parse from parts[1] whenever parts[0] isn't a known resource name (settings/chats/market-feedback), replicating tolerant legacy-segment parsing. Ran `go test ./internal/handler/... -run TestRegisterRoutes_LegacyUserIDSegment_NotFound -v`: all 10 subtests failed. The failure output reproduced the actual live IDOR the test is designed to catch — e.g. GET /api/v1/users/petrov/chats as ivanov returned petrov's real settings (labor_minute_rate 99 — wait, correction: this was ivanov's own settings value in that particular subtest ordering, but other subtests returned petrov's chat/calculation data to ivanov), POST created a chat under the legacy-form target rather than 404, DELETE/restore succeeded instead of returning route-not-found. IMPORTANT CAVEAT: my first attempt to revert this mutation via `git checkout -- server/internal/handler/http.go` incorrectly reverted the file all the way to HEAD (the pre-Task-6, committed version), discarding Task 6's entire uncommitted 56-line diff, because git checkout restores to the last commit, not to my pre-mutation snapshot, when the file already had uncommitted changes before I touched it. I caught this via the tool's own file-change notice, reconstructed the exact original Task-6 content from my earlier full Read of the file, wrote it back, and verified via `git diff HEAD --stat` that the restored file matches the original task-6 diff exactly (56 lines: 39 insertions/17 deletions, same as the pre-mutation baseline) and that the full suite is green again. Documenting this so the orchestrator knows the mutation-reproduction methodology has a sharp edge in this environment (files with pre-existing uncommitted changes must be restored by content snapshot, not `git checkout`)."
+    },
+    {
+      "mutation": "M1 — full revert (owner back to parts[0], old indices)",
+      "selfReported": "Should fail multiple tests including both Finding-1 legacy tests",
+      "reproducedIndependently": false,
+      "result": "Not independently re-run as a deliberate mutation in this session (I have exactly 2 reproductions required), but its blast radius is already corroborated by the design-round reviewer's own verification run against the actual pre-implementation code (which IS this exact revert): TestHandleUsers_WithAccess_200_OwnerScoped failed entirely, TestHandleUsers_ForeignOwnerUnreachable failed 5/6 subtests, TestRegisterRoutes_LegacyUserIDSegment_NotFound failed all 10/10 — recorded in test-reviewer-design-1.json's verificationRun field. Consistent with the claim."
+    },
+    {
+      "mutation": "M2 — ?user_id= query param overrides session owner",
+      "selfReported": "Should fail the WithAccess query subtest + 2 ForeignOwner subtests",
+      "reproducedIndependently": false,
+      "result": "Not executed. Corroborated by code reading: handleUsers (http.go) never calls r.URL.Query() anywhere in the current implementation, so no code path currently reads a user_id query parameter as an owner override — the claim that adding such a read would flip these three query-based subtests is structurally consistent with what those subtests assert (they seed two owners with distinguishable data and check the response reflects the session owner regardless of a foreign user_id in the query string)."
+    },
+    {
+      "mutation": "M5 — index-shift typo (restore passes wrong parts index as chat id)",
+      "selfReported": "Should fail the WithAccess restore subtest",
+      "reproducedIndependently": false,
+      "result": "Not executed. Corroborated by code reading: the restore case in handleUsers's switch correctly passes parts[1] as chatID (`h.handleRestoreChat(w, r, userID, parts[1])` at http.go, matching the post-shift indexing scheme applied uniformly across all seven route shapes). A typo'd index would pass a different string as chatID, and RestoreChat would either 404 on a nonexistent id or restore the wrong chat — plausible failure mode matching the claim, structurally consistent with the single restore assertion in TestHandleUsers_WithAccess_200_OwnerScoped."
+    }
+  ],
+  "metrics": {
+    "filesReviewed": 5,
+    "litmusTest": {
+      "checked": 5,
+      "passed": 5,
+      "failed": 0,
+      "notes": "All 5 TDD-anchor test functions in http_test.go pass the litmus test post-implementation: full suite is green against real MariaDB, and 2 of the 5 implementer-claimed mutations were independently reproduced and confirmed to flip exactly the claimed tests/subtests red while leaving siblings green (precise, not overly brittle). A 3rd mutation (full revert, M1) is corroborated via the design-round reviewer's own recorded verification run against the pre-implementation code. 2 mutations (M2, M5) were assessed by code reading only, not executed."
+    },
+    "coverageAssessment": "adequate",
+    "pyramidBalance": {
+      "unit": 0,
+      "integration": 5,
+      "e2e": 0,
+      "assessment": "healthy for this task's scope (route wiring / middleware composition / cross-owner isolation is inherently an integration concern, using the real BuildRoutes assembly and real MemoryRepository) — same assessment as the design round. Not healthy in the adjacent, out-of-scope area: the DeepSeek-integration branches in handleCalculate/handleMarketFeedback have zero coverage of any kind (unit or integration), a pre-existing gap this task's own Edge Cases section names but does not close."
+    }
+  },
+  "verificationRun": {
+    "fullSuiteCommand": "docker run --rm --network host -v /home/makar/PoshivOn/server:/app -w /app -e TEST_DB_DSN=... golang:1.25-alpine go test ./...",
+    "fullSuiteResult": "All packages PASS (cmd, internal/auth, internal/config, internal/handler, internal/repository, internal/service). Confirmed both before and after the two mutation-reproduction/revert cycles."
+  }
+}

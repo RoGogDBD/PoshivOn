@@ -24,44 +24,67 @@ func (h *APIHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/users/", h.handleUsers)
 }
 
+// handleUsers разбирает адрес маршрутов владельца и передаёт запрос дальше.
+//
+// Сегмента владельца в адресе больше нет (Decision 6, US-15): раньше первым сегментом шёл
+// `{userID}`, и он же становился владельцем данных — то есть любой вызывающий читал и писал
+// данные любого владельца, подставив чужой логин в адрес, а отзыв доступа (US-16) на этой
+// поверхности не имел никакого эффекта. Теперь владелец берётся из личности в контексте, и
+// других каналов не остаётся: `CreateChatInput` и `OrderInput` полей владельца не содержат,
+// а `decodeJSON` включает `DisallowUnknownFields`, поэтому лишний `user_id` в теле — 400.
+//
+// Лишний сегмент на месте прежнего `{userID}` (`/api/v1/users/ivanov/chats`) ни в одну ветку
+// switch не попадает и уходит в тот же 404 «route not found»: старая форма адреса не должна
+// ни работать, ни быть источником владельца.
 func (h *APIHandler) handleUsers(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/users/")
 	parts := splitPath(path)
 
-	if len(parts) < 2 {
+	if len(parts) == 0 {
 		writeAPIError(w, http.StatusNotFound, "route not found")
 		return
 	}
 
-	userID := parts[0]
-	resource := parts[1]
+	// Личность кладёт в контекст RequireAuth, а RequireAccess перед этим обработчиком уже
+	// подтвердил её право (routes.go), поэтому пустой результат недостижим при правильно
+	// собранной цепочке. Проверка всё равно есть и закрытая — по той же причине, что и в
+	// resolveAccessState: ошибка сборки маршрутов не должна превращаться в работу от имени
+	// никого. Без неё пустой логин ушёл бы в CostingService и вернулся 400 «invalid
+	// argument», то есть выглядел бы ошибкой запроса, а не ошибкой конфигурации сервера.
+	identity, ok := requireIdentity(w, r)
+	if !ok {
+		return
+	}
+	userID := identity.Login
+
+	resource := parts[0]
 
 	switch {
-	case resource == "settings" && len(parts) == 2 && r.Method == http.MethodPost:
+	case resource == "settings" && len(parts) == 1 && r.Method == http.MethodPost:
 		h.handleUpsertSettings(w, r, userID)
 		return
-	case resource == "settings" && len(parts) == 2 && r.Method == http.MethodGet:
+	case resource == "settings" && len(parts) == 1 && r.Method == http.MethodGet:
 		h.handleGetSettings(w, r, userID)
 		return
-	case resource == "chats" && len(parts) == 2 && r.Method == http.MethodPost:
+	case resource == "chats" && len(parts) == 1 && r.Method == http.MethodPost:
 		h.handleCreateChat(w, r, userID)
 		return
-	case resource == "chats" && len(parts) == 2 && r.Method == http.MethodGet:
+	case resource == "chats" && len(parts) == 1 && r.Method == http.MethodGet:
 		h.handleListChats(w, r, userID)
 		return
-	case resource == "chats" && len(parts) == 3 && r.Method == http.MethodDelete:
-		h.handleDeleteChat(w, r, userID, parts[2])
+	case resource == "chats" && len(parts) == 2 && r.Method == http.MethodDelete:
+		h.handleDeleteChat(w, r, userID, parts[1])
 		return
-	case resource == "chats" && len(parts) == 4 && parts[3] == "restore" && r.Method == http.MethodPost:
-		h.handleRestoreChat(w, r, userID, parts[2])
+	case resource == "chats" && len(parts) == 3 && parts[2] == "restore" && r.Method == http.MethodPost:
+		h.handleRestoreChat(w, r, userID, parts[1])
 		return
-	case resource == "chats" && len(parts) == 4 && parts[3] == "calculate" && r.Method == http.MethodPost:
-		h.handleCalculate(w, r, userID, parts[2])
+	case resource == "chats" && len(parts) == 3 && parts[2] == "calculate" && r.Method == http.MethodPost:
+		h.handleCalculate(w, r, userID, parts[1])
 		return
-	case resource == "chats" && len(parts) == 4 && parts[3] == "calculations" && r.Method == http.MethodGet:
-		h.handleListChatCalculations(w, r, userID, parts[2])
+	case resource == "chats" && len(parts) == 3 && parts[2] == "calculations" && r.Method == http.MethodGet:
+		h.handleListChatCalculations(w, r, userID, parts[1])
 		return
-	case resource == "market-feedback" && len(parts) == 2 && r.Method == http.MethodPost:
+	case resource == "market-feedback" && len(parts) == 1 && r.Method == http.MethodPost:
 		h.handleMarketFeedback(w, r, userID)
 		return
 	default:

@@ -1,0 +1,56 @@
+{
+  "status": "changes_required",
+  "mode": "design",
+  "summary": "The 5 new TDD-anchor tests in http_test.go are well-built integration tests against the real BuildRoutes() assembly, using owner-marker discrimination (labor_minute_rate 18 vs 99, chat-title presence checks) instead of bare status codes, and assertUntouched (real store reads via routeFixture.costing, bypassing the routes under test) on every negative path. Ran the full suite against real MariaDB: 401/403 tests are green today (middleware-order artifact, correctly disclosed as regression locks, not TDD redness); the 200/201/204/400-body/query tests and the legacy-route test are red today, and the legacy-route test is red for exactly the right reason — it currently reproduces today's live IDOR (200/201/204/400 instead of 404) rather than accidentally asserting the vulnerable behavior as expected. Three-channel IDOR coverage (URL via foreign resource id, body via unknown user_id field, query string) is genuinely present across TestHandleUsers_ForeignOwnerUnreachable and TestRegisterRoutes_LegacyUserIDSegment_NotFound. Findings below are about (a) one subtest that is coincidentally green for the wrong reason today, (b) a real risk that two PRE-EXISTING tests using legacy-shaped URLs will flip from passing to failing once Task 6 lands and could be 'fixed' by asserting the new (wrong) 404 instead of correcting the URL, and (c) an acceptance criterion (openapi.yaml) with zero automated coverage.",
+  "clean_check": null,
+  "findings": [
+    {
+      "severity": "major",
+      "category": "anti_pattern",
+      "location": "server/internal/handler/access_test.go:872-902 (TestUsersRoutesAreClosedByAccessChain) and server/internal/handler/middleware_test.go:810-824 (TestRequireAccess_AdminWithoutFlagPasses)",
+      "issue": "Both tests hit legacy-shaped URLs that still carry an owner-login path segment (\"/api/v1/users/petrov/chats\", \"/api/v1/users/RoGogDBD/chats\") and assert HTTP 200 for the case where the caller has access. Once http.go is rewritten per Task 6 (resource := parts[0] instead of parts[1]), these exact URLs will parse to resource==\"petrov\"/\"RoGogDBD\" — which matches no case in the switch — and fall through to the 404 default. Both tests will go from green to red purely because of the URL string, not because access control broke. The implementer has already disclosed this and flagged it for a round-2 update, which is the right call, but the failure mode to guard against is specific: if the URL isn't corrected to the new no-segment form (\"/api/v1/users/chats\") and someone instead 'fixes' the test by changing the expected status from 200 to 404, the test would silently start asserting that a fully-authorized, access-granted user gets rejected — i.e., it would encode a regression as the new expected behavior instead of catching it. That is a textbook 'test that hides a bug' if the round-2 edit goes the wrong direction.",
+      "recommendation": "When Task 6's implementation lands, update these two call sites to the new URL shape (\"/api/v1/users/chats\") and keep the existing wantStatus 200 assertion unchanged for the access-granted case — do not touch the expected status. Treat a red run here after implementation as a compile/route-shape problem to fix in the test, never as a signal to relax the assertion. Two other tests using legacy-shaped URLs (access_test.go:906-922 TestUsersMutatingRoutesRequireSameOrigin, and access_test.go:1034-1077 TestWriteAPIDomainError_NoInternalTextLeak's \"/api/v1/users/ivanov/chats\" case at line 1062) are NOT at this risk — both fail earlier in the middleware chain (RequireSameOrigin / RequireAuth->RequireAccess repository error) before route-shape parsing matters, so their assertions stay valid regardless of URL segment. Worth updating for consistency but not a correctness risk like the two above."
+    },
+    {
+      "severity": "minor",
+      "category": "missing_coverage",
+      "location": "Acceptance Criteria (tasks/6.md): \"server/api/openapi.yaml documents the five /api/v1/users/* routes... and the four /api/v1/access/*+/api/v1/admin/* routes\"",
+      "issue": "No test file (http_test.go, access_test.go, or elsewhere under server/) references or parses server/api/openapi.yaml — confirmed by grep across server/**/*.go, zero hits for \"openapi\". This acceptance-criteria line item has no automated enforcement; if the implementer forgets to update the yaml, or updates it inconsistently with the actual route rewrite, nothing in the test suite will catch it.",
+      "recommendation": "This mirrors an existing gap in the codebase (no prior openapi.yaml validation exists either), so it's not a regression introduced by this task, but flag it explicitly at review time: manually diff server/api/openapi.yaml against the five renamed paths and four new Task-5 paths listed in tasks/6.md's \"What to do\" section during code review, since no test will do it automatically. If budget allows, a lightweight test that loads openapi.yaml and asserts the five old {userID} path strings are absent and the new ones present would close this gap cheaply (no need for full schema validation)."
+    },
+    {
+      "severity": "minor",
+      "category": "anti_pattern",
+      "location": "server/internal/handler/http_test.go:634-646 (subtest \"идентификатор чужого чата на удалении\" inside TestHandleUsers_ForeignOwnerUnreachable)",
+      "issue": "Ran `go test ./internal/handler/... -run 'TestHandleUsers|TestRegisterRoutes_Legacy' -v` against real MariaDB: this specific subtest already PASSES today, unlike its five sibling subtests in the same test function (all of which correctly fail with 404 route-not-found today). It passes today for an accidental reason: under the current (unimplemented) http.go, DELETE /api/v1/users/chats/chat-petrov parses as userID=\"chats\", resource=\"chat-petrov\" — matching no switch case — producing today's generic \"route not found\" 404. That happens to be the same status code the correct post-fix behavior will also produce (DeleteChat returning ErrNotFound because chat-petrov isn't ivanov's chat), but for a completely different code path. The test provides no TDD-redness signal for this one assertion the way the other five in the same function do.",
+      "recommendation": "Not a defect in the test's post-implementation value (it will correctly validate ownership-scoped deletion once the fix lands), but worth a one-line comment alongside the existing block comment noting this specific case is coincidentally green pre-implementation, so a reviewer running the suite doesn't mistake the accidental pass for evidence the delete-scoping logic already works. No code change required."
+    },
+    {
+      "severity": "minor",
+      "category": "missing_coverage",
+      "location": "server/internal/handler/http_test.go:372-395 (TestHandleUsers_NoAccess_403)",
+      "issue": "assertUntouched is called once at the end, checking only petrov's stored chat titles and calc count. It correctly proves the three requests (as ivanov, who lacks access) didn't mutate petrov's data. It does not check that ivanov's own space stayed empty. In this specific test that gap is inert today (none of the three sampled routes — GET chats, GET settings, POST calculate on chat-petrov — would write into ivanov's own namespace even under a partial RequireAccess bypass, since the calculate call targets a chat ivanov doesn't own), so no bug currently slips through undetected. But the asymmetry (checking the victim's data, not the attacker's own space) means a hypothetical future edit to this test's route list (e.g., adding a chat-creation case) would need a second untouched-check to stay meaningful.",
+      "recommendation": "Optional hardening, not blocking: add `if titles := fixture.storedChatTitles(\"ivanov\"); len(titles) != 0 { t.Errorf(...) }` after the loop to also assert ivanov created nothing of his own. Cheap insurance if this test's route list ever grows to include a write route that targets the caller's own namespace."
+    }
+  ],
+  "metrics": {
+    "filesReviewed": 2,
+    "litmusTest": {
+      "checked": 5,
+      "passed": 5,
+      "failed": 0,
+      "notes": "Litmus test applied to each of the 5 new TDD-anchor test functions as a whole (would each fail if the owner-resolution fix were reverted to reading userID from the URL segment / from body / from query). All 5 pass this test. One individual subtest within TestHandleUsers_ForeignOwnerUnreachable (DELETE on a foreign chat id) is green today for an unrelated, coincidental reason rather than proving anything yet — see findings — but will carry real signal once implementation lands, so it is not counted as a litmus failure."
+    },
+    "coverageAssessment": "adequate",
+    "pyramidBalance": {
+      "unit": 0,
+      "integration": 5,
+      "e2e": 0,
+      "assessment": "healthy — this task is entirely about route wiring, middleware composition, and cross-owner data isolation, which is inherently an integration concern (real ServeMux from BuildRoutes, real in-memory repository, stub-only session resolver per Task 4/5 precedent). No unit-test gap: there is no isolable pure-logic unit here that unit tests would cover better."
+    }
+  },
+  "verificationRun": {
+    "command": "docker run --rm --network host -v /home/makar/PoshivOn/server:/app -w /app -e TEST_DB_DSN=... golang:1.25-alpine go test ./internal/handler/... -run 'TestHandleUsers|TestRegisterRoutes_Legacy' -v",
+    "result": "TestHandleUsers_NoCookies_401: PASS (all 3 subtests) — pre-existing middleware order, correctly disclosed as regression lock, not TDD redness.\nTestHandleUsers_NoAccess_403: PASS (all 3 subtests) — same reason.\nTestHandleUsers_WithAccess_200_OwnerScoped: FAIL as expected (404 route-not-found on new URL shapes; production code unchanged).\nTestHandleUsers_ForeignOwnerUnreachable: FAIL on 5/6 subtests as expected; 1/6 (DELETE on foreign chat id) passes coincidentally — see findings.\nTestRegisterRoutes_LegacyUserIDSegment_NotFound: FAIL on all 10 subtests, and critically the failure output shows the ACTUAL vulnerability firing today (e.g. GET legacy chats returns 200 with petrov's real chat data including the 'секрет петрова' title to ivanov's session; POST creates a chat under petrov's identity; DELETE/restore succeed) — confirms the test is red for the right reason: it currently demonstrates the live IDOR, and its assertions (404 / 'route not found' / assertUntouched) target the correct post-fix behavior, not today's vulnerable behavior."
+  }
+}

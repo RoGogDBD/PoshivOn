@@ -41,6 +41,25 @@ func IdentityFromContext(ctx context.Context) (Identity, bool) {
 	return identity, ok
 }
 
+// requireIdentity достаёт вызывающего из контекста для обработчика, стоящего за RequireAuth.
+// Возвращает false, если ответ уже отправлен.
+//
+// Пустой результат означает неправильно собранную цепочку (маршрут без RequireAuth впереди) —
+// отвечаем как на неопознанную сессию, а не работаем с пустым логином: ошибка сборки
+// маршрутов не должна превращаться в действие от имени никого.
+//
+// Функция общая для AccessHandler и APIHandler намеренно: правило «нет личности — 401, а не
+// работа от имени никого» живёт в одном месте, как и его родственник resolveAccessState для
+// middleware. Две копии разошлись бы ровно тогда, когда одну из них поправят.
+func requireIdentity(w http.ResponseWriter, r *http.Request) (Identity, bool) {
+	identity, ok := IdentityFromContext(r.Context())
+	if !ok || strings.TrimSpace(identity.Login) == "" {
+		writeAPIError(w, http.StatusUnauthorized, sessionIdentityMissingCode)
+		return Identity{}, false
+	}
+	return identity, true
+}
+
 // RequireAuth пропускает дальше только запрос с опознанной сессией и кладёт личность
 // в контекст. Причины отказа проходят наружу теми же слагами, что и раньше, — на них
 // держится retry клиента.

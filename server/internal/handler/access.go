@@ -169,15 +169,9 @@ func (h *AccessHandler) handleSetAccess(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// identity достаёт вызывающего из контекста. Пустой результат означает неправильно
-// собранную цепочку (маршрут без RequireAuth впереди) — отвечаем как на неопознанную
-// сессию, а не работаем с пустым логином: ошибка сборки маршрутов не должна превращаться
-// в действие от имени никого.
+// identity достаёт вызывающего из контекста. Правило отказа — общее для всех обработчиков
+// за RequireAuth и живёт в middleware.go (requireIdentity): после Task 6 тот же вопрос
+// решает APIHandler.handleUsers, и второй копии проверки в дереве быть не должно.
 func (h *AccessHandler) identity(w http.ResponseWriter, r *http.Request) (Identity, bool) {
-	identity, ok := IdentityFromContext(r.Context())
-	if !ok || strings.TrimSpace(identity.Login) == "" {
-		writeAPIError(w, http.StatusUnauthorized, sessionIdentityMissingCode)
-		return Identity{}, false
-	}
-	return identity, true
+	return requireIdentity(w, r)
 }

@@ -18,15 +18,13 @@ paths:
                 type: string
                 example: ok
 
-  /api/v1/users/{userID}/settings:
-    parameters:
-      - in: path
-        name: userID
-        required: true
-        schema:
-          type: string
+  # Маршруты владельца данных. Сегмента {userID} в адресе нет намеренно: владелец берётся из
+  # сессии (Decision 6), поэтому обратиться к чужим данным через адрес нельзя в принципе.
+  # Отсюда же 401/403 на каждой операции — префикс закрыт цепочкой
+  # RequireSameOrigin → RequireAuth → RequireAccess.
+  /api/v1/users/settings:
     post:
-      summary: Create or update user pricing settings
+      summary: Create or update pricing settings of the authenticated user
       requestBody:
         required: true
         content:
@@ -38,8 +36,12 @@ paths:
           description: Settings saved
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
     get:
-      summary: Get user pricing settings
+      summary: Get pricing settings of the authenticated user
       responses:
         '200':
           description: Settings returned
@@ -47,18 +49,16 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserSettings'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
 
-  /api/v1/users/{userID}/chats:
-    parameters:
-      - in: path
-        name: userID
-        required: true
-        schema:
-          type: string
+  /api/v1/users/chats:
     post:
-      summary: Create chat for user
+      summary: Create chat for the authenticated user
       requestBody:
         required: true
         content:
@@ -74,8 +74,12 @@ paths:
                 $ref: '#/components/schemas/Chat'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
     get:
-      summary: List user chats
+      summary: List chats of the authenticated user
       responses:
         '200':
           description: Chats returned
@@ -89,14 +93,13 @@ paths:
                     items:
                       $ref: '#/components/schemas/Chat'
                 required: [items]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
-  /api/v1/users/{userID}/chats/{chatID}/calculate:
+  /api/v1/users/chats/{chatID}/calculate:
     parameters:
-      - in: path
-        name: userID
-        required: true
-        schema:
-          type: string
       - in: path
         name: chatID
         required: true
@@ -119,16 +122,15 @@ paths:
                 $ref: '#/components/schemas/CalculationResult'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
 
-  /api/v1/users/{userID}/chats/{chatID}/calculations:
+  /api/v1/users/chats/{chatID}/calculations:
     parameters:
-      - in: path
-        name: userID
-        required: true
-        schema:
-          type: string
       - in: path
         name: chatID
         required: true
@@ -149,14 +151,12 @@ paths:
                     items:
                       $ref: '#/components/schemas/CalculationResult'
                 required: [items]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
-  /api/v1/users/{userID}/market-feedback:
-    parameters:
-      - in: path
-        name: userID
-        required: true
-        schema:
-          type: string
+  /api/v1/users/market-feedback:
     post:
       summary: Analyze calculation parameters with DeepSeek and estimate RU-market fit
       requestBody:
@@ -194,10 +194,101 @@ paths:
           description: Image analysis result
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '429':
           description: DeepSeek rate limit exceeded
         '503':
           description: DeepSeek integration unavailable
+
+  # Контур доступа. /api/v1/access/ закрыт только RequireAuth: сюда обращается именно тот,
+  # у кого доступа ещё нет, — иначе заявку было бы невозможно подать.
+  /api/v1/access/me:
+    get:
+      summary: Access state of the authenticated user
+      description: >-
+        has_access — итоговое право (Decision 10): администратор со снятым флагом видит
+        рабочий интерфейс. contact_email приходит из конфигурации сервера (CONTACT_EMAIL).
+      responses:
+        '200':
+          description: Access state returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessState'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/access/requests:
+    post:
+      summary: Submit an access request on behalf of the authenticated user
+      description: >-
+        Тела у запроса нет: заявитель — это владелец сессии. Логин в теле позволил бы подать
+        заявку от чужого имени (US-15).
+      responses:
+        '201':
+          description: Request created
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  # /api/v1/admin/ дополнительно закрыт RequireAdmin: роль решает всё, флаг has_access здесь
+  # ни при чём.
+  /api/v1/admin/users:
+    get:
+      summary: List all users with their roles, access flags and request statuses
+      responses:
+        '200':
+          description: Users returned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/UserRecord'
+                required: [items]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/admin/users/{login}/access:
+    parameters:
+      - in: path
+        name: login
+        required: true
+        schema:
+          type: string
+    post:
+      summary: Grant or revoke access for a user
+      description: >-
+        Кто принял решение, берётся из сессии администратора, а не из тела запроса.
+        Отсутствующее поле granted — 400, а не «снять доступ».
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetAccessInput'
+      responses:
+        '204':
+          description: Access flag updated
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
 components:
   schemas:
@@ -357,6 +448,64 @@ components:
          price_per_unit, subtotal, discount_percent, discount_amount, total,
          applied_surcharges, applied_discount_min, applied_discount_max, created_at]
 
+    Role:
+      type: string
+      enum: [user, admin]
+
+    UserRecord:
+      type: object
+      properties:
+        login:
+          type: string
+        display_name:
+          type: string
+        email:
+          type: string
+        role:
+          $ref: '#/components/schemas/Role'
+        has_access:
+          type: boolean
+          description: Сырой флаг колонки, без учёта роли — админскую галочку клиент рисует по role.
+        request_status:
+          type: string
+          enum: ['', pending, approved, rejected]
+        requested_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+      required: [login, display_name, email, role, has_access, request_status]
+
+    AccessState:
+      type: object
+      properties:
+        login:
+          type: string
+        display_name:
+          type: string
+        email:
+          type: string
+        role:
+          $ref: '#/components/schemas/Role'
+        has_access:
+          type: boolean
+          description: Итоговое право — has_access || role == admin (Decision 10).
+        request_status:
+          type: string
+          enum: ['', pending, approved, rejected]
+        contact_email:
+          type: string
+      required: [login, display_name, email, role, has_access, request_status, contact_email]
+
+    SetAccessInput:
+      type: object
+      properties:
+        granted:
+          type: boolean
+      required: [granted]
+
     ErrorResponse:
       type: object
       properties:
@@ -367,6 +516,28 @@ components:
   responses:
     BadRequest:
       description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: >-
+        Сессия отсутствует или не опознана. Тело содержит машиночитаемый код причины
+        (access_cookie_missing, refresh_cookie_missing, session_not_found, session_expired,
+        access_expired, access_mismatch, session_identity_missing) — на нём построен повтор
+        запроса на клиенте.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Доступ не выдан, роли недостаточно или запрос пришёл не с нашей страницы.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: Заявка уже на рассмотрении либо доступ уже выдан.
       content:
         application/json:
           schema:

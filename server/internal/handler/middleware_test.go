@@ -807,19 +807,29 @@ func TestRequireSameOrigin_MutatingMethodsCovered(t *testing.T) {
 // TestRequireAccess_AdminWithoutFlagPasses: администратор с has_access=false проходит на
 // закрытые RequireAccess маршруты (US-14, Decision 10) — тот же инвариант, что в юнит-тесте
 // выше, но на реально навешенной цепочке.
+//
+// Проверяется не только 200, но и то, что вернулись данные администратора: после Task 6
+// адрес не содержит владельца, и «маршрут пропустил» без проверки содержимого не отличалось
+// бы от «маршрут ответил чем угодно».
 func TestRequireAccess_AdminWithoutFlagPasses(t *testing.T) {
 	fixture := newRouteFixture(t, fixtureOptions{users: []service.UserRecord{
 		userRecord("RoGogDBD", service.RoleAdmin, false),
 	}})
+	fixture.seedChat("RoGogDBD", "chat-admin", "чат администратора")
 
 	recorder := fixture.do(apiRequest{
 		method: http.MethodGet,
-		path:   "/api/v1/users/RoGogDBD/chats",
+		path:   "/api/v1/users/chats",
 		as:     "RoGogDBD",
 	})
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("статус = %d, ожидался 200 (тело: %s)", recorder.Code, recorder.Body.String())
+	}
+	var payload chatsPayload
+	decodeBody(t, recorder, &payload)
+	if len(payload.Items) != 1 || payload.Items[0].UserID != "RoGogDBD" || payload.Items[0].ID != "chat-admin" {
+		t.Fatalf("маршрут пропустил, но вернул не данные администратора: %s", recorder.Body.String())
 	}
 }
 

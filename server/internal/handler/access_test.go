@@ -54,8 +54,13 @@ type routeFixture struct {
 	mux      *http.ServeMux
 	users    *stubUserRepo
 	requests *stubRequestRepo
-	origin   string
-	scheme   string
+	// costing — то же хранилище калькулятора, что подключено к маршрутам. Нужно тестам
+	// /api/v1/users/**: предусловие («у Петрова есть чат») и утверждение («чат Петрова не
+	// тронут») не должны проходить через тот самый обработчик, который тест и проверяет, —
+	// иначе согласованно неверная реализация выглядела бы согласованно верной.
+	costing *repository.MemoryRepository
+	origin  string
+	scheme  string
 }
 
 func newRouteFixture(t *testing.T, options fixtureOptions) *routeFixture {
@@ -105,6 +110,7 @@ func newRouteFixture(t *testing.T, options fixtureOptions) *routeFixture {
 		mux:      mux,
 		users:    userRepo,
 		requests: requestRepo,
+		costing:  costingRepo,
 		origin:   origin,
 		scheme:   scheme,
 	}
@@ -863,11 +869,17 @@ func TestSetAccess_EmptyBody400(t *testing.T) {
 // middleware написанными, но ни к чему не подключёнными, и /api/v1/users/ до сих пор
 // открыт. Проверяются все три состояния сразу: без кук 401, с куками без доступа 403,
 // с доступом — обычный ответ маршрута (Decision 6, US-16).
+//
+// Адрес — новой формы, без сегмента владельца (Task 6). Ветка «пользователь с доступом»
+// проверяет не только 200, но и содержимое ответа: 404 «route not found» здесь возможен по
+// совершенно другой причине (адрес не разобран), и утверждение «доступ выдан — маршрут
+// работает» без проверки данных выродилось бы в «сервер что-то ответил».
 func TestUsersRoutesAreClosedByAccessChain(t *testing.T) {
 	fixture := newRouteFixture(t, fixtureOptions{users: []service.UserRecord{
 		userRecord("ivanov", service.RoleUser, false),
 		userRecord("petrov", service.RoleUser, true),
 	}})
+	fixture.seedChat("petrov", "chat-petrov", "чат петрова")
 
 	cases := []struct {
 		name       string
@@ -884,12 +896,21 @@ func TestUsersRoutesAreClosedByAccessChain(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			recorder := fixture.do(apiRequest{
 				method: http.MethodGet,
-				path:   "/api/v1/users/petrov/chats",
+				path:   "/api/v1/users/chats",
 				as:     testCase.as,
 			})
 
 			if recorder.Code != testCase.wantStatus {
 				t.Fatalf("статус = %d, ожидался %d (тело: %s)", recorder.Code, testCase.wantStatus, recorder.Body.String())
+			}
+			if testCase.wantStatus != http.StatusOK {
+				return
+			}
+
+			var payload chatsPayload
+			decodeBody(t, recorder, &payload)
+			if len(payload.Items) != 1 || payload.Items[0].UserID != "petrov" || payload.Items[0].ID != "chat-petrov" {
+				t.Fatalf("маршрут ответил 200, но не данными владельца сессии: %s", recorder.Body.String())
 			}
 		})
 	}
@@ -904,7 +925,7 @@ func TestUsersMutatingRoutesRequireSameOrigin(t *testing.T) {
 
 	recorder := fixture.do(apiRequest{
 		method:   http.MethodPost,
-		path:     "/api/v1/users/petrov/chats",
+		path:     "/api/v1/users/chats",
 		body:     `{"title":"новый чат"}`,
 		as:       "petrov",
 		noOrigin: true,
@@ -912,6 +933,9 @@ func TestUsersMutatingRoutesRequireSameOrigin(t *testing.T) {
 
 	if recorder.Code != http.StatusForbidden {
 		t.Fatalf("статус = %d, ожидался 403", recorder.Code)
+	}
+	if titles := fixture.storedChatTitles("petrov"); len(titles) != 0 {
+		t.Errorf("чат создан несмотря на отказ по Origin: %v", titles)
 	}
 }
 
@@ -1052,8 +1076,8 @@ func TestWriteAPIDomainError_NoInternalTextLeak(t *testing.T) {
 			},
 		},
 		{
-			name:    "GET /api/v1/users/{login}/chats",
-			request: apiRequest{method: http.MethodGet, path: "/api/v1/users/ivanov/chats", as: "ivanov"},
+			name:    "GET /api/v1/users/chats",
+			request: apiRequest{method: http.MethodGet, path: "/api/v1/users/chats", as: "ivanov"},
 		},
 	}
 
