@@ -1,0 +1,44 @@
+{
+  "status": "clean",
+  "summary": {
+    "totalFindings": 1,
+    "critical": 0,
+    "major": 0,
+    "minor": 1
+  },
+  "clean_check": "Full re-read of the three Task 8 files (client/src/components/AdminUsersSection.jsx, client/src/pages/Panel.jsx, client/src/utils/accessApi.js), plus their server-side dependency (server/internal/handler/access.go handleSetAccess, server/internal/service/access.go SetAccess/hasEffectiveAccess, server/internal/handler/middleware.go RequireAdmin/resolveAccessState) to verify the load-bearing claim in the task spec. Hunted: A01 Broken Access Control (client-side disabled-state guard vs server-side authority, admin-row escalation, IDOR via login parameter, isAdmin used only for rendering not as a security boundary), A03 XSS (no dangerouslySetInnerHTML anywhere in client/src, all row fields rendered through plain JSX interpolation which React auto-escapes), A05 Misconfiguration (CSRF: admin POST route confirmed wrapped by RequireSameOrigin in routes.go, out of Task 8 scope but verified not silently missing), A08 Data Integrity (no eval/JSON.parse of untrusted structures beyond the standard fetch().json(), no optimistic-state spoofing on the 204 response), A09 Logging (no console.log/debug/info of user data or tokens in any of the three files), and hardcoded-secrets grep (none present, VITE_YA_CLIENT_ID is a build-time public client id, not a secret). `npm run build` succeeds cleanly with no new warnings. The one item below is a code-quality nit, not an exploitable vulnerability, and is reported for completeness per audit instructions rather than as a gating issue.",
+  "findings": [
+    {
+      "severity": "minor",
+      "category": "best-practice",
+      "title": "handleToggle does not check an unmount guard before calling setUsers/setPendingLogin",
+      "description": "AdminUsersSection.jsx's mount-fetch effect uses a `cancelled` flag to avoid setState after unmount, but `handleToggle` (the checkbox onChange handler) has no equivalent guard. If a user clicks a non-admin row's checkbox and then navigates away (e.g. clicks another nav item) before the POST /api/v1/admin/users/{login}/access response arrives, the in-flight promise's `.then`/`catch`/`finally` will call setUsers/setNotice/setPendingLogin on an unmounted component.",
+      "location": "client/src/components/AdminUsersSection.jsx: handleToggle (around lines 74-89)",
+      "impact": "No security impact — this cannot be triggered by an attacker and does not leak or corrupt data (the component's state is simply discarded on unmount). At most it produces a React dev-console warning ('Can't perform a React state update on an unmounted component') and a harmless no-op state write.",
+      "recommendation": "Track a `cancelled`/mounted ref for the component (or an AbortController passed into setUserAccess) and check it before the three setState calls in handleToggle, mirroring the pattern already used in the mount effect.",
+      "cwe": "N/A"
+    }
+  ],
+  "verified_claims": {
+    "server_side_no_target_admin_guard": {
+      "verified": true,
+      "evidence": "server/internal/handler/access.go handleSetAccess calls h.access.SetAccess(ctx, login, *payload.Granted, identity.Login) with no check of the target user's role. server/internal/service/access.go SetAccess has an explicit comment stating it does NOT check that the caller is admin (relies on RequireAdmin middleware) and performs no check on the target's role either — it unconditionally calls userRepo.SetAccess(ctx, login, granted) for any existing login. server/internal/handler/middleware.go RequireAdmin only inspects state.Role (the CALLER's role from resolveAccessState/identity) via RequireAuth's session, never the {login} path parameter. So POST /api/v1/admin/users/{any-admin-login}/access from an admin caller reaches SetAccess and succeeds server-side, confirming the task spec's claim verbatim."
+    },
+    "client_disabled_state_is_the_only_guard": {
+      "verified": true,
+      "evidence": "In AdminUsersSection.jsx's row map, isAdminRow is computed per-row from that row's own `user.role === 'admin'` (never compared against the logged-in session's login), applied to every row including the current admin's own — matching the spec's explicit requirement to key off the row's role field, not identity comparison. When isAdminRow is true, the JSX renders `<input type=\"checkbox\" checked disabled />` with literally no onChange prop attached — not a no-op handler, no handler at all — so no code path in the component can ever invoke setUserAccess for an admin row from the rendered UI. Rows are keyed by `user.login` (the server's primary key for users, guaranteed unique), ruling out an index-based key/role misattribution across re-renders. login passed into setUserAccess always originates from the row's own `user.login` in the fetched list — never from a form field, URL param, or other user-editable input — and is further encodeURIComponent-escaped when built into the request path."
+    },
+    "optimistic_state_desync": {
+      "verified": true,
+      "evidence": "handleToggle awaits setUserAccess(login, granted) before calling setUsers to flip has_access; the local update only happens in the success path. On any error (network, 403, 404) the catch block sets an inline notice and does not touch the users array, so the checkbox (a controlled input bound to user.has_access) visually reverts to its pre-click value rather than showing a false 'granted' state. No optimistic-then-silently-wrong state is possible."
+    },
+    "isAdmin_not_used_as_security_boundary": {
+      "verified": true,
+      "evidence": "grep confirms `isAdmin` (Panel.jsx:355, derived from access?.role at bootstrap) is referenced only twice beyond its declaration: gating the nav button's render (line 627) and gating the 'users' section render branch (line 895, deliberately re-checked alongside activeSection so a stale activeSection value can't render the admin section for a non-admin). It is never used to skip a fetch, alter a request, or bypass any server round-trip — every admin data fetch (fetchAdminUsers) still goes through the real GET /api/v1/admin/users call, which the server independently gates with RequireAdmin."
+    },
+    "xss_and_logging": {
+      "verified": true,
+      "evidence": "No dangerouslySetInnerHTML anywhere under client/src. All user-supplied fields (display_name, login, email, request_status label) are interpolated via plain JSX expressions, relying on React's default escaping. No console.log/debug/info calls in AdminUsersSection.jsx, Panel.jsx, or accessApi.js."
+    }
+  }
+}

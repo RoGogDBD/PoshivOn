@@ -49,3 +49,30 @@ export const createAccessRequest = async () =>
   request("/api/v1/access/requests", {
     method: "POST",
   });
+
+// fetchAdminUsers — GET /api/v1/admin/users (только для роли admin).
+//
+// Отдаёт {items: [{login, display_name, email, role, has_access, request_status,
+// requested_at, created_at}]}. Список — все, кто хоть раз входил, а не только те, у кого
+// есть заявка. Не-админ сюда не попадает: маршрут закрыт RequireAdmin и ответит 403,
+// который прилетит вызывающему ошибкой со status === 403.
+export const fetchAdminUsers = async () =>
+  request("/api/v1/admin/users", {
+    method: "GET",
+  });
+
+// setUserAccess — POST /api/v1/admin/users/{login}/access.
+//
+// Ответ — 204 без тела (request() вернёт null), поэтому подтверждением служит сам факт
+// успешного запроса: новое значение флага вызывающий берёт из отправленного granted.
+// 404 — незнакомый login, 403 — вызывающий не админ.
+//
+// Сервер не отказывает, когда цель запроса — админ: RequireAdmin проверяет только роль
+// вызывающего. Запрет на снятие доступа у админов живёт на клиенте (Decision 10,
+// AdminUsersSection), и эта функция для админских строк просто не должна вызываться.
+export const setUserAccess = async (login, granted) =>
+  request(`/api/v1/admin/users/${encodeURIComponent(login)}/access`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ granted }),
+  });

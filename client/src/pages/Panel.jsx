@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { checkAuthStatus, fetchAuthProfile, logout } from "../utils/yandexAuth.js";
 import AccessRequestBanner from "../components/AccessRequestBanner.jsx";
+import AdminUsersSection from "../components/AdminUsersSection.jsx";
 import { fetchAccessState } from "../utils/accessApi.js";
 import {
   calculateInChat,
@@ -348,6 +349,10 @@ const Panel = () => {
     () => history.reduce((sum, item) => sum + (Number(item.total) || 0), 0),
     [history]
   );
+  // Роль берётся из уже полученного bootstrap-эффектом ответа /api/v1/access/me — отдельного
+  // запроса за identity здесь нет. Флаг решает только, что рендерить: доступ к самим
+  // админским маршрутам сервер проверяет сам (RequireAdmin).
+  const isAdmin = access?.role === "admin";
 
   const handleLogout = () => {
     logout()
@@ -617,6 +622,17 @@ const Panel = () => {
           >
             Настройки модели
           </button>
+          {/* Не-админу пункт не рендерится вовсе, а не прячется стилями: сам факт наличия
+              раздела ему знать незачем, а запросы за списком закрыты RequireAdmin. */}
+          {isAdmin ? (
+            <button
+              className={`panel__link ${activeSection === "users" ? "panel__link--active" : ""}`}
+              type="button"
+              onClick={() => setActiveSection("users")}
+            >
+              Пользователи
+            </button>
+          ) : null}
         </nav>
       </aside>
       <main className="panel__content">
@@ -639,24 +655,6 @@ const Panel = () => {
             </button>
           </div>
         </div>
-
-        <section className="panel-summary">
-          <article className="panel-summary__card motion-safe:animate-fade-rise motion-safe:transition-transform motion-safe:duration-300 motion-safe:ease-[var(--ease-soft-spring)] motion-safe:hover:-translate-y-1">
-            <span className="panel-summary__label">Активный чат</span>
-            <strong>{activeChat?.title || "Не выбран"}</strong>
-            <p>{activeChat ? `${activeChat.calculations_count || 0} расчётов сохранено` : "Создайте чат и начните расчёт."}</p>
-          </article>
-          <article className="panel-summary__card motion-safe:animate-fade-rise motion-safe:transition-transform motion-safe:duration-300 motion-safe:ease-[var(--ease-soft-spring)] motion-safe:hover:-translate-y-1 [animation-delay:80ms]">
-            <span className="panel-summary__label">Всего чатов</span>
-            <strong>{chats.length}</strong>
-            <p>Чаты изолированы по пользователю и имеют собственную историю расчётов.</p>
-          </article>
-          <article className="panel-summary__card motion-safe:animate-fade-rise motion-safe:transition-transform motion-safe:duration-300 motion-safe:ease-[var(--ease-soft-spring)] motion-safe:hover:-translate-y-1 [animation-delay:140ms]">
-            <span className="panel-summary__label">Сумма по чату</span>
-            <strong>{formatMoney(totalHistoryAmount)} ₽</strong>
-            <p>Сумма сохранённых расчётов в выбранном чате.</p>
-          </article>
-        </section>
 
         {activeSection === "settings" ? (
           <section className="panel-settings rounded-[32px] border p-5 shadow-[0_28px_80px_var(--settings-shell-shadow)] backdrop-blur-xl motion-safe:animate-fade-rise [background:var(--settings-shell-bg)] [border-color:var(--settings-shell-border)] sm:p-7">
@@ -894,216 +892,241 @@ const Panel = () => {
               </div>
             </form>
           </section>
+        ) : activeSection === "users" && isAdmin ? (
+          // isAdmin здесь дублирует условие пункта меню намеренно: без него состояние
+          // "users", оставшееся от прошлого рендера, отправило бы не-админа в раздел,
+          // который тут же упрётся в 403. Не-админ попадает в рабочую ветку по умолчанию.
+          <AdminUsersSection />
         ) : (
-          <section className="panel-workspace">
-            <div className="panel__card panel-chat-list">
-              <div className="panel-chat-list__header">
-                <h2>Чаты</h2>
-                <p>Удаление по умолчанию мягкое: чат пропадает из списка, история остаётся в базе.</p>
-              </div>
-              <div className="panel-chat-list__create">
-                <input type="text" placeholder="Название чата" value={chatTitleDraft} onChange={(event) => setChatTitleDraft(event.target.value)} />
-                <button type="button" onClick={handleCreateChat} disabled={isCreatingChat}>
-                  {isCreatingChat ? "Создаём..." : "Новый чат"}
-                </button>
-              </div>
-              {chatNotice ? <p className="panel__notice">{chatNotice}</p> : null}
-              <div className="panel-chat-list__items">
-                {chats.length === 0 ? (
-                  <p className="panel__empty">Чатов пока нет. Создайте первый.</p>
-                ) : (
-                  chats.map((chat) => (
-                    <div className={`panel-chat-list__item-wrap ${chat.id === activeChatID ? "panel-chat-list__item-wrap--active" : ""}`} key={chat.id}>
-                      <button className="panel-chat-list__item" type="button" onClick={() => setActiveChatID(chat.id)}>
-                        <strong>{chat.title}</strong>
-                        <span>{chat.calculations_count || 0} расчётов</span>
-                      </button>
-                      <button className="panel-chat-list__delete" type="button" onClick={() => handleDeleteChat(chat.id)} disabled={isDeletingChatID === chat.id}>
-                        {isDeletingChatID === chat.id ? "..." : "Удалить"}
-                      </button>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
+          <>
+            <section className="panel-summary">
+              <article className="panel-summary__card motion-safe:animate-fade-rise motion-safe:transition-transform motion-safe:duration-300 motion-safe:ease-[var(--ease-soft-spring)] motion-safe:hover:-translate-y-1">
+                <span className="panel-summary__label">Активный чат</span>
+                <strong>{activeChat?.title || "Не выбран"}</strong>
+                <p>{activeChat ? `${activeChat.calculations_count || 0} расчётов сохранено` : "Создайте чат и начните расчёт."}</p>
+              </article>
+              <article className="panel-summary__card motion-safe:animate-fade-rise motion-safe:transition-transform motion-safe:duration-300 motion-safe:ease-[var(--ease-soft-spring)] motion-safe:hover:-translate-y-1 [animation-delay:80ms]">
+                <span className="panel-summary__label">Всего чатов</span>
+                <strong>{chats.length}</strong>
+                <p>Чаты изолированы по пользователю и имеют собственную историю расчётов.</p>
+              </article>
+              <article className="panel-summary__card motion-safe:animate-fade-rise motion-safe:transition-transform motion-safe:duration-300 motion-safe:ease-[var(--ease-soft-spring)] motion-safe:hover:-translate-y-1 [animation-delay:140ms]">
+                <span className="panel-summary__label">Сумма по чату</span>
+                <strong>{formatMoney(totalHistoryAmount)} ₽</strong>
+                <p>Сумма сохранённых расчётов в выбранном чате.</p>
+              </article>
+            </section>
 
-            <div className="panel-workspace__main">
-              <div className="panel__card">
-                <h2>{activeChat ? activeChat.title : "Выберите чат"}</h2>
-                {activeChat ? (
-                  <form className="panel-form" onSubmit={handleCalculate}>
-                    <div className="panel-form__grid panel-form__grid--compact">
-                      <label className="panel-form__row">
-                        <span>Изделие</span>
-                        <select value={orderForm.garment_type} onChange={(event) => handleOrderChange("garment_type", event.target.value)}>
-                          {garmentOptions.map((name) => (
-                            <option key={name} value={name}>{name}</option>
-                          ))}
-                        </select>
-                      </label>
-                      {isQuickCalculator ? null : (
-                        <label className="panel-form__row">
-                          <span>Материал</span>
-                          <select value={orderForm.material_type} onChange={(event) => handleOrderChange("material_type", event.target.value)}>
-                            {materialOptions.map((name) => (
-                              <option key={name} value={name}>{name}</option>
-                            ))}
-                          </select>
-                        </label>
-                      )}
-                      {isQuickCalculator ? null : (
-                        <label className="panel-form__row">
-                          <span>Срочность</span>
-                          <select value={orderForm.urgency} onChange={(event) => handleOrderChange("urgency", event.target.value)}>
-                            {urgencyOptions.map((name) => (
-                              <option key={name} value={name}>{name}</option>
-                            ))}
-                          </select>
-                        </label>
-                      )}
-                      {isQuickCalculator ? null : (
-                        <label className="panel-form__row">
-                          <span>Сегмент рынка</span>
-                          <select value={orderForm.market_segment} onChange={(event) => handleOrderChange("market_segment", event.target.value)}>
-                            {marketOptions.map((name) => (
-                              <option key={name} value={name}>{name}</option>
-                            ))}
-                          </select>
-                        </label>
-                      )}
-                      <label className="panel-form__row">
-                        <span>Размер партии</span>
-                        <input type="number" min="1" value={orderForm.quantity} onChange={(event) => handleOrderChange("quantity", Number(event.target.value) || 0)} />
-                      </label>
-                      {isQuickCalculator ? null : (
-                        <label className="panel-form__row">
-                          <span>Примерки</span>
-                          <input type="number" min="0" value={orderForm.fittings} onChange={(event) => handleOrderChange("fittings", Number(event.target.value) || 0)} />
-                        </label>
-                      )}
-                    </div>
-
-                    {isQuickCalculator ? null : (
-                      <div className="panel-form__grid panel-form__grid--compact panel-form__grid--toggles">
-                        <label className="panel-form__toggle">
-                          <input type="checkbox" checked={orderForm.is_custom_figure} onChange={(event) => handleOrderChange("is_custom_figure", event.target.checked)} />
-                          <span>Нестандартная фигура</span>
-                        </label>
-                        <label className="panel-form__toggle">
-                          <input type="checkbox" checked={orderForm.is_child} onChange={(event) => handleOrderChange("is_child", event.target.checked)} />
-                          <span>Детское изделие</span>
-                        </label>
+            <section className="panel-workspace">
+              <div className="panel__card panel-chat-list">
+                <div className="panel-chat-list__header">
+                  <h2>Чаты</h2>
+                  <p>Удаление по умолчанию мягкое: чат пропадает из списка, история остаётся в базе.</p>
+                </div>
+                <div className="panel-chat-list__create">
+                  <input type="text" placeholder="Название чата" value={chatTitleDraft} onChange={(event) => setChatTitleDraft(event.target.value)} />
+                  <button type="button" onClick={handleCreateChat} disabled={isCreatingChat}>
+                    {isCreatingChat ? "Создаём..." : "Новый чат"}
+                  </button>
+                </div>
+                {chatNotice ? <p className="panel__notice">{chatNotice}</p> : null}
+                <div className="panel-chat-list__items">
+                  {chats.length === 0 ? (
+                    <p className="panel__empty">Чатов пока нет. Создайте первый.</p>
+                  ) : (
+                    chats.map((chat) => (
+                      <div className={`panel-chat-list__item-wrap ${chat.id === activeChatID ? "panel-chat-list__item-wrap--active" : ""}`} key={chat.id}>
+                        <button className="panel-chat-list__item" type="button" onClick={() => setActiveChatID(chat.id)}>
+                          <strong>{chat.title}</strong>
+                          <span>{chat.calculations_count || 0} расчётов</span>
+                        </button>
+                        <button className="panel-chat-list__delete" type="button" onClick={() => handleDeleteChat(chat.id)} disabled={isDeletingChatID === chat.id}>
+                          {isDeletingChatID === chat.id ? "..." : "Удалить"}
+                        </button>
                       </div>
-                    )}
-
-                    <label className="panel-form__row panel-form__row--stacked">
-                      <span>Комментарий</span>
-                      <textarea value={orderForm.comment} onChange={(event) => handleOrderChange("comment", event.target.value)} rows="4" />
-                    </label>
-
-                    <div className="panel-form__block">
-                      <h3>{isQuickCalculator ? "Усложнения" : "Усложняющие операции"}</h3>
-                      <div className="panel-form__grid panel-form__grid--compact">
-                        {operationOptions.map((name) => (
-                          <label className="panel-form__row" key={name}>
-                            <span>{isQuickCalculator ? `${name} (${formatPercent(settings.operations[name]?.quick_percent)}%)` : name}</span>
-                            <input type="number" min="0" value={orderForm.operation_counts[name] || 0} onChange={(event) => handleOperationCountChange(name, event.target.value)} />
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="panel-form__footer">
-                      <button className="panel__theme-toggle motion-safe:transition-all motion-safe:duration-200 motion-safe:ease-[var(--ease-soft-spring)] motion-safe:hover:-translate-y-0.5 motion-safe:hover:shadow-[0_14px_28px_rgba(36,94,255,0.18)] motion-safe:active:scale-[0.985]" type="submit" disabled={isCalculating}>
-                        {isCalculating ? "Считаем..." : "Рассчитать"}
-                      </button>
-                      {calcNotice ? <p className="panel__notice">{calcNotice}</p> : null}
-                    </div>
-                  </form>
-                ) : (
-                  <p className="panel__empty">Сначала выберите чат слева.</p>
-                )}
-              </div>
-
-              <div className="panel__card">
-                <h2>История расчётов</h2>
-                {historyStatus === "loading" ? <p>Загружаем историю...</p> : null}
-                {historyStatus === "error" ? <p className="panel__notice">Не удалось загрузить историю расчётов.</p> : null}
-                {historyStatus !== "loading" && history.length === 0 ? <p className="panel__empty">В этом чате пока нет расчётов.</p> : null}
-                <div className="panel-history">
-                  {history.map((item, index) => {
-                    const itemMode = normalizeCalculatorMode(item.calculation_mode || calculatorMode);
-                    return (
-                      <article className="panel-history__item motion-safe:animate-fade-rise motion-safe:transition-transform motion-safe:duration-300 motion-safe:ease-[var(--ease-soft-spring)] motion-safe:hover:-translate-y-0.5" key={`${item.created_at}-${index}`}>
-                        {itemMode === "quick" ? (
-                          <>
-                            <div className="panel-history__head">
-                              <div>
-                                <strong>{item.garment_type}</strong>
-                                <span>Быстрый расчет</span>
-                              </div>
-                              <span>{new Date(item.created_at).toLocaleString("ru-RU")}</span>
-                            </div>
-                            <div className="panel-history__stats">
-                              <span>Партия: {item.quantity}</span>
-                              <span>База: {formatMoney(item.min_allowed_price_per_unit)} ₽</span>
-                              <span>За единицу: {formatMoney(item.price_per_unit)} ₽</span>
-                              <span>Итого: {formatMoney(item.total)} ₽</span>
-                            </div>
-                            <ul className="panel-history__list">
-                              {item.applied_operations?.length > 0 ? item.applied_operations.map((operation) => (
-                                <li key={`${item.created_at}-${operation.name}`}>
-                                  {operation.name} × {operation.count}: +{formatMoney(operation.additional_material_cost)} ₽
-                                </li>
-                              )) : <li>Усложнений нет.</li>}
-                              <li>До скидки: {formatMoney(item.price_before_discount_per_unit)} ₽ за единицу</li>
-                              <li>Скидка: {item.discount_percent}% ({formatMoney(item.discount_amount)} ₽)</li>
-                            </ul>
-                          </>
-                        ) : (
-                          <>
-                            <div className="panel-history__head">
-                              <div>
-                                <strong>{item.garment_type}</strong>
-                                <span>{item.material_type} · {item.urgency}</span>
-                              </div>
-                              <span>{new Date(item.created_at).toLocaleString("ru-RU")}</span>
-                            </div>
-                            <div className="panel-history__stats">
-                              <span>Партия: {item.quantity}</span>
-                              <span>За единицу: {formatMoney(item.price_per_unit)} ₽</span>
-                              <span>Итого: {formatMoney(item.total)} ₽</span>
-                              <span className={`panel-history__badge panel-history__badge--${item.market_status || "unknown"}`}>
-                                {marketStatusLabel(item.market_status)}
-                              </span>
-                            </div>
-                            <div className="panel-history__breakdown">
-                              <span>Труд: {formatMoney(item.labor_cost_per_unit)} ₽</span>
-                              <span>Материалы: {formatMoney(item.materials_cost_per_unit)} ₽</span>
-                              <span>Расходники: {formatMoney(item.consumables_cost_per_unit)} ₽</span>
-                              <span>Накладные: {formatMoney(item.overhead_cost_per_unit)} ₽</span>
-                              <span>Риск: {formatMoney(item.risk_reserve_per_unit)} ₽</span>
-                              <span>Себестоимость: {formatMoney(item.cost_price_per_unit)} ₽</span>
-                            </div>
-                            <ul className="panel-history__list">
-                              {item.applied_operations?.length > 0 ? item.applied_operations.map((operation) => (
-                                <li key={`${item.created_at}-${operation.name}`}>
-                                  {operation.name} × {operation.count}: +{operation.additional_minutes} мин, +{formatMoney(operation.additional_material_cost)} ₽
-                                </li>
-                              )) : <li>Дополнительных операций нет.</li>}
-                              <li>Скидка: {item.discount_percent}% ({formatMoney(item.discount_amount)} ₽)</li>
-                              <li>Минуты: база {item.base_minutes_per_unit}, операции {item.operation_minutes_per_unit}, примерки {item.fitting_minutes_per_unit}, итог {item.adjusted_minutes_per_unit}</li>
-                            </ul>
-                            {itemMode === "quick" ? null : <CalculationAIFeedback calculation={item} feedback={item.ai_feedback} />}
-                          </>
-                        )}
-                      </article>
-                    );
-                  })}
+                    ))
+                  )}
                 </div>
               </div>
-            </div>
-          </section>
+
+              <div className="panel-workspace__main">
+                <div className="panel__card">
+                  <h2>{activeChat ? activeChat.title : "Выберите чат"}</h2>
+                  {activeChat ? (
+                    <form className="panel-form" onSubmit={handleCalculate}>
+                      <div className="panel-form__grid panel-form__grid--compact">
+                        <label className="panel-form__row">
+                          <span>Изделие</span>
+                          <select value={orderForm.garment_type} onChange={(event) => handleOrderChange("garment_type", event.target.value)}>
+                            {garmentOptions.map((name) => (
+                              <option key={name} value={name}>{name}</option>
+                            ))}
+                          </select>
+                        </label>
+                        {isQuickCalculator ? null : (
+                          <label className="panel-form__row">
+                            <span>Материал</span>
+                            <select value={orderForm.material_type} onChange={(event) => handleOrderChange("material_type", event.target.value)}>
+                              {materialOptions.map((name) => (
+                                <option key={name} value={name}>{name}</option>
+                              ))}
+                            </select>
+                          </label>
+                        )}
+                        {isQuickCalculator ? null : (
+                          <label className="panel-form__row">
+                            <span>Срочность</span>
+                            <select value={orderForm.urgency} onChange={(event) => handleOrderChange("urgency", event.target.value)}>
+                              {urgencyOptions.map((name) => (
+                                <option key={name} value={name}>{name}</option>
+                              ))}
+                            </select>
+                          </label>
+                        )}
+                        {isQuickCalculator ? null : (
+                          <label className="panel-form__row">
+                            <span>Сегмент рынка</span>
+                            <select value={orderForm.market_segment} onChange={(event) => handleOrderChange("market_segment", event.target.value)}>
+                              {marketOptions.map((name) => (
+                                <option key={name} value={name}>{name}</option>
+                              ))}
+                            </select>
+                          </label>
+                        )}
+                        <label className="panel-form__row">
+                          <span>Размер партии</span>
+                          <input type="number" min="1" value={orderForm.quantity} onChange={(event) => handleOrderChange("quantity", Number(event.target.value) || 0)} />
+                        </label>
+                        {isQuickCalculator ? null : (
+                          <label className="panel-form__row">
+                            <span>Примерки</span>
+                            <input type="number" min="0" value={orderForm.fittings} onChange={(event) => handleOrderChange("fittings", Number(event.target.value) || 0)} />
+                          </label>
+                        )}
+                      </div>
+
+                      {isQuickCalculator ? null : (
+                        <div className="panel-form__grid panel-form__grid--compact panel-form__grid--toggles">
+                          <label className="panel-form__toggle">
+                            <input type="checkbox" checked={orderForm.is_custom_figure} onChange={(event) => handleOrderChange("is_custom_figure", event.target.checked)} />
+                            <span>Нестандартная фигура</span>
+                          </label>
+                          <label className="panel-form__toggle">
+                            <input type="checkbox" checked={orderForm.is_child} onChange={(event) => handleOrderChange("is_child", event.target.checked)} />
+                            <span>Детское изделие</span>
+                          </label>
+                        </div>
+                      )}
+
+                      <label className="panel-form__row panel-form__row--stacked">
+                        <span>Комментарий</span>
+                        <textarea value={orderForm.comment} onChange={(event) => handleOrderChange("comment", event.target.value)} rows="4" />
+                      </label>
+
+                      <div className="panel-form__block">
+                        <h3>{isQuickCalculator ? "Усложнения" : "Усложняющие операции"}</h3>
+                        <div className="panel-form__grid panel-form__grid--compact">
+                          {operationOptions.map((name) => (
+                            <label className="panel-form__row" key={name}>
+                              <span>{isQuickCalculator ? `${name} (${formatPercent(settings.operations[name]?.quick_percent)}%)` : name}</span>
+                              <input type="number" min="0" value={orderForm.operation_counts[name] || 0} onChange={(event) => handleOperationCountChange(name, event.target.value)} />
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="panel-form__footer">
+                        <button className="panel__theme-toggle motion-safe:transition-all motion-safe:duration-200 motion-safe:ease-[var(--ease-soft-spring)] motion-safe:hover:-translate-y-0.5 motion-safe:hover:shadow-[0_14px_28px_rgba(36,94,255,0.18)] motion-safe:active:scale-[0.985]" type="submit" disabled={isCalculating}>
+                          {isCalculating ? "Считаем..." : "Рассчитать"}
+                        </button>
+                        {calcNotice ? <p className="panel__notice">{calcNotice}</p> : null}
+                      </div>
+                    </form>
+                  ) : (
+                    <p className="panel__empty">Сначала выберите чат слева.</p>
+                  )}
+                </div>
+
+                <div className="panel__card">
+                  <h2>История расчётов</h2>
+                  {historyStatus === "loading" ? <p>Загружаем историю...</p> : null}
+                  {historyStatus === "error" ? <p className="panel__notice">Не удалось загрузить историю расчётов.</p> : null}
+                  {historyStatus !== "loading" && history.length === 0 ? <p className="panel__empty">В этом чате пока нет расчётов.</p> : null}
+                  <div className="panel-history">
+                    {history.map((item, index) => {
+                      const itemMode = normalizeCalculatorMode(item.calculation_mode || calculatorMode);
+                      return (
+                        <article className="panel-history__item motion-safe:animate-fade-rise motion-safe:transition-transform motion-safe:duration-300 motion-safe:ease-[var(--ease-soft-spring)] motion-safe:hover:-translate-y-0.5" key={`${item.created_at}-${index}`}>
+                          {itemMode === "quick" ? (
+                            <>
+                              <div className="panel-history__head">
+                                <div>
+                                  <strong>{item.garment_type}</strong>
+                                  <span>Быстрый расчет</span>
+                                </div>
+                                <span>{new Date(item.created_at).toLocaleString("ru-RU")}</span>
+                              </div>
+                              <div className="panel-history__stats">
+                                <span>Партия: {item.quantity}</span>
+                                <span>База: {formatMoney(item.min_allowed_price_per_unit)} ₽</span>
+                                <span>За единицу: {formatMoney(item.price_per_unit)} ₽</span>
+                                <span>Итого: {formatMoney(item.total)} ₽</span>
+                              </div>
+                              <ul className="panel-history__list">
+                                {item.applied_operations?.length > 0 ? item.applied_operations.map((operation) => (
+                                  <li key={`${item.created_at}-${operation.name}`}>
+                                    {operation.name} × {operation.count}: +{formatMoney(operation.additional_material_cost)} ₽
+                                  </li>
+                                )) : <li>Усложнений нет.</li>}
+                                <li>До скидки: {formatMoney(item.price_before_discount_per_unit)} ₽ за единицу</li>
+                                <li>Скидка: {item.discount_percent}% ({formatMoney(item.discount_amount)} ₽)</li>
+                              </ul>
+                            </>
+                          ) : (
+                            <>
+                              <div className="panel-history__head">
+                                <div>
+                                  <strong>{item.garment_type}</strong>
+                                  <span>{item.material_type} · {item.urgency}</span>
+                                </div>
+                                <span>{new Date(item.created_at).toLocaleString("ru-RU")}</span>
+                              </div>
+                              <div className="panel-history__stats">
+                                <span>Партия: {item.quantity}</span>
+                                <span>За единицу: {formatMoney(item.price_per_unit)} ₽</span>
+                                <span>Итого: {formatMoney(item.total)} ₽</span>
+                                <span className={`panel-history__badge panel-history__badge--${item.market_status || "unknown"}`}>
+                                  {marketStatusLabel(item.market_status)}
+                                </span>
+                              </div>
+                              <div className="panel-history__breakdown">
+                                <span>Труд: {formatMoney(item.labor_cost_per_unit)} ₽</span>
+                                <span>Материалы: {formatMoney(item.materials_cost_per_unit)} ₽</span>
+                                <span>Расходники: {formatMoney(item.consumables_cost_per_unit)} ₽</span>
+                                <span>Накладные: {formatMoney(item.overhead_cost_per_unit)} ₽</span>
+                                <span>Риск: {formatMoney(item.risk_reserve_per_unit)} ₽</span>
+                                <span>Себестоимость: {formatMoney(item.cost_price_per_unit)} ₽</span>
+                              </div>
+                              <ul className="panel-history__list">
+                                {item.applied_operations?.length > 0 ? item.applied_operations.map((operation) => (
+                                  <li key={`${item.created_at}-${operation.name}`}>
+                                    {operation.name} × {operation.count}: +{operation.additional_minutes} мин, +{formatMoney(operation.additional_material_cost)} ₽
+                                  </li>
+                                )) : <li>Дополнительных операций нет.</li>}
+                                <li>Скидка: {item.discount_percent}% ({formatMoney(item.discount_amount)} ₽)</li>
+                                <li>Минуты: база {item.base_minutes_per_unit}, операции {item.operation_minutes_per_unit}, примерки {item.fitting_minutes_per_unit}, итог {item.adjusted_minutes_per_unit}</li>
+                              </ul>
+                              {itemMode === "quick" ? null : <CalculationAIFeedback calculation={item} feedback={item.ai_feedback} />}
+                            </>
+                          )}
+                        </article>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </section>
+          </>
         )}
       </main>
     </div>
