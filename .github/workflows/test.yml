@@ -1,0 +1,96 @@
+name: Tests
+
+# Вызывается двумя способами:
+#   * workflow_call — из deploy.yml, чтобы сборка и деплой не стартовали на красных тестах;
+#   * push/pull_request — чтобы обратная связь по ветке приходила до тега, а не после.
+# push ограничен ветками ('**' не покрывает теги): на тегированном пуше прогон и так придёт
+# через workflow_call из deploy.yml, второй независимый запуск был бы дублем.
+on:
+  workflow_call:
+  push:
+    branches:
+      - "**"
+  pull_request:
+
+permissions:
+  contents: read
+
+# Группа включает event_name: у push и pull_request на одной и той же ветке PR иначе была бы
+# одна группа на двоих, и второй trigger отменял бы прогон первого. workflow_call группу не
+# получает вовсе (github.event_name == "workflow_call" не участвует в push/pull_request), так
+# что деплойный прогон, который отменять нельзя, в эту дедупликацию не попадает.
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go-test:
+    runs-on: ubuntu-latest
+
+    # Нужны шагу накатки миграций; тот же root/база, что у сервис-контейнера ниже. Значение
+    # продублировано, а не читается отсюда: `services.<id>.options` не видит контекст `env` —
+    # ограничение самого GitHub Actions, не недосмотр. При смене пароля менять в обоих местах.
+    env:
+      MARIADB_ROOT_PASSWORD: ci_root
+      MARIADB_DATABASE: poshivon_test
+
+    services:
+      mariadb:
+        # Та же версия, что в docker-compose.yml и docker-compose.prod.yml: тесты опираются
+        # на поведение MariaDB 11.4 (сортировки из миграции 005, IF NOT EXISTS у CHECK в 004).
+        #
+        # Учётные данные — внутренние для CI и одноразовые: контейнер живёт только внутри
+        # job'ы, наружу с раннера не выставлен и удаляется вместе с ним. Продовые секреты
+        # (DB_USER / DB_PASSWORD / DB_ROOT_PASSWORD) здесь намеренно не используются.
+        image: mariadb:11.4
+        env:
+          MARIADB_ROOT_PASSWORD: ci_root
+          MARIADB_DATABASE: poshivon_test
+          MARIADB_USER: poshivon
+          MARIADB_PASSWORD: poshivon
+        ports:
+          - 3306:3306
+        # GitHub Actions задаёт healthcheck docker-флагами в options, а не блоком healthcheck:
+        # как compose. Смысл тот же, что у healthcheck сервиса db в docker-compose.yml.
+        options: >-
+          --health-cmd="mariadb-admin ping -h 127.0.0.1 -u root -pci_root"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+          --health-start-period=30s
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          # Совпадает с ARG GO_VERSION в server/Dockerfile и директивой go в server/go.mod.
+          go-version: "1.25.5"
+          cache-dependency-path: server/go.sum
+
+      # Сервис-контейнер поднимается пустым, а контрактные тесты и тесты хранилища сессий
+      # работают по готовой схеме. В проде схему накатывает migrations.Run на старте
+      # приложения; здесь те же файлы подаются клиентом mariadb в том же порядке
+      # (glob *.up.sql + сортировка по имени, как в server/migrations/migrate.go —
+      # 0001_init.sql остаётся в стороне, он под PostgreSQL и под glob не попадает).
+      - name: Apply migrations
+        run: |
+          set -euo pipefail
+          for file in server/migrations/*.up.sql; do
+            echo "applying ${file}"
+            docker exec -i "${{ job.services.mariadb.id }}" \
+              mariadb -uroot -p"${MARIADB_ROOT_PASSWORD}" "${MARIADB_DATABASE}" < "${file}"
+          done
+
+      # -v обязателен: без него пропущенный из-за незаданной TEST_DB_DSN тест неотличим в
+      # логе от выполненного — пакет в обоих случаях отчитывается как ok.
+      - name: Run tests
+        working-directory: server
+        env:
+          # Форма DSN — go-sql-driver/mysql, та же, что описана в комментариях
+          # access_repo_test.go и store_test.go. parseTime=true обязателен: контракт читает
+          # TIMESTAMP в time.Time. Хост — 127.0.0.1: порт сервис-контейнера проброшен на раннер.
+          TEST_DB_DSN: "poshivon:poshivon@tcp(127.0.0.1:3306)/poshivon_test?parseTime=true&charset=utf8mb4"
+        run: go test ./... -v

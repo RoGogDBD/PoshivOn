@@ -1,0 +1,70 @@
+{
+  "status": "approved",
+  "summary": {
+    "totalFindings": 5,
+    "critical": 0,
+    "major": 0,
+    "minor": 5
+  },
+  "verification_performed": {
+    "yaml_parse": "PASS — .github/workflows/deploy.yml and .github/workflows/test.yml both parse cleanly via python yaml.safe_load.",
+    "nginx_syntax": "PASS — extracted the deploy.yml heredoc nginx block and client/nginx.conf, ran `nginx -t` in nginx:1.27-alpine. Bare `nginx -t` fails on both with 'host not found in upstream' because poshivon_web/poshivon_app/app/poshivon_grafana don't resolve outside the real docker-compose network — this is expected nginx behavior (static proxy_pass hostnames are resolved at config-load time), not a defect. Re-ran with --add-host aliases for the upstream names: both configs pass syntax validation cleanly.",
+    "contact_email_five_hops": "PASS, independently re-verified line-by-line — (1) env: block deploy.yml:109 `CONTACT_EMAIL: ${{ secrets.CONTACT_EMAIL }}`, (2) envs: allowlist deploy.yml:131 contains CONTACT_EMAIL in the same relative position as env:, comma-delimited correctly with no stray/missing commas against all 28 vars, (3) .env heredoc deploy.yml:251 `CONTACT_EMAIL=${CONTACT_EMAIL:-}`, (4) docker-compose.prod.yml:15 `CONTACT_EMAIL: ${CONTACT_EMAIL}`, (5) docker-compose.yml:17 `CONTACT_EMAIL: ${CONTACT_EMAIL:-}` following the existing DEEPSEEK_* convention. All five hops present and consistent.",
+    "nginx_refresh_yandex_swap": "PASS — deploy.yml heredoc (lines 189-195) and client/nginx.conf (lines 45-51) both add `location = /auth/refresh` with the identical 4 proxy_set_header lines (Host, X-Real-IP, X-Forwarded-For, X-Forwarded-Proto) as the neighboring /auth/status /auth/me /auth/logout blocks, proxying to the correct target (poshivon_app:8080 vs app:8080 respectively). `location = /auth/yandex` is absent from both files; `location = /auth/yandex/code` (a different, still-live route) is correctly retained in both.",
+    "migration_replay_end_to_end": "Independently re-ran the exact CI sequence against a real mariadb:11.4 container (not trusting the implementer's report): applied server/migrations/*.up.sql via `docker exec -i <container> mariadb -uroot -p... < file` in glob order, exactly as test.yml's 'Apply migrations' step does. Result: files applied in order 001_auth_sessions, 002_costing_schema, 003_pricing_and_chat_delete, 004_access_control, 005_identity_collation — same order server/migrations/migrate.go produces via fs.Glob(\"*.up.sql\") + sort.Strings. 0001_init.sql confirmed genuinely dead/Postgres-only by reading its content (BIGSERIAL, TIMESTAMPTZ, JSONB — none valid in MariaDB) and confirmed it does not match the *.up.sql glob pattern used both by migrate.go's go:embed directive and by the CI shell loop — so both the real app and this CI step correctly skip it for the same structural reason. `SELECT COUNT(*) FROM users WHERE role='admin'` returned exactly 2 after applying 001-005, confirming AC #6.",
+    "full_go_test_run": "Ran `go test ./... -v` from server/ in golang:1.25-alpine against the freshly-migrated mariadb:11.4 container with TEST_DB_DSN='poshivon:poshivon@tcp(<host>:3306)/poshivon_test?parseTime=true&charset=utf8mb4' (same DSN shape used in test.yml, credentials matching the service's MARIADB_USER/MARIADB_PASSWORD). Result: exit code 0, 384 `=== RUN` invocations (matches the implementer's claimed count exactly), 0 `--- FAIL`, 0 `--- SKIP`, no t.Skip triggered anywhere in the log — confirms TEST_DB_DSN genuinely reached and was consumed by the DB-backed contract tests rather than silently skipping."
+  },
+  "migration_apply_step_verdict": {
+    "replicates_real_order_and_logic": true,
+    "job_services_id_syntax_valid": true,
+    "reasoning": "job.services.<service_id>.id is documented GHA job-context syntax for a service container's Docker network ID, usable in docker exec from a step running directly on the runner (this job does not declare `container:`, so it runs on the VM itself and can freely docker exec into any sibling container including services). Verified the glob+order replication is exact: both migrate.go's fs.Glob(\"*.up.sql\")+sort.Strings and the CI shell's `for file in server/migrations/*.up.sql` pick up the same 5 files in the same order and both structurally exclude 0001_init.sql (wrong glob suffix), which is independently confirmed dead/Postgres-only by content inspection. Re-running the exact step logic end-to-end against a live mariadb:11.4 container produced a correct schema and the exact admin-count=2 the AC requires.",
+    "docker_exec_vs_direct_mysql_client": "The implementer's stated reasoning (mariadb/mysql CLI presence on ubuntu-latest not guaranteed, service image always has one) is a defensible, cautious choice and the step works correctly as verified. It is, however, not the most idiomatic pattern: GitHub's own documented pattern for MySQL/MariaDB service containers used from a job running directly on the runner (not inside a `container:`) is to connect directly via the already-mapped port (`ports: - 3306:3306` already present in this file) using a `mysql` client, since GitHub-hosted ubuntu-latest runner images document a MySQL client as pre-installed software — making the 'CLI not guaranteed' premise somewhat overstated, though not wrong to hedge against. Net: sound and verified-working, but a future simplification pass could drop the docker-exec indirection in favor of `mysql -h 127.0.0.1 -P 3306` directly from the runner. Not blocking."
+  },
+  "findings": [
+    {
+      "severity": "minor",
+      "category": "ci-workflow",
+      "title": "Migration-apply step uses docker exec into the service container rather than the more idiomatic mapped-port connection",
+      "description": "test.yml's 'Apply migrations' step (lines 68-75) uses `docker exec -i \"${{ job.services.mariadb.id }}\" mariadb ...` to feed each migration file into the service container. Since the mariadb service already publishes `ports: - 3306:3306` to the runner and this job does not run inside a `container:` (so localhost networking to services works directly), GitHub's own documented pattern for this scenario is to connect straight to 127.0.0.1:3306 with a mysql client already available on ubuntu-latest runner images. The implementer's stated concern (mariadb/mysql CLI not guaranteed present) is a reasonable hedge but somewhat overstated given GH's runner-images software list documents a MySQL client as pre-installed.",
+      "location": ".github/workflows/test.yml:68-75",
+      "impact": "None currently — independently re-ran this exact step against a live mariadb:11.4 container and it produced the correct schema and admin count. Purely a style/robustness preference, not a functional defect.",
+      "recommendation": "Optional future simplification: replace the docker exec loop with `mysql -h 127.0.0.1 -P 3306 -uroot -p\"$MARIADB_ROOT_PASSWORD\" \"$MARIADB_DATABASE\" < \"$file\"` (installing mysql-client via apt first if not already present, matching GitHub's own MySQL service-container doc example). Not required — current implementation is correct and verified working."
+    },
+    {
+      "severity": "minor",
+      "category": "ci-workflow",
+      "title": "Migration-apply step does not populate schema_migrations bookkeeping table",
+      "description": "migrate.go's Run() creates schema_migrations (ensureSchemaMigrations) and records one row per applied version. test.yml's 'Apply migrations' step feeds the raw *.up.sql files directly via mariadb client and never touches schema_migrations, so the CI-built schema is not byte-for-byte identical to what the app's own startup migration runner would produce.",
+      "location": ".github/workflows/test.yml:68-75",
+      "impact": "None today — confirmed via grep that no test file (access_repo_test.go, store_test.go, auth_test.go) references schema_migrations, and a fresh single-run CI database has no need for the applied/skip bookkeeping migrate.go uses for idempotent re-runs. Would only matter if a future test started asserting against schema_migrations contents.",
+      "recommendation": "No action required. If ever relevant, the step could additionally CREATE TABLE schema_migrations and INSERT one row per applied version to fully mirror migrate.go, but this is not needed for current test coverage."
+    },
+    {
+      "severity": "minor",
+      "category": "deploy-script",
+      "title": "`.env` heredoc's CONTACT_EMAIL=${CONTACT_EMAIL:-} deviation is not strictly load-bearing against the failure mode it targets",
+      "description": "The implementer added `:-` fallback specifically to CONTACT_EMAIL (deploy.yml:251) to avoid `set -euo pipefail` aborting on an unbound variable if the GitHub secret doesn't exist yet. Under GitHub Actions semantics, however, a reference to a nonexistent secret (`${{ secrets.CONTACT_EMAIL }}`) evaluates to an empty string at expression-resolution time, not an omitted key — so the env: block (deploy.yml:109) and the envs: allowlist always define CONTACT_EMAIL as an exported, defined-but-possibly-empty variable in the remote script's environment. Bash's `set -u` does not treat 'defined but empty' as unbound, so the plain `${CONTACT_EMAIL}` form (used by every other var in the same heredoc) would not actually have aborted the script in the scenario described. The parallel security-auditor pass reached the identical conclusion independently (targeted_check_results #4 in security-auditor-1.json).",
+      "location": ".github/workflows/deploy.yml:251",
+      "impact": "None — the fallback is redundant defense, not incorrect. Does not mask a required credential's absence (no other var shares this treatment) and does not affect correctness of any of the 5 CONTACT_EMAIL hops.",
+      "recommendation": "No action required; harmless. If precision matters, the deviation note in decisions.md could be phrased as 'defensive belt-and-suspenders' rather than implying it prevents an abort that would not have actually occurred."
+    },
+    {
+      "severity": "minor",
+      "category": "documentation",
+      "title": "CONTACT_EMAIL secret creation requirement not yet documented in decisions.md",
+      "description": "Task 9's own 'What to do' section explicitly requires: 'Document in decisions.md / task report that a CONTACT_EMAIL GitHub repository secret must be created before the next tagged deploy — this task cannot create the secret itself.' At the time of this review, work/access-control/decisions.md has no Task 9 entry yet (task frontmatter still shows status: in_progress), so this explicit requirement is not yet fulfilled.",
+      "location": "work/access-control/decisions.md (Task 9 entry not yet present), work/access-control/tasks/9.md:72-73",
+      "impact": "If the task is marked Done without this note landing in decisions.md, a future deploy could tag-push without anyone having created the CONTACT_EMAIL secret, and the banner would silently fall back to the empty-string default with no error anywhere — exactly the failure mode this task exists to close.",
+      "recommendation": "Ensure the Post-completion report step (already on the task's own checklist) adds the CONTACT_EMAIL secret-creation reminder to decisions.md before marking Task 9 Done. Non-blocking for this review since the task is still in progress, but flagged so it isn't dropped."
+    },
+    {
+      "severity": "minor",
+      "category": "ci-workflow",
+      "title": "No concurrency group on test.yml's push/pull_request triggers",
+      "description": "test.yml triggers on both `push: branches: [\"**\"]` and `pull_request:` with no `concurrency:` block. A PR opened from a branch in the same repository (not a fork) will trigger two independent, simultaneous runs of the same test suite — one for the push event, one for the pull_request event.",
+      "location": ".github/workflows/test.yml:8-14",
+      "impact": "Doubles CI minutes consumed per same-repo PR push; not a correctness issue since both runs are legitimate and both must pass for the intended feedback loop to work.",
+      "recommendation": "Optional: add a `concurrency: group: test-${{ github.workflow }}-${{ github.ref }} cancel-in-progress: true` block to dedupe. Not required by the task spec and not blocking."
+    }
+  ]
+}

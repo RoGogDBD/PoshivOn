@@ -10,7 +10,11 @@ permissions:
   packages: write
 
 jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+
   build-and-deploy:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -102,6 +106,7 @@ jobs:
           DEEPSEEK_MODEL: ${{ secrets.DEEPSEEK_MODEL }}
           DEEPSEEK_TIMEOUT_SEC: ${{ secrets.DEEPSEEK_TIMEOUT_SEC }}
           DEEPSEEK_MAX_RETRIES: ${{ secrets.DEEPSEEK_MAX_RETRIES }}
+          CONTACT_EMAIL: ${{ secrets.CONTACT_EMAIL }}
           CORS_ALLOWED_ORIGINS: ${{ secrets.CORS_ALLOWED_ORIGINS }}
           COOKIE_SECURE: ${{ secrets.COOKIE_SECURE }}
           COOKIE_SAMESITE: ${{ secrets.COOKIE_SAMESITE }}
@@ -123,7 +128,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
-          envs: IMAGE_OWNER,IMAGE_TAG,APP_STORAGE,APP_HOST,APP_PORT,LOG_LEVEL,DEEPSEEK_API_KEY,DEEPSEEK_API_ENDPOINT,DEEPSEEK_MODEL,DEEPSEEK_TIMEOUT_SEC,DEEPSEEK_MAX_RETRIES,CORS_ALLOWED_ORIGINS,COOKIE_SECURE,COOKIE_SAMESITE,COOKIE_DOMAIN,YANDEX_CLIENT_ID,YANDEX_CLIENT_SECRET,YANDEX_REDIRECT_URI,DB_HOST,DB_PORT,DB_NAME,DB_USER,DB_PASSWORD,DB_ROOT_PASSWORD,GRAFANA_ADMIN_PASSWORD,GHCR_USERNAME,GHCR_TOKEN
+          envs: IMAGE_OWNER,IMAGE_TAG,APP_STORAGE,APP_HOST,APP_PORT,LOG_LEVEL,DEEPSEEK_API_KEY,DEEPSEEK_API_ENDPOINT,DEEPSEEK_MODEL,DEEPSEEK_TIMEOUT_SEC,DEEPSEEK_MAX_RETRIES,CONTACT_EMAIL,CORS_ALLOWED_ORIGINS,COOKIE_SECURE,COOKIE_SAMESITE,COOKIE_DOMAIN,YANDEX_CLIENT_ID,YANDEX_CLIENT_SECRET,YANDEX_REDIRECT_URI,DB_HOST,DB_PORT,DB_NAME,DB_USER,DB_PASSWORD,DB_ROOT_PASSWORD,GRAFANA_ADMIN_PASSWORD,GHCR_USERNAME,GHCR_TOKEN
           script: |
             set -euo pipefail
             umask 077
@@ -181,7 +186,7 @@ jobs:
                 proxy_set_header X-Forwarded-Proto $scheme;
               }
 
-              location = /auth/yandex {
+              location = /auth/refresh {
                 proxy_pass http://poshivon_app:8080;
                 proxy_set_header Host $host;
                 proxy_set_header X-Real-IP $remote_addr;
@@ -243,6 +248,7 @@ jobs:
             DEEPSEEK_MODEL=${DEEPSEEK_MODEL}
             DEEPSEEK_TIMEOUT_SEC=${DEEPSEEK_TIMEOUT_SEC}
             DEEPSEEK_MAX_RETRIES=${DEEPSEEK_MAX_RETRIES}
+            CONTACT_EMAIL=${CONTACT_EMAIL:-}
             CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
             COOKIE_SECURE=${COOKIE_SECURE}
             COOKIE_SAMESITE=${COOKIE_SAMESITE}
