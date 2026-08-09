@@ -1,4 +1,5 @@
 const AUTH_RETURN_TO_KEY = "poshivon.auth.returnTo";
+const AUTH_STATE_KEY = "poshivon.auth.state";
 
 const getApiBase = () => import.meta.env.VITE_API_URL || "";
 
@@ -58,26 +59,6 @@ const normalizeRedirectUri = (value) => {
   return value.endsWith("/") ? value.slice(0, -1) : value;
 };
 
-export const persistYandexToken = async (data) => {
-  if (!data?.access_token) {
-    throw new Error("missing_access_token");
-  }
-
-  const apiBase = getApiBase();
-  const response = await fetch(`${apiBase}/auth/yandex`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    credentials: "include",
-    body: JSON.stringify(data),
-  });
-
-  if (!response.ok) {
-    throw new Error("persist_failed");
-  }
-};
-
 export const exchangeYandexCode = async (code, redirectUri) => {
   if (!code) {
     throw new Error("missing_code");
@@ -122,6 +103,48 @@ export const consumeAuthReturnTo = () => {
   }
 };
 
+// state — одноразовая случайная строка, связывающая ответ Яндекса с браузером, который
+// начал вход (Decision 9). Криптостойкость нужна не самому значению как секрету, а его
+// непредсказуемости: угадываемый state снял бы защиту от CSRF на колбэке, поэтому
+// Math.random() здесь не годится.
+const createAuthState = () => {
+  // randomUUID есть только в secure context (https или localhost), а dev-сервер слушает
+  // 0.0.0.0 и открывается в том числе по IP — там его нет. getRandomValues доступен и в
+  // незащищённом контексте, поэтому запасной путь не декоративный.
+  if (window.crypto?.randomUUID) {
+    return window.crypto.randomUUID();
+  }
+  const bytes = new Uint8Array(16);
+  window.crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+};
+
+// Не экспортируется намеренно, в отличие от saveAuthReturnTo: единственный, кто вправе
+// записать state, — buildYandexAuthUrl, который тут же кладёт его в адрес входа. Внешний
+// вызов означал бы сохранённый state, не совпадающий ни с одним отправленным запросом.
+const saveAuthState = (value) => {
+  try {
+    if (value) {
+      sessionStorage.setItem(AUTH_STATE_KEY, value);
+    }
+  } catch (error) {
+    console.log("Не удалось сохранить состояние входа.", error);
+  }
+};
+
+// consumeAuthState читает и сразу удаляет значение: state одноразовый, повторная сверка тем
+// же значением недопустима (тот же приём, что и в consumeAuthReturnTo).
+export const consumeAuthState = () => {
+  try {
+    const value = sessionStorage.getItem(AUTH_STATE_KEY);
+    sessionStorage.removeItem(AUTH_STATE_KEY);
+    return value;
+  } catch (error) {
+    console.log("Не удалось получить состояние входа.", error);
+    return null;
+  }
+};
+
 export const buildYandexAuthUrl = () => {
   const clientId = import.meta.env.VITE_YA_CLIENT_ID;
   if (!clientId) {
@@ -132,10 +155,17 @@ export const buildYandexAuthUrl = () => {
     import.meta.env.VITE_YA_REDIRECT_URI || `${window.location.origin}/auth`
   );
 
+  const state = createAuthState();
+  saveAuthState(state);
+
+  // scope запрашивается явно (Decision 12): login:email нужен, чтобы в профиле пришёл
+  // default_email — по нему администратор опознаёт заявителя.
   const params = new URLSearchParams({
     response_type: "code",
     client_id: clientId,
     redirect_uri: redirectUri,
+    scope: "login:info login:email",
+    state,
   });
 
   return `https://oauth.yandex.ru/authorize?${params.toString()}`;

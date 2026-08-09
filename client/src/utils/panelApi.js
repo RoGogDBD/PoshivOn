@@ -34,46 +34,49 @@ const request = async (path, options = {}) => {
   return response.json();
 };
 
-export const getUserSettings = async (userID) => request(`/api/v1/users/${userID}/settings`);
+// Сегмента владельца в адресах больше нет: владельца сервер берёт из сессии (Decision 6,
+// US-15). Логин в пути означал бы, что данные любого владельца доступны подстановкой
+// чужого логина, а отзыв доступа на этой поверхности ничего не менял бы.
+export const getUserSettings = async () => request(`/api/v1/users/settings`);
 
-export const saveUserSettings = async (userID, settings) => {
-  await request(`/api/v1/users/${userID}/settings`, {
+export const saveUserSettings = async (settings) => {
+  await request(`/api/v1/users/settings`, {
     method: "POST",
     body: JSON.stringify(settings),
   });
 };
 
-export const listChats = async (userID) => request(`/api/v1/users/${userID}/chats`);
+export const listChats = async () => request(`/api/v1/users/chats`);
 
-export const createChat = async (userID, title) =>
-  request(`/api/v1/users/${userID}/chats`, {
+export const createChat = async (title) =>
+  request(`/api/v1/users/chats`, {
     method: "POST",
     body: JSON.stringify({ title }),
   });
 
-export const deleteChat = async (userID, chatID) => {
-  await request(`/api/v1/users/${userID}/chats/${chatID}`, {
+export const deleteChat = async (chatID) => {
+  await request(`/api/v1/users/chats/${chatID}`, {
     method: "DELETE",
   });
 };
 
-export const restoreChat = async (userID, chatID) => {
-  await request(`/api/v1/users/${userID}/chats/${chatID}/restore`, {
+export const restoreChat = async (chatID) => {
+  await request(`/api/v1/users/chats/${chatID}/restore`, {
     method: "POST",
   });
 };
 
-export const listChatCalculations = async (userID, chatID) =>
-  request(`/api/v1/users/${userID}/chats/${chatID}/calculations`);
+export const listChatCalculations = async (chatID) =>
+  request(`/api/v1/users/chats/${chatID}/calculations`);
 
-export const calculateInChat = async (userID, chatID, order) =>
-  request(`/api/v1/users/${userID}/chats/${chatID}/calculate`, {
+export const calculateInChat = async (chatID, order) =>
+  request(`/api/v1/users/chats/${chatID}/calculate`, {
     method: "POST",
     body: JSON.stringify(order),
   });
 
-export const analyzeMarketWithAI = async (userID, payload) =>
-  request(`/api/v1/users/${userID}/market-feedback`, {
+export const analyzeMarketWithAI = async (payload) =>
+  request(`/api/v1/users/market-feedback`, {
     method: "POST",
     body: JSON.stringify(payload),
   });

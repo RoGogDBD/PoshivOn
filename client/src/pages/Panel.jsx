@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { checkAuthStatus, fetchAuthProfile, logout } from "../utils/yandexAuth.js";
+import AccessRequestBanner from "../components/AccessRequestBanner.jsx";
+import { fetchAccessState } from "../utils/accessApi.js";
 import {
   calculateInChat,
   createChat,
@@ -167,9 +169,18 @@ const SettingsField = ({ label, children, className = "" }) => (
 
 const SettingsNumberInput = (props) => <input className={settingsInputClass} type="number" {...props} />;
 
+// hasPanelAccess — клиентское зеркало серверного правила has_access || role == admin
+// (Decision 10). Держится в одном месте: настоящую авторизацию всё равно делает сервер,
+// здесь условие нужно только чтобы выбрать экран.
+const hasPanelAccess = (accessState) =>
+  Boolean(accessState?.has_access) || accessState?.role === "admin";
+
 const Panel = () => {
+  // status: "checking" -> "ready" | "no-access". "no-access" — не ошибка загрузки, а
+  // штатный экран: пользователь аутентифицирован, но доступ ему ещё не выдан.
   const [status, setStatus] = useState("checking");
   const [profile, setProfile] = useState(null);
+  const [access, setAccess] = useState(null);
   const [activeSection, setActiveSection] = useState("workspace");
   const [theme, setTheme] = useState(() => localStorage.getItem("panelTheme") || "light");
   const [settings, setSettings] = useState(defaultSettings);
@@ -193,6 +204,8 @@ const Panel = () => {
     let isActive = true;
 
     const bootstrap = async () => {
+      let accessState = null;
+
       try {
         const ok = await checkAuthStatus();
         if (!ok) {
@@ -205,7 +218,19 @@ const Panel = () => {
           return;
         }
         setProfile(nextProfile);
+
+        // Третий вызов bootstrap-эффекта: это единственная точка, через которую проходит
+        // каждый рендер /panel (Decision 15), поэтому состояние доступа берётся здесь и
+        // больше нигде — плашка и (в Task 8) раздел администратора читают уже готовое.
+        accessState = await fetchAccessState();
+        if (!isActive) {
+          return;
+        }
+        setAccess(accessState);
       } catch {
+        // Провал любого из трёх вызовов трактуется одинаково — как отсутствие рабочей
+        // сессии: у /api/v1/access/me ветки 403 нет вовсе, «доступа нет» приходит как
+        // 200 с has_access: false, поэтому сюда попадает только 401 или сетевой сбой.
         if (isActive) {
           window.location.replace("/");
         }
@@ -213,7 +238,7 @@ const Panel = () => {
       }
 
       if (isActive) {
-        setStatus("ready");
+        setStatus(hasPanelAccess(accessState) ? "ready" : "no-access");
       }
     };
 
@@ -227,8 +252,12 @@ const Panel = () => {
     localStorage.setItem("panelTheme", theme);
   }, [theme]);
 
+  // Оба эффекта загрузки данных ждут status === "ready", а не только userID: userID
+  // становится истинным вместе с profile, то есть раньше, чем известен результат проверки
+  // доступа. Без этой охраны пользователь без доступа успел бы отправить GET /settings и
+  // GET /chats до того, как на экране появится плашка.
   useEffect(() => {
-    if (!userID) {
+    if (status !== "ready" || !userID) {
       return;
     }
 
@@ -236,7 +265,7 @@ const Panel = () => {
 
     const loadSettings = async () => {
       try {
-        const loaded = await getUserSettings(userID);
+        const loaded = await getUserSettings();
         if (!isActive) {
           return;
         }
@@ -255,7 +284,7 @@ const Panel = () => {
 
     const loadChats = async () => {
       try {
-        const payload = await listChats(userID);
+        const payload = await listChats();
         if (!isActive) {
           return;
         }
@@ -275,10 +304,10 @@ const Panel = () => {
     return () => {
       isActive = false;
     };
-  }, [userID]);
+  }, [status, userID]);
 
   useEffect(() => {
-    if (!userID || !activeChatID) {
+    if (status !== "ready" || !userID || !activeChatID) {
       setHistory([]);
       return;
     }
@@ -286,7 +315,7 @@ const Panel = () => {
     let isActive = true;
     setHistoryStatus("loading");
 
-    listChatCalculations(userID, activeChatID)
+    listChatCalculations(activeChatID)
       .then((payload) => {
         if (!isActive) {
           return;
@@ -305,7 +334,7 @@ const Panel = () => {
     return () => {
       isActive = false;
     };
-  }, [userID, activeChatID]);
+  }, [status, userID, activeChatID]);
 
   const garmentOptions = useMemo(() => Object.keys(settings.garments).sort((a, b) => a.localeCompare(b)), [settings.garments]);
   const materialOptions = useMemo(() => Object.keys(settings.materials).sort((a, b) => a.localeCompare(b)), [settings.materials]);
@@ -428,7 +457,7 @@ const Panel = () => {
     setIsSavingSettings(true);
     setSettingsNotice("");
     try {
-      await saveUserSettings(userID, settings);
+      await saveUserSettings(settings);
       setSettingsNotice("Настройки сохранены.");
     } catch (error) {
       setSettingsNotice(mapPanelError(error));
@@ -445,7 +474,7 @@ const Panel = () => {
     setIsCreatingChat(true);
     setChatNotice("");
     try {
-      const chat = await createChat(userID, chatTitleDraft.trim());
+      const chat = await createChat(chatTitleDraft.trim());
       setChats((current) => [chat, ...current]);
       setActiveChatID(chat.id);
       setChatTitleDraft("");
@@ -469,7 +498,7 @@ const Panel = () => {
     setIsDeletingChatID(chatID);
     setChatNotice("");
     try {
-      await deleteChat(userID, chatID);
+      await deleteChat(chatID);
       const nextChats = chats.filter((chat) => chat.id !== chatID);
       setChats(nextChats);
       if (activeChatID === chatID) {
@@ -521,7 +550,7 @@ const Panel = () => {
           Object.entries(orderForm.operation_counts).filter(([, count]) => Number(count) > 0)
         ),
       };
-      const result = await calculateInChat(userID, activeChatID, payload);
+      const result = await calculateInChat(activeChatID, payload);
       setHistory((current) => [...current, result]);
       setChats((current) =>
         current
@@ -543,6 +572,21 @@ const Panel = () => {
       setIsCalculating(false);
     }
   };
+
+  // Гейт стоит до всего рабочего интерфейса: пользователь без доступа не должен видеть ни
+  // одного его элемента, а не просто получать 403 на фоновых запросах.
+  if (status === "no-access") {
+    return (
+      <div className={`page panel panel--${theme}`}>
+        <main className="panel__content">
+          <AccessRequestBanner
+            contactEmail={access?.contact_email || ""}
+            requestStatus={access?.request_status || ""}
+          />
+        </main>
+      </div>
+    );
+  }
 
   if (status !== "ready") {
     return (
