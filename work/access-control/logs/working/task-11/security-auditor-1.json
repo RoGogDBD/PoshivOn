@@ -1,0 +1,364 @@
+{
+  "task": 11,
+  "round": 1,
+  "reviewer": "security-auditor",
+  "mode": "code",
+  "status": "changes_required",
+  "review_target": "Full-feature security audit of the merged result of Tasks 1-9 (commits through f300c07 on main) for feature access-control. Read as one connected system: 20 server files (migrations 004/005 + migrate.go, service/access.go + costing.go, repository/postgres.go + memory.go, auth/store.go, handler/{auth,middleware,http,access,metrics,cors,routes}.go, config/config.go, cmd/main.go, api/openapi.yaml, plus the five test files), 7 client files, 5 deploy files (.github/workflows/deploy.yml, .github/workflows/test.yml, docker-compose.prod.yml, docker-compose.yml, client/nginx.conf). Verified empirically, not only by reading: (a) httptest probes against the real BuildRoutes assembly (route reachability, Origin matrix, legacy URL form, Decision 10 bypass, metric-label shape); (b) live MariaDB 11.4 replay of migrations 001->005 in a scratch database with a pre-existing colliding users row; (c) govulncheck on the Go module and npm audit on the client.",
+  "summary": "Nine of the eleven audited design decisions are implemented in code exactly as specified, and the two live findings from Tasks 5/6 (the /api/v1/users/** IDOR and the Decision 19 collation collision) are confirmed closed and not regressed. The middleware chain is correctly ordered and fails closed on every path I could construct: no-identity, unreachable repository, unknown session-rejection reason, missing Origin, empty allowlist. The Decision 6 rewrite holds - the owner is taken from the session on every /api/v1/users/** branch, the legacy {userID} segment 404s, and the body/query channels are closed by DisallowUnknownFields. POST /auth/yandex and HandleYandexLogin are genuinely gone, not deprecated. However the audit found one critical issue that no single-task review could have seen, because it only exists in the interaction between two migrations: migration 004's admin seed runs under the legacy case/accent/space-insensitive collation that migration 005 exists to eliminate, and 004 is applied exactly once. I reproduced this live on mariadb:11.4 - a pre-existing users row differing from an admin login only by case receives role='admin' permanently, and the real administrator, logging in after 005, gets a fresh role='user' row. The precondition (an attacker-chosen row in users) was anonymously creatable for the entire production life of the product through the very upsertUser path that Decision 6's own rationale calls out as anonymously reachable. Decision 19 closed this class at runtime; it did not close it at migration time. Beyond that, Decision 18's metric collapse is bypassable and the underlying unbounded-cardinality problem is untouched (verified: /api/v1/admin/users/x%2f..%2f<random>/access yields a distinct Prometheus label per random value, and any /api/<random> path does the same from an anonymous caller through the prod proxy), Decision 17 is implemented inside writeAPIDomainError but bypassed by four sibling call sites in the same file that still return the raw parser error to the client, the feature's most sensitive operation (granting access) writes no audit record when the target has no access_requests row, and the Go module carries a reachable x/text DoS advisory.",
+  "verification_performed": [
+    "httptest probes against handler.BuildRoutes (the real assembly used by cmd/main.go via newMux), covering: POST/GET/OPTIONS/lowercase-method on /api/v1/access/requests, /api/v1/users/settings, /api/v1/users/{legacy}/settings, /api/v1/admin/users, /api/v1/admin/users/{login}/access, /auth/yandex, /auth/yandex/code, /auth/refresh, /auth/logout, /metrics, /health, with and without Origin, with foreign Origin, with an empty and a populated allowlist. Probe file was created, run, and deleted; no repository code was modified (git status clean apart from the three task .md files that were already dirty on entry).",
+    "Live replay of migrations 001-005 against the running mariadb:11.4 container in a throwaway database audit_probe_11, seeded with a pre-existing users row 'rogogdbd', then dropped.",
+    "govulncheck ./... inside golang:1.25-alpine against the real module.",
+    "npm audit in client/.",
+    "Full existing test suite: go test ./... -> all packages ok, including the DB-backed contract tests against TEST_DB_DSN."
+  ],
+  "summary_counts": {
+    "totalFindings": 14,
+    "critical": 1,
+    "high": 1,
+    "medium": 6,
+    "low": 6
+  },
+  "decision_verdicts": [
+    {
+      "decision": 1,
+      "title": "Identity stored on the session row, not fetched from Yandex per request",
+      "verdict": "implemented-as-specified",
+      "evidence": "server/internal/auth/store.go:15-28 declares YandexLogin/YandexEmail/YandexDisplayName on Session; store.go:43-79 CreateSession writes all three columns; store.go:127-147 UpdateSessionTokens omits the identity columns from its SET list entirely, so MariaDB leaves them untouched across rotation; server/internal/handler/auth.go:195-218 newLoginSession populates them at login and auth.go:312-333 rotateSessionTokens does not re-fetch the profile; migration server/migrations/004_access_control.up.sql:8-11 adds the columns. The one Yandex profile call per login is at handler/auth.go:165. Regression is pinned by TestAuthStore_UpdateSessionTokensPreservesIdentity (auth/store_test.go:150) and TestHandleRefresh_DoesNotRefetchProfile (handler/auth_test.go:624). Identity survives rotation - no silent downgrade to session_identity_missing."
+    },
+    {
+      "decision": 2,
+      "title": "Pre-migration sessions are treated as unidentified",
+      "verdict": "implemented-as-specified",
+      "evidence": "server/internal/handler/middleware.go:25 defines sessionIdentityMissingCode; middleware.go:78-82 rejects with 401 when YandexLogin is NULL or blank after TrimSpace - both conditions, not just NULL. The code is deliberately excluded from the client retry set (client/src/utils/yandexAuth.js:15-17 lists only access_cookie_missing/access_expired/access_mismatch), so the client sends the user back to login instead of looping on /auth/refresh. Complementary fail-closed at handler/auth.go:173-176: a login whose Yandex profile has no login string creates no session at all. Covered by TestRequireAuth_NullIdentitySession (middleware_test.go:328) and TestRequireAuth_IdentityMissingCodeDoesNotTriggerClientRetry (middleware_test.go:455)."
+    },
+    {
+      "decision": 6,
+      "title": "Access check applies to all /api/v1/ routes; owner from context, not URL",
+      "verdict": "implemented-as-specified",
+      "evidence": "server/internal/handler/routes.go:54-71 mounts /api/v1/users/ behind RequireSameOrigin -> RequireAuth -> RequireAccess, /api/v1/admin/ behind RequireSameOrigin -> RequireAuth -> RequireAdmin, /api/v1/access/ behind RequireSameOrigin -> RequireAuth (deliberately without RequireAccess, routes.go:66-67). server/internal/handler/http.go:54-58 takes the owner from requireIdentity(w, r) and nothing else; http.go:62-93 has no branch that reads an owner from the path. Body channel closed by DisallowUnknownFields at http.go:254. Query channel: no handler reads a user parameter (grep over http.go). Probe-verified: GET /api/v1/users/otherlogin/settings -> 404 route not found, while GET /api/v1/users/settings reaches the handler with the session owner. Repository-level scoping confirmed at repository/postgres.go (all five UserRepository/Chat paths filter on user_id). The Task 6 IDOR fix has not regressed."
+    },
+    {
+      "decision": 7,
+      "title": "The ready-token login endpoint is removed",
+      "verdict": "implemented-as-specified",
+      "evidence": "grep for HandleYandexLogin and persistYandexToken across the whole tree returns zero hits outside explanatory comments. server/internal/handler/routes.go:80-92 registers only /auth/yandex/code, /auth/refresh, /auth/logout, /auth/status, /auth/me - the comment at routes.go:80-82 documents the deliberate absence. Probe: POST /auth/yandex against the real assembly -> 404 page not found. Client implicit branch removed: client/src/pages/AuthCallback.jsx:43-46 keeps only the comment; the hash is parsed at AuthCallback.jsx:35 solely to read an error parameter. Prod nginx (.github/workflows/deploy.yml:149-203) and client/nginx.conf have no /auth/yandex location either, so the address is not reachable at the edge. Pinned by TestAuthHandlerHasNoLegacyTokenEntryPoint (handler/auth_test.go:857)."
+    },
+    {
+      "decision": 8,
+      "title": "Origin check on mutating requests; fail closed on an empty allowlist",
+      "verdict": "implemented-as-specified",
+      "evidence": "server/internal/handler/middleware.go:194-239. GET/HEAD pass (middleware.go:205-208); everything else must present an Origin (originAllowed returns false for the empty string, middleware.go:223-225); a populated allowlist is matched exactly and nothing else (middleware.go:226-229); an empty allowlist falls back to scheme://r.Host with the scheme taken from configuration (CookieSecure), not from X-Forwarded-Proto (middleware.go:230-238). Attachment points: routes.go:56, 62, 70 (all three /api/v1 prefixes) and routes.go:87, 88, 89 (POST /auth/yandex/code, /auth/refresh, /auth/logout); /auth/status and /auth/me are GET-only and left alone (routes.go:91-92). Order is RequireSameOrigin outermost, before RequireAuth and before RequireAccess/RequireAdmin, on every chain. Probe-verified against the real assembly with a nil allowlist: missing Origin -> 403 forbidden and foreign Origin -> 403 forbidden on /api/v1/access/requests, /auth/yandex/code, /auth/refresh and /auth/logout; matching Origin passes through to the handler. Note: the code is correct; finding SEC-11-08 concerns the deploy-side coupling between COOKIE_SECURE and this fallback, not the middleware."
+    },
+    {
+      "decision": 9,
+      "title": "state parameter in the OAuth redirect",
+      "verdict": "implemented-as-specified",
+      "evidence": "client/src/utils/yandexAuth.js:110-120 createAuthState uses crypto.randomUUID with a crypto.getRandomValues(16 bytes) fallback - both CSPRNG, both 128 bits, neither can silently degrade to a constant; yandexAuth.js:125-133 saveAuthState is unexported so only buildYandexAuthUrl can write it; yandexAuth.js:137-146 consumeAuthState reads and removes in one step and returns null (never undefined) on absence; yandexAuth.js:158-168 puts the value in the authorize URL alongside scope. client/src/pages/AuthCallback.jsx:54-59 consumes the stored value before the code exchange and aborts the login when the stored value is missing, the returned value is missing, or they differ - so a direct hit on /auth?code=... with no stored state is a mismatch, not a pass."
+    },
+    {
+      "decision": 10,
+      "title": "An administrator always has access, regardless of the flag",
+      "verdict": "implemented-as-specified",
+      "evidence": "The rule exists exactly once, in server/internal/service/access.go:233-235 hasEffectiveAccess = user.HasAccess || user.Role == RoleAdmin, and is reached through GetAccessState (access.go:132) and CreateRequest (access.go:165). server/internal/handler/middleware.go:119-131 RequireAccess delegates to the service and does not re-implement the rule - there is no second admin branch that could be bypassed. RequireAdmin (middleware.go:136-148) checks role only and ignores the flag, which is the correct complement. ListUsers deliberately passes the raw flag through (service/access.go:143-149) so the admin sees the true database state. Probe-verified: an administrator with has_access=false passes RequireAccess and reaches the /api/v1/users/settings handler. Client mirror at client/src/pages/Panel.jsx:176-177 is used only to pick a screen, never as an authorization source."
+    },
+    {
+      "decision": 11,
+      "title": "EnsureUser never overwrites role or has_access",
+      "verdict": "implemented-as-specified",
+      "evidence": "server/internal/repository/postgres.go:615-635 - the actual PostgresRepository implementation, not just the interface: clause.OnConflict{Columns:[{id}], DoUpdates: clause.Assignments(map{\"email\", \"display_name\"})}. role and has_access appear only in the struct being inserted (postgres.go:616-622) and therefore only in the INSERT values, never in the ON DUPLICATE KEY UPDATE list. No naive Save() anywhere. MemoryRepository matches: the existing-record branch of memory.go EnsureUser copies only Email and DisplayName and writes the record back with its original Role/HasAccess. Pinned on both stores by TestAccessRepoContract_EnsureUserPreservesAdminRoleAndAccess (repository/access_repo_test.go:200) and at the service layer by TestAccessService_EnsureUser_DelegatesWithoutResettingRoleAndAccess (service/access_test.go:316). The admin-demotion regression this decision guards against does not exist in the merged code. (It is however reachable through a different route - see finding SEC-11-01, which demotes the administrator via migration ordering, not via EnsureUser.)"
+    },
+    {
+      "decision": 13,
+      "title": "Access columns are not added to the existing GORM model userModel",
+      "verdict": "implemented-as-specified",
+      "evidence": "server/internal/repository/postgres.go:25-32 - userModel still carries exactly ID and CreatedAt, with the invariant spelled out in the comment at postgres.go:15-24 including the live-reproduced constraint error. Access columns live on a separate model mapped to the same table, userAccessModel at postgres.go:38-48, and a read-only projection userAccessRow at postgres.go:53-62. The three legacy write paths are untouched and still go through upsertUser(tx, userID) with &userModel{ID: userID} and DoNothing: postgres.go:198 (UpsertSettings), postgres.go:291 (CreateChat), postgres.go:421 (AppendCalculation), helper at postgres.go:842-847. Pinned by TestAccessRepoContract_ExistingWritePathsSurviveAccessColumns (access_repo_test.go:808) and TestAccessRepoContract_WritePathsPreserveAdminRoleAndAccess (access_repo_test.go:996)."
+    },
+    {
+      "decision": 17,
+      "title": "Internal error text no longer reaches the response in any branch",
+      "verdict": "diverges",
+      "evidence": "The function itself is correct and complete. server/internal/handler/http.go:280-284 writeAPIDomainError logs the full error and writes only the category; http.go:286-314 classifyDomainError returns fixed slugs on all eight branches - invalid_request/forbidden/not_found/conflict/rate_limited/service_unavailable/timeout/internal_error - plus a nil guard at http.go:290-292. Pinned by TestWriteAPIDomainError_NoInternalTextInAnyBranch (http_test.go:89). The divergence is at the call sites in the same file that bypass it: server/internal/handler/http.go:99, 124, 167 and 219 pass err.Error() from decodeJSON straight into writeAPIError. Probe-verified live against the real assembly - POST /api/v1/users/settings with body {\"bogus_field\":1} returns {\"error\":\"invalid json: json: unknown field \\\"bogus_field\\\"\"}. Task 5 fixed exactly this class on the admin route (handler/access.go:149-154 logs the parser text and returns the fixed slug invalid_request) and its own comment states the reasoning, so the merged codebase now runs two conventions in one package. decisions.md:152 already carried this forward as a note for Task 6; Task 6 did not close it. See finding SEC-11-05."
+    },
+    {
+      "decision": 18,
+      "title": "The {login} segment collapses in the metric before authorization runs",
+      "verdict": "diverges",
+      "evidence": "The literal rule is implemented and works for the canonical form: server/internal/handler/metrics.go:52-55 isAdminUserLogin collapses index 4 when parts[0..3] are api/v1/admin/users, and metrics.go:30-34 writes into a copy so neighbouring segments are read unrewritten. Verified: /api/v1/admin/users/attacker/access -> /api/v1/admin/users/:id/access. It diverges from the decision's stated intent (the label must not be attacker-shaped) in two ways I reproduced. First, the positional guard is defeated by an encoded slash: r.URL.Path is decoded before WithMetrics sees it (handler/metrics.go:77 reads r.URL.Path, wired outside the mux at cmd/main.go:67), so POST /api/v1/admin/users/x%2f..%2f<random>/access produces the label /api/v1/admin/users/:id/../<random>/access - one new label per random value. Second, the decision's premise (the label is written before authorization) applies to every path, not only this one, and normalizePath collapses nothing outside its three rules: /api/<random>, /whatever-<random> and /api/v1/access/<random> all become verbatim labels for an unauthenticated caller, and prod nginx proxies /api/ to the app (.github/workflows/deploy.yml:213-219). See finding SEC-11-02."
+    }
+  ],
+  "flow_traces": [
+    {
+      "flow": "1. Session creation -> identity persisted -> RequireAuth reads it back -> RequireAccess/RequireAdmin decide on DB state -> handler uses context identity",
+      "result": "clean",
+      "detail": "handler/auth.go:92-123 HandleYandexCode orders the steps so that no cookie is ever issued before the identity is established and the users row exists: exchange (auth.go:153), profile fetch (auth.go:165), empty-login rejection (auth.go:173-176), EnsureUser (auth.go:184) with a nil-service guard at auth.go:180-183, then CreateSession (auth.go:115), then cookies (auth.go:121). auth/store.go:43-79 persists yandex_login/email/display_name. middleware.go:66-91 RequireAuth reads them back, TrimSpaces, and puts an Identity in the context under an unexported typed key (middleware.go:16-18, so no cross-package key collision). middleware.go:153-181 resolveAccessState reads the identity back and queries the DB per request; all three failure branches are closed (no identity -> 401, nil service -> 500, ErrNotFound -> 403 not 404, chosen deliberately so the response does not enumerate which logins exist). Handlers take the owner from requireIdentity only (http.go:54, access.go:175-177). No handler reads a URL- or body-supplied owner."
+    },
+    {
+      "flow": "2. Token rotation - does identity survive?",
+      "result": "clean",
+      "detail": "handler/auth.go:337-359 sessionForRefresh finds the session by refresh hash, rejects revoked/expired, and demands a stored Yandex refresh token; auth.go:312-333 rotateSessionTokens generates a fresh 32-byte refresh cookie, keeps the previous Yandex refresh token when Yandex does not return a new one (auth.go:319-322), and calls store.UpdateSessionTokens. auth/store.go:127-147 SET list is refresh_token_hash, yandex_access_token, yandex_refresh_token, access_expires_at, refresh_expires_at, updated_at - the three identity columns are absent, so they are not written and cannot be blanked. The refresh cookie rotates on every call, so there is no session fixation. No downgrade to session_identity_missing is possible through this path."
+    },
+    {
+      "flow": "3. EnsureUser upsert column list, and the userModel shape",
+      "result": "clean",
+      "detail": "See Decision 11 and Decision 13 verdicts. Checked on the concrete PostgresRepository (postgres.go:615-635) and on MemoryRepository, not on the interface."
+    },
+    {
+      "flow": "4. RequireSameOrigin wiring, ordering, and empty-allowlist behaviour",
+      "result": "clean in code; see SEC-11-08 for the deploy-side coupling",
+      "detail": "See Decision 8 verdict. All four mutating /auth routes and all three /api/v1 prefixes carry it, outermost in every chain, and the empty-allowlist path was probe-verified to reject rather than pass."
+    },
+    {
+      "flow": "5. writeAPIDomainError - every branch, every call site",
+      "result": "diverges at four call sites",
+      "detail": "See Decision 17 verdict and finding SEC-11-05. The function is right; http.go:99, 124, 167, 219 do not use it."
+    },
+    {
+      "flow": "6. normalizePath - does {login} collapse regardless of form?",
+      "result": "diverges",
+      "detail": "See Decision 18 verdict and finding SEC-11-02. It collapses for the canonical form and for a leading double slash, but not for an encoded slash inside the login segment, and not for /api/v1//admin/... (that particular variant is neutralised by nginx merge_slashes at the edge, the encoded-slash one is not)."
+    },
+    {
+      "flow": "7. Client gating - does a no-access browser actually not fire the data requests?",
+      "result": "clean",
+      "detail": "client/src/pages/Panel.jsx:204-250 is the only place that resolves access, and it does so before any data call. Both data-loading effects gate on status === \"ready\" and not merely on userID: Panel.jsx:260-263 (settings + chats) and Panel.jsx:310-314 (calculation history). Since status only becomes \"ready\" via Panel.jsx:242 hasPanelAccess(accessState), a no-access user's browser genuinely never issues /api/v1/users/settings, /chats or /chats/{id}/calculations - the requests are not fired and then rejected, they are not fired. The admin section is mounted only under isAdmin (Panel.jsx:895) and its own fetch lives inside that component (AdminUsersSection.jsx:86-113), so a non-admin never issues GET /api/v1/admin/users either. Server-side enforcement is independent of all of this (RequireAccess/RequireAdmin), so the client gate is a UX layer, not the control."
+    },
+    {
+      "flow": "8. POST /auth/yandex and HandleYandexLogin removal",
+      "result": "clean",
+      "detail": "See Decision 7 verdict. Handler deleted, route unregistered, client branch deleted, edge configs carry no such location. Probe returns 404."
+    }
+  ],
+  "findings": [
+    {
+      "id": "SEC-11-01",
+      "severity": "critical",
+      "owasp": "A01:2021 - Broken Access Control (privilege escalation) / A04:2021 - Insecure Design (migration ordering)",
+      "cwe": "CWE-266 / CWE-178 (improper handling of case sensitivity)",
+      "title": "Migration 004's administrator seed is evaluated under the very collation migration 005 exists to eliminate, and 004 never re-runs - an attacker-chosen login can inherit role='admin' while the real administrator is demoted",
+      "location": "server/migrations/004_access_control.up.sql:27-30 (the seed INSERT), server/migrations/005_identity_collation.up.sql:40-41 (collation change, applied strictly after), server/migrations/migrate.go:32-54 (each file applied exactly once, recorded in schema_migrations)",
+      "description": "Decision 19 correctly moves users.id to utf8mb4_nopad_bin so that identity is compared byte-for-byte. But migrate.go applies files in lexicographic order and records each version in schema_migrations, so 004 runs once, before 005, while users.id still carries the inherited utf8mb4_uca1400_ai_ci - case-, accent- and trailing-space-insensitive. The seed at 004:27-30 is INSERT ... ON DUPLICATE KEY UPDATE role='admin'. Under the legacy collation, that upsert matches any pre-existing row whose id merely collapses to 'RoGogDBD' or 'irina2000aleshina', and promotes THAT row instead of creating the correct one. 005 then makes comparisons binary, and 004 never runs again, so the real administrator's byte-exact row is never seeded; it gets created later by EnsureUser with role='user'.\n\nReproduced live on the running mariadb:11.4 container, in a throwaway database, applying the real migration files in the real order:\n  pre-existing rows: normaluser, rogogdbd\n  after 004: irina2000aleshina admin 1 | normaluser user 0 | rogogdbd ADMIN 0\n  after 005: unchanged (rogogdbd is still admin)\n  after the real admin 'RoGogDBD' logs in (EnsureUser upsert of email/display_name): RoGogDBD user 0 | irina2000aleshina admin 1 | normaluser user 0 | rogogdbd ADMIN 0\n\nSo the account 'rogogdbd' is a full administrator - RequireAdmin (handler/middleware.go:142) checks role only, and hasEffectiveAccess (service/access.go:233-235) grants access on role alone, so has_access=0 does not matter - while 'RoGogDBD' is an ordinary user with no access at all.\n\nThe precondition is a pre-existing users row that collides with an admin login. That row was anonymously creatable for the entire production life of the product: the tech-spec's own Decision 6 rationale states that upsertUser (repository/postgres.go, reached from UpsertSettings/CreateChat/AppendCalculation) 'сегодня достижим анонимно и создаёт строки в users'. Any internet caller could POST to the pre-feature /api/v1/users/{userID}/settings with userID='rogogdbd' and materialise the row. Decision 6 closes that door going forward; it does not retroactively remove rows already inserted through it. Task 1's note in decisions.md examined this collation and concluded it was 'benign for the two current logins' because the collision merely fails to create a second admin row - that conclusion was correct for the schema as of Task 1, and stops being correct the moment 005 splits the two identities apart afterwards.\n\nThis is not a re-litigation of Decision 19 and it is not one of the accepted risks: Decision 19 closed the runtime read/write collision (pinned by TestAccessRepoContract_LoginIdentityIsCaseAndSpaceSensitive, access_repo_test.go:452, which runs against a schema that already has 005 applied). The migration-time window is a distinct gap that no per-task review could see, because it lives in the ordering between two files owned by two different tasks.",
+      "impact": "Permanent administrator privilege on an attacker-controlled account, combined with total loss of legitimate administrative control (both real admins would be ordinary users with no access, and there is no admin-demotion or admin-promotion path in the API by design). The attacker-admin can grant access to arbitrary logins, read every user's login/email/role/access state through GET /api/v1/admin/users, and revoke access from everyone. Recovery requires direct database access. Production has not been deployed with this feature yet (Wave 12 has not run), so this is catchable at zero cost right now and irreversible-in-practice afterwards.",
+      "recommendation": "Two changes, both cheap, before the first deploy of this feature.\n\n(1) Pre-deploy gate - run against the live production database and require zero rows:\n```sql\nSELECT id FROM users\nWHERE CONVERT(id USING utf8mb4) COLLATE utf8mb4_uca1400_ai_ci\n      IN ('RoGogDBD','irina2000aleshina')\n  AND CONVERT(id USING utf8mb4) COLLATE utf8mb4_nopad_bin\n      NOT IN ('RoGogDBD','irina2000aleshina');\n```\nAny row returned must be renamed or deleted (with its cascading data) before migrating.\n\n(2) Re-assert admin identity after the collation is binary, so the invariant does not depend on what happened to be in the table at 004 time. Add server/migrations/006_admin_seed_binary.up.sql:\n```sql\n-- Runs after 005: comparisons here are byte-exact.\nUPDATE users SET role = 'user'\n WHERE role = 'admin'\n   AND id NOT IN ('RoGogDBD','irina2000aleshina');\n\nINSERT INTO users (id, role, has_access) VALUES\n  ('RoGogDBD', 'admin', TRUE),\n  ('irina2000aleshina', 'admin', TRUE)\nON DUPLICATE KEY UPDATE role = 'admin';\n```\nThe UPDATE is what actually closes the escalation (it strips admin from any row that only collided); the INSERT restores the legitimate administrators. Both statements are idempotent and safe to re-run. Add a contract test that applies 004 on a schema containing a colliding row, then 005 and 006, and asserts that exactly the two byte-exact logins hold role='admin'."
+    },
+    {
+      "id": "SEC-11-02",
+      "severity": "high",
+      "owasp": "A04:2021 - Insecure Design / A05:2021 - Security Misconfiguration (unbounded metric cardinality reachable pre-authorization)",
+      "cwe": "CWE-770 (allocation without limits)",
+      "title": "Prometheus label cardinality is unbounded for an anonymous caller; Decision 18's collapse rule covers one route and is bypassable with an encoded slash",
+      "location": "server/internal/handler/metrics.go:23-38 (normalizePath), metrics.go:52-55 (isAdminUserLogin), metrics.go:57-67 (looksLikeID), metrics.go:70-84 (WithMetrics), wired outside the mux at server/cmd/main.go:65-67, reachable through .github/workflows/deploy.yml:213-219 (prod nginx proxies /api/ to the app)",
+      "description": "WithMetrics wraps the mux from outside authorization (main.go:67, CORS -> Metrics -> mux), so r.URL.Path becomes a Prometheus label value regardless of whether the request ends in 401, 403 or 404 - this is the exact premise Decision 18 is built on. Decision 18 then closes precisely one route. Everything else is still uncollapsed, and I verified this against the real normalizePath:\n  /api/randomjunk1            -> /api/randomjunk1\n  /api/v1/access/randomjunk1  -> /api/v1/access/randomjunk1\n  /whatever-anonymous-junk    -> /whatever-anonymous-junk\nlooksLikeID only collapses pure integers or strings longer than 8 characters containing a hyphen (metrics.go:57-67), and index 0 is never collapsed (metrics.go:31). An unauthenticated caller can therefore mint one new label pair (HTTPRequestsTotal and HTTPRequestDuration, the latter a histogram) per request simply by varying the path. /api/ is proxied to the application by the production nginx block, so this is reachable from the internet.\n\nSeparately, the Decision 18 rule itself is bypassable. WithMetrics reads r.URL.Path, which is percent-decoded, while Go's ServeMux matches on the escaped path - so an encoded slash inside the login segment splits the path for the metric but not for the router. Verified against the real assembly:\n  request  POST /api/v1/admin/users/adm%2f..%2frnd7f3a/access\n  r.URL.Path            /api/v1/admin/users/adm/../rnd7f3a/access\n  metric label          /api/v1/admin/users/:id/../rnd7f3a/access\nOne distinct label per random value, on the exact route Decision 18 was written to protect. nginx passes %2f through untouched by default, so this survives the proxy. (The sibling variant /api/v1//admin/users/<random>/access also escapes the rule - metrics.go:53 requires parts[2]=='admin' at a fixed index - but nginx's default merge_slashes normalises that one at the edge, so it only matters for direct access to the app port, which docker-compose.yml:24-25 does publish in development.)",
+      "impact": "Memory exhaustion of the Prometheus server and of the application's own in-process registry (each new label set is retained for the process lifetime and for the 15-day retention window configured at docker-compose.prod.yml:80). A few hundred thousand crafted requests degrade or kill the monitoring stack, and because the registry lives inside the app process, the application itself grows unboundedly - a denial of service against the product, not only against Grafana. It also defeats the specific protection Decision 18 was added for.",
+      "recommendation": "Stop deriving the label from the request path and derive it from what the router actually matched, or hard-bound the label set. Concretely, either (a) move metrics inside the mux and use a fixed route template per registered pattern, or (b) keep WithMetrics outside but replace normalizePath with an allowlist: match r.URL.Path against the finite set of known route templates and emit the literal string \"other\" for anything that does not match. Sketch for (b):\n```go\nvar knownRoutes = []*regexp.Regexp{\n    regexp.MustCompile(`^/api/v1/users/(settings|chats|market-feedback)$`),\n    regexp.MustCompile(`^/api/v1/users/chats/[^/]+(/(restore|calculate|calculations))?$`),\n    regexp.MustCompile(`^/api/v1/admin/users(/[^/]+/access)?$`),\n    regexp.MustCompile(`^/api/v1/access/(me|requests)$`),\n    regexp.MustCompile(`^/auth/(status|me|refresh|logout|yandex/code)$`),\n    regexp.MustCompile(`^/(health|metrics)$`),\n}\n// collapse the variable segments of the matched template, and return \"other\" on no match\n```\nThis bounds the label set by construction and makes the encoded-slash and double-slash variants irrelevant. Whichever option is chosen, add a test that feeds a percent-encoded slash and a double slash and asserts the resulting label is one of the known values."
+    },
+    {
+      "id": "SEC-11-03",
+      "severity": "medium",
+      "owasp": "A09:2021 - Security Logging and Monitoring Failures",
+      "cwe": "CWE-778 (insufficient logging)",
+      "title": "Granting and revoking access - the feature's most sensitive operation - leaves no audit record when the target user has no access_requests row",
+      "location": "server/internal/service/access.go:181-229 (SetAccess), server/internal/handler/access.go:139-170 (handleSetAccess), server/internal/repository/postgres.go:678-737 (SetAccess/updateAccessFlag)",
+      "description": "The only place decided_by and decided_at are written is DecideRequest (postgres.go:797-810), and SetAccess reaches it only when the snapshot taken by GetUser shows a non-empty RequestStatus (service/access.go:217-219). The tech-spec calls this out as intentional - 'администратор вправе выдать доступ и тому, кто заявку не подавал, и заводить ей заявку задним числом не нужно' - and it is a reasonable data-model choice, but the consequence is that in exactly that case nothing anywhere records that access was granted: no row in access_requests, no column on users, and no log line. handleSetAccess (access.go:139-170) logs only the two 400 branches; the success path writes 204 silently. The same hole applies to revocation of a user who never filed a request. Denials are logged (writeAPIDomainError at http.go:282 emits the login on every 401/403), so the asymmetry is that failures are recorded and successful privilege changes are not.\n\nThere is also no log line for a successful login (handler/auth.go:92-123 logs only failures), so the record of who obtained a session at what time exists nowhere either.",
+      "impact": "After a compromise - including the one described in SEC-11-01 - there is no way to reconstruct who granted access to whom or when. An attacker who obtains the admin role can grant access broadly and the only visible trace is the current value of users.has_access, which they can also flip back. This is a forensics and accountability gap on the exact operation the feature exists to control.",
+      "recommendation": "Emit a structured log line on every successful privilege change and on every successful login, at minimum. In service/access.go SetAccess, after the flag write succeeds:\n```go\nlog.Printf(\"access: login=%q granted=%v decided_by=%q\", login, granted, decidedBy)\n```\nand in handler/auth.go after CreateSession:\n```go\nlog.Printf(\"auth: session created for login=%q\", profile.Login)\n```\nA durable trail is better still: an append-only access_audit table (actor, target, action, at) written in the same transaction as the flag, which also removes the dependency on log retention. Add a Prometheus counter for grants/revokes so the Grafana stack already in place can alert on unexpected privilege changes."
+    },
+    {
+      "id": "SEC-11-04",
+      "severity": "medium",
+      "owasp": "A06:2021 - Vulnerable and Outdated Components",
+      "cwe": "CWE-1104 / CWE-835 (infinite loop)",
+      "title": "Reachable DoS advisory in golang.org/x/text v0.21.0 (GO-2026-5970)",
+      "location": "package: golang.org/x/text@v0.21.0 (server/go.mod, indirect via gorm.io/gorm)",
+      "description": "govulncheck ./... run against the real module inside golang:1.25-alpine reports GO-2026-5970 (infinite loop on invalid input in golang.org/x/text) as a Symbol Result, not merely a module-level match - the example trace is server/internal/repository/postgres.go:11 -> repository.init -> gorm.init -> norm.Form.Properties. Fixed in v0.39.0. Two further advisories were reported in imported/required modules but are not called by this code.",
+      "impact": "A crafted input reaching the normalisation path can hang a goroutine indefinitely; in an HTTP server that is a per-request denial of service that accumulates. Reachability is confirmed by the tool at the symbol level, which is stronger than a bare dependency-graph match.",
+      "recommendation": "go get golang.org/x/text@v0.39.0 && go mod tidy, then re-run govulncheck to confirm zero symbol results. Add `govulncheck ./...` as a step in .github/workflows/test.yml so this gate is continuous rather than a one-off audit observation - the workflow already has Go set up at test.yml:66-71, so it is three lines."
+    },
+    {
+      "id": "SEC-11-05",
+      "severity": "medium",
+      "owasp": "A05:2021 - Security Misconfiguration (information exposure through an error message)",
+      "cwe": "CWE-209",
+      "title": "Decision 17 is bypassed at four call sites in http.go, which still return the raw JSON parser text - including the attacker's own field name - to the client",
+      "location": "server/internal/handler/http.go:99, http.go:124, http.go:167, http.go:219 (each `writeAPIError(w, http.StatusBadRequest, err.Error())`), with the correct pattern one file away at server/internal/handler/access.go:149-154",
+      "description": "writeAPIDomainError is implemented exactly as Decision 17 specifies and every one of its eight branches returns a fixed category slug (http.go:286-314), pinned by TestWriteAPIDomainError_NoInternalTextInAnyBranch (http_test.go:89). The four decodeJSON error branches never go through it. Verified live against the real BuildRoutes assembly: POST /api/v1/users/settings with body {\"bogus_field\":1} returns HTTP 400 with body {\"error\":\"invalid json: json: unknown field \\\"bogus_field\\\"\"}, and POST /api/v1/users/chats returns the same. The response enumerates the server-side struct shape for an attacker probing field names (a decoder built with DisallowUnknownFields turns each guess into a yes/no oracle for service.UserSettings, service.CreateChatInput, service.OrderInput and service.MarketFeedbackInput), and it echoes attacker-controlled text back into the response body. Task 5 recognised this as the same class and fixed it on the admin route, with an explicit comment saying so (access.go:149-152); decisions.md:152 recorded it as a carry-forward item for Task 6; Task 6 rewrote handleUsers without closing it. The result is two error conventions inside one package.",
+      "impact": "Information disclosure about internal data structures, and a field-name oracle that makes further probing cheaper. Not directly exploitable on its own (the echoed text is JSON-encoded, so there is no XSS vector), which is why this is medium rather than high - but it is a stated invariant of this feature that the merged code does not hold.",
+      "recommendation": "Route these four through the same convention Task 5 established:\n```go\nif err := decodeJSON(r, &req); err != nil {\n    log.Printf(\"api error: status=%d code=invalid_request err=%v\", http.StatusBadRequest, err)\n    writeAPIError(w, http.StatusBadRequest, \"invalid_request\")\n    return\n}\n```\nBetter, since the pattern now appears five times, extract it: `writeAPIDecodeError(w, err)`. While there, http.go:213 returns the fixed but configuration-revealing text \"deepseek integration is not configured\" - prefer a neutral slug such as \"service_unavailable\". Extend TestWriteAPIDomainError_NoInternalTextInAnyBranch with a case that posts an unknown field to each of the four routes and asserts the body is exactly {\"error\":\"invalid_request\"}."
+    },
+    {
+      "id": "SEC-11-06",
+      "severity": "medium",
+      "owasp": "A08:2021 - Software and Data Integrity Failures (build-chain integrity)",
+      "cwe": "CWE-1104",
+      "title": "Six unpatched advisories in the client build chain, in the toolchain that produces the production image",
+      "location": "package: rollup 4.0.0-4.58.0, postcss <=8.5.22, nanoid <=3.3.16, esbuild <=0.24.2 (via vite <=6.4.2), @babel/core <=7.29.0 - client/package.json devDependencies, built by .github/workflows/deploy.yml:48-57",
+      "description": "npm audit in client/ reports 6 vulnerabilities (4 high, 1 moderate, 1 low): rollup arbitrary file write via path traversal (GHSA-mw96-cpmx-2vgc), four postcss advisories including XSS via unescaped </style> in stringify output (GHSA-qx2v-qp2m-jg93) and arbitrary .map file disclosure via attacker-controlled sourceMappingURL (GHSA-6g55-p6wh-862q, GHSA-fxqj-rqcc-2cmp), nanoid infinite loop (GHSA-28wg-ghj8-5hjv, GHSA-2v37-7h3g-55p8), esbuild dev-server request forgery (GHSA-67mh-4wv8-2f99), @babel/core arbitrary file read (GHSA-4x5r-pxfx-6jf8). All are devDependencies, so none ship in the runtime bundle - but they all execute inside the deploy job that builds and pushes ghcr.io/.../poshivon-web, which is the artifact served to users. The esbuild one additionally affects anyone running `npm run dev`, which binds 0.0.0.0 (client/package.json scripts.dev).",
+      "impact": "Compromise of the build step yields control of the published frontend image, which is a far higher-value target than the dev machine. The postcss stringify XSS can inject markup into the shipped CSS bundle if any dependency processes untrusted CSS. Also note that .github/workflows/test.yml runs on every push including pull_request, so a malicious PR reaches this toolchain.",
+      "recommendation": "Run `npm audit fix` in client/ - it resolves rollup, postcss, nanoid and @babel/core without breaking changes; the remaining esbuild/vite item needs the vite major bump and should be scheduled rather than forced. Commit the updated package-lock.json. Add `npm audit --audit-level=high` as a step in .github/workflows/test.yml so this is enforced rather than rediscovered. Independently, the third-party actions in deploy.yml (appleboy/ssh-action@v1.0.3, appleboy/scp-action@v0.1.7, docker/*-action@v3/v5) are pinned to mutable tags rather than commit SHAs, which the Task 9 audit already noted; pinning them to SHAs closes the same class of supply-chain risk on the deploy side."
+    },
+    {
+      "id": "SEC-11-07",
+      "severity": "medium",
+      "owasp": "A05:2021 - Security Misconfiguration",
+      "cwe": "CWE-1021 (improper restriction of rendered UI layers) / CWE-693",
+      "title": "No security headers at either nginx layer - the new admin surface has no framing protection and the SPA has no CSP",
+      "location": "client/nginx.conf:1-8 (only X-Robots-Tag), .github/workflows/deploy.yml:135-139 (the production default.conf heredoc, likewise only X-Robots-Tag)",
+      "description": "Both nginx configurations set exactly one header, X-Robots-Tag. There is no X-Frame-Options, no Content-Security-Policy (and therefore no frame-ancestors), no X-Content-Type-Options, no Referrer-Policy, and no Strict-Transport-Security in the application's own configuration - HSTS depends on whatever the external nginx-proxy/letsencrypt companion in front (docker-compose.prod.yml:36-54) happens to emit, which is not under this repository's control or review. This feature introduces the first genuinely dangerous UI in the product: a checkbox at AdminUsersSection.jsx:48-54 whose single click grants a named user full access to the application. RequireSameOrigin offers no protection against UI redressing, because a framed page is same-origin with itself and its fetch carries Origin: https://poshivon.ru.\n\nThe reason this is medium and not high is that today the attack is blocked one layer down: cookies are SameSite=Lax by default (config/config.go:73, parseSameSite default at handler/auth.go:640-649), and Lax suppresses cookies on cross-site iframe loads, so a framed /panel renders unauthenticated and redirects away (Panel.jsx:212-214). That defence rests entirely on the value of a single optional deploy secret. COOKIE_SAMESITE is passed through unvalidated (deploy.yml:112, docker-compose.prod.yml:18) and Decision 8's own text notes it 'молча откатывается к Lax при опечатке'; the inverse is also true - setting it to \"none\", which is the natural thing to do if the SPA is ever moved to a separate origin, silently makes the clickjacking live with no other change.",
+      "impact": "One configuration change away from a UI-redress attack that escalates an arbitrary account to full application access with a single tricked admin click. Independently, the absence of CSP and X-Content-Type-Options removes the standard mitigations for any future XSS or content-sniffing issue in the SPA, and there is no framebusting fallback anywhere in the client.",
+      "recommendation": "Add to both nginx server blocks (client/nginx.conf and the deploy.yml heredoc, keeping them identical):\n```nginx\nadd_header X-Frame-Options \"DENY\" always;\nadd_header Content-Security-Policy \"default-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'\" always;\nadd_header X-Content-Type-Options \"nosniff\" always;\nadd_header Referrer-Policy \"strict-origin-when-cross-origin\" always;\n```\nfrane-ancestors 'none' is the part that closes the clickjacking path independently of SameSite. Verify the CSP against the built bundle before shipping (Tailwind v4 + Vite may need 'unsafe-inline' for styles; if so, keep script-src strict and relax style-src only). Confirm separately that the fronting proxy emits Strict-Transport-Security, or add it here."
+    },
+    {
+      "id": "SEC-11-08",
+      "severity": "medium",
+      "owasp": "A05:2021 - Security Misconfiguration",
+      "cwe": "CWE-1188 (insecure default) / CWE-665",
+      "title": "COOKIE_SECURE now silently determines whether the Origin check can ever pass, and it is an optional unvalidated secret defaulting to false",
+      "location": "server/internal/config/config.go:72 (COOKIE_SECURE default false), config.go:81 (CORS_ALLOWED_ORIGINS default empty), server/internal/handler/middleware.go:234-238 (scheme derived from that flag), server/cmd/main.go:103-104, .github/workflows/deploy.yml:110-113 and 252-255, docker-compose.prod.yml:16-19",
+      "description": "Decision 8 deliberately made the empty-allowlist branch meaningful rather than permissive, which is right. The consequence is that when CORS_ALLOWED_ORIGINS is empty - which Decision 8's own rationale argues is the likely production state, since it is an optional secret and the app is same-origin behind a proxy - the Origin check reduces to `origin == scheme + \"://\" + r.Host`, where scheme comes solely from cfg.CookieSecure. If the COOKIE_SECURE secret is unset or misspelled, envBool returns the false default (config.go:72, 135-148: an unrecognised value also falls back rather than failing) and two things happen at once: session cookies are issued without the Secure attribute (handler/auth.go:487), and RequireSameOrigin starts comparing against http://poshivon.ru while every browser sends Origin: https://poshivon.ru - so every mutating request in the product returns 403. There is no startup validation, no warning, and no test that exercises the combination; the failure is loud in the application but its cause is invisible, and the natural incident response ('the Origin check is broken, disable it') is the wrong one.\n\nThe residual weakness in the fallback itself - it trusts r.Host, which is client-supplied - was raised by the Task 5 audit and accepted as an infrastructure invariant (decisions.md:186), so I am not re-flagging it; I note only that it stops being merely theoretical if CORS_ALLOWED_ORIGINS is left empty, and that setting the allowlist explicitly removes both problems at once.",
+      "impact": "Either a total outage of all writes (COOKIE_SECURE false on an https deployment), or session cookies transmitted without the Secure flag over any plaintext request that reaches the host before a redirect. Both stem from a single unset optional secret with no fail-fast.",
+      "recommendation": "Set CORS_ALLOWED_ORIGINS=https://poshivon.ru,https://www.poshivon.ru and COOKIE_SECURE=true explicitly as production secrets, so neither the fallback branch nor the scheme guess is load-bearing. Then make the misconfiguration impossible to ship silently - in config.Load or at the top of main():\n```go\nif cfg.AllowedOrigins == \"\" && !cfg.CookieSecure {\n    log.Printf(\"ВНИМАНИЕ: CORS_ALLOWED_ORIGINS пуст и COOKIE_SECURE=false — \" +\n        \"проверка Origin будет сверяться с http://%s и отклонит любой https-запрос\", cfg.Host)\n}\n```\nand consider making it a hard failure when APP_STORAGE is a real database (i.e. a production run). Add a test asserting that an https Origin is rejected when secure=false, so the coupling is documented in code rather than only in this report."
+    },
+    {
+      "id": "SEC-11-09",
+      "severity": "medium",
+      "owasp": "A04:2021 - Insecure Design / A07:2021 - Identification and Authentication Failures",
+      "cwe": "CWE-770 (no rate limiting)",
+      "title": "No rate limiting on any endpoint, including the unauthenticated OAuth code-exchange that makes two outbound calls to Yandex per request",
+      "location": "server/internal/handler/routes.go:87 (POST /auth/yandex/code), server/internal/handler/auth.go:92-123 and 152-190, server/internal/handler/routes.go:88-89 (/auth/refresh, /auth/logout), server/internal/handler/access.go:92-104 (POST /api/v1/access/requests)",
+      "description": "There is no rate limiter, no per-IP budget and no backoff anywhere in the request path - not in main.go, not in any middleware, and not at either nginx layer (client/nginx.conf and the deploy.yml heredoc have no limit_req zone). POST /auth/yandex/code requires no session; RequireSameOrigin only requires an Origin header, which any non-browser client sets freely (curl -H 'Origin: https://poshivon.ru'), so the endpoint is effectively open. Each accepted call performs two outbound HTTP requests to Yandex with a 10-second client timeout (handler/auth.go:68-70, exchangeCodeWithYandex at auth.go:425-470 and fetchYandexProfile at auth.go:574-606), both synchronous with the request. /auth/refresh has the same shape. The URLs are configuration-derived, so there is no SSRF here - the issue is amplification and resource exhaustion.",
+      "impact": "An unauthenticated caller can pin the server's goroutines and outbound connection pool for 10 seconds per request at negligible cost to themselves, and can exhaust the application's rate budget at Yandex's OAuth endpoint, which denies login to every legitimate user. Combined with SEC-11-02 (each such request also mints a metric label) the two compound.",
+      "recommendation": "Add a limit_req zone at the nginx layer for the auth endpoints, which is the cheapest place and requires no Go changes:\n```nginx\nlimit_req_zone $binary_remote_addr zone=auth:10m rate=10r/m;\nlocation = /auth/yandex/code { limit_req zone=auth burst=5 nodelay; ... }\nlocation = /auth/refresh     { limit_req zone=auth burst=5 nodelay; ... }\n```\napplied identically in client/nginx.conf and the deploy.yml heredoc. A modest global limit on /api/ is worth adding too. If in-process limiting is preferred later, a small token-bucket middleware keyed by X-Real-IP (already set by both nginx blocks) fits the existing middleware pattern."
+    },
+    {
+      "id": "SEC-11-10",
+      "severity": "low",
+      "owasp": "A01:2021 - Broken Access Control (open redirect)",
+      "cwe": "CWE-601",
+      "title": "Post-login landing URL is taken from window.location.pathname and can be made protocol-relative, redirecting to an external host after a successful login",
+      "location": "client/src/utils/yandexAuth.js:174-175 (getAuthRedirectTarget), yandexAuth.js:85-104 (saveAuthReturnTo/consumeAuthReturnTo), client/src/components/AuthModal.jsx:15-16 (where the value is captured), consumed at client/src/pages/AuthCallback.jsx:63 (window.location.replace)",
+      "description": "AuthModal captures `${window.location.pathname}${window.location.search}` and stores it verbatim; AuthCallback later passes it to window.location.replace with no validation. A path is normally safe, but a URL such as https://poshivon.ru//evil.com yields pathname === \"//evil.com\" in the browser (the double slash is preserved in the location object), the SPA fallback serves index.html for it, and window.location.replace(\"//evil.com\") is a protocol-relative navigation to https://evil.com. The victim therefore completes a genuine login on the real site and is then handed to an attacker-controlled page that they arrived at from a trusted origin. A javascript: payload is not reachable this way (pathname always begins with a slash), which is why this is low rather than higher.",
+      "impact": "Credible phishing hand-off: the victim authenticates on the real domain, then lands on a look-alike page asking them to 'sign in again'. Also usable to lend legitimacy to arbitrary external links.",
+      "recommendation": "Validate at the consumption point in yandexAuth.js:\n```js\nconst isSafeInternalPath = (value) =>\n  typeof value === \"string\" && value.startsWith(\"/\") && !value.startsWith(\"//\");\n\nexport const getAuthRedirectTarget = () => {\n  const stored = consumeAuthReturnTo();\n  if (isSafeInternalPath(stored)) return stored;\n  return import.meta.env.VITE_AUTH_SUCCESS_REDIRECT || \"/\";\n};\n```\nRejecting a leading \"//\" (and, defensively, any value containing \"\\\\\") closes it. Validating on write in saveAuthReturnTo as well makes the invariant hold on both sides."
+    },
+    {
+      "id": "SEC-11-11",
+      "severity": "low",
+      "owasp": "A02:2021 - Cryptographic Failures / A07:2021 - Authentication Failures",
+      "cwe": "CWE-613 (insufficient session expiration)",
+      "title": "Sessions slide indefinitely - every refresh extends the absolute lifetime by another 30 days, and there is no way to revoke another user's sessions",
+      "location": "server/internal/handler/auth.go:312-333 (rotateSessionTokens recomputes refresh_expires_at from now), server/internal/auth/store.go:127-147, server/internal/config/config.go:82 (REFRESH_TTL_HOURS default 720)",
+      "description": "Each successful /auth/refresh sets refresh_expires_at = now + RefreshTTLHours, so a session that is refreshed at least once a month never expires. There is no absolute lifetime cap and no created_at-based ceiling. Revocation is possible only through the session's own refresh hash (store.go:149-166, reachable only from that user's own /auth/logout), so an administrator who revokes has_access cannot terminate the user's sessions - only make them useless. Additionally, ResolveSession compares the stored Yandex access token to the cookie with a plain != (auth.go:559), which is not constant-time; the practical impact is negligible because the row is already located by the refresh-token hash, so an attacker reaching that comparison already holds the refresh token.",
+      "impact": "A stolen refresh cookie remains usable indefinitely as long as it is exercised monthly. Bounded in blast radius because RequireAccess consults the database on every request, so revoking has_access takes effect immediately for data access - but the session itself, and /auth/status and /auth/me with it, stay alive.",
+      "recommendation": "Cap the absolute lifetime: keep the session's created_at (already stored, store.go:26) and refuse rotation past created_at + N days in sessionForRefresh (auth.go:337-359), forcing a real re-login. Add a store method to revoke by yandex_login so that an access revocation can also terminate sessions:\n```sql\nUPDATE oauth_sessions SET revoked_at = ?, updated_at = ? WHERE yandex_login = ? AND revoked_at IS NULL\n```\ncalled from AccessService.SetAccess when granted == false. Use crypto/subtle.ConstantTimeCompare for the access-token comparison while in the file."
+    },
+    {
+      "id": "SEC-11-12",
+      "severity": "low",
+      "owasp": "A05:2021 - Security Misconfiguration (secret naming) / A02:2021 - Cryptographic Failures",
+      "cwe": "CWE-522",
+      "title": "The Yandex OAuth client secret is stored under a VITE_-prefixed name, one line away from being inlined into the public JavaScript bundle",
+      "location": "server/internal/config/config.go:76 (`envOrDefault(\"YANDEX_CLIENT_SECRET\", envOrDefault(\"VITE_YA_CLIENT_SECRET\", \"\"))`), .github/workflows/deploy.yml:115 (`YANDEX_CLIENT_SECRET: ${{ secrets.VITE_YA_CLIENT_SECRET }}`), adjacent to deploy.yml:55-57 where the sibling VITE_ values are passed as client build-args",
+      "description": "VITE_ is Vite's convention for environment values that are deliberately inlined into the browser bundle. The repository stores a server-side OAuth client secret under exactly that prefix, and its two siblings with the same prefix - VITE_YA_CLIENT_ID and VITE_YA_REDIRECT_URI - are already passed into the frontend image build at deploy.yml:55-57. Adding one more line to that build-args block, which is the obvious thing to do to anyone reading the file, would compile the OAuth client secret into a public JavaScript asset. The same naming appears as a fallback in config.go:76, which normalises the wrong mental model. This is a latent trap rather than a live exposure - I confirmed the secret is not currently passed to the client build and does not appear in any client source file.",
+      "impact": "One plausible edit publishes the OAuth client secret. With client_id and client_secret an attacker can complete the authorization-code exchange for arbitrary codes issued to this application, which is the same capability the removed POST /auth/yandex endpoint used to grant (Decision 7).",
+      "recommendation": "Rename the GitHub secret to YANDEX_CLIENT_SECRET, update deploy.yml:115, and remove the VITE_YA_CLIENT_SECRET fallback from config.go:76 so the prefixed name no longer resolves anywhere. Consider doing the same for YANDEX_CLIENT_ID/YANDEX_REDIRECT_URI on the server side (config.go:75, 78), keeping the VITE_ names only on the genuinely public client build-args; the two roles then cannot be confused. Rotate the secret while renaming, since the current value has been readable under a prefix that invites publication."
+    },
+    {
+      "id": "SEC-11-13",
+      "severity": "low",
+      "owasp": "A05:2021 - Security Misconfiguration (default credentials)",
+      "cwe": "CWE-1392 / CWE-214",
+      "title": "Default database credentials in the development compose file with the port published to the host, and the GHCR token passed on a command line during deploy",
+      "location": "docker-compose.yml:22-23 and 43-46 (poshivon/poshivon and root/root), docker-compose.yml:47-48 (3306 published to 0.0.0.0), .github/workflows/deploy.yml:267 (`docker login ghcr.io -u ... -p \"${GHCR_TOKEN}\"`)",
+      "description": "The development compose file hardcodes both the application database password and the MariaDB root password as trivial literals and publishes 3306 on all interfaces, so anyone who can reach a developer's machine or a shared dev host has full database access. This is pre-existing and out of this feature's diff, but the feature moves role and has_access into that database, so the value of the target has changed. Separately, the deploy script passes the GHCR token as a -p command-line argument, which makes it visible in the process table of the deploy host for the duration of the call and to anything reading /proc; `docker login --password-stdin` is the documented alternative. The CI credentials in test.yml (ci_root/poshivon) are correctly isolated from production secrets and single-use, as the Task 9 audit already confirmed - not re-flagged.",
+      "impact": "Local/dev database compromise with role and has_access now stored there; incidental token exposure on the deploy host.",
+      "recommendation": "In docker-compose.yml, move the passwords to `${DB_PASSWORD:?set DB_PASSWORD}` style variables sourced from a gitignored .env, and bind the port to localhost only (`127.0.0.1:3306:3306`). In deploy.yml:267 use `echo \"${GHCR_TOKEN}\" | docker login ghcr.io -u \"${GHCR_USERNAME}\" --password-stdin`."
+    },
+    {
+      "id": "SEC-11-14",
+      "severity": "low",
+      "owasp": "A03:2021 - Injection (defensive gap, not currently exploitable)",
+      "cwe": "CWE-116 (improper encoding)",
+      "title": "chatID is interpolated into request paths without encoding on the client, unlike the login in the sibling module",
+      "location": "client/src/utils/panelApi.js:58, 64, 70, 73 (`/api/v1/users/chats/${chatID}...`), contrast client/src/utils/accessApi.js:74 which correctly uses encodeURIComponent",
+      "description": "Four client call sites interpolate chatID directly into the URL path. Today the values are server-generated identifiers read back from GET /api/v1/users/chats, so nothing attacker-controlled reaches them, and the server side is scoped by user_id at the SQL level (repository/postgres.go DeleteChat/RestoreChat) so a crafted value could not cross an ownership boundary anyway. It is a defensive gap rather than a live bug, and it is inconsistent with the neighbouring module which does encode.",
+      "impact": "None today. If chat identifiers ever become user-supplied or user-renameable, a value containing a slash or a query character would silently change which route is addressed.",
+      "recommendation": "Wrap the four interpolations in encodeURIComponent(chatID), matching accessApi.js:74. Two-line change, removes the divergence between the two API modules."
+    }
+  ],
+  "verified_clean": [
+    "SQL injection: every query is parameterised. repository/postgres.go uses GORM with bound arguments throughout, and the one piece of raw SQL (createRequestSQL, postgres.go:755-759) is a constant with ? placeholders (postgres.go:762). auth/store.go:44-166 uses database/sql with placeholders on all four statements. Migration files are static with zero interpolation. The only string concatenation in a query is the fixed column list at postgres.go:817-818, which contains no input.",
+    "IDOR on /api/v1/users/** (the Task 6 live finding): confirmed closed and not regressed. Probe-verified that GET /api/v1/users/otherlogin/settings returns 404 while GET /api/v1/users/settings serves the session owner; owner comes from requireIdentity (http.go:54) on all nine branches; DisallowUnknownFields (http.go:254) closes the body channel; no handler reads a query parameter for the owner.",
+    "Decision 19 identity collation at runtime: confirmed in place. 005 sets utf8mb4_nopad_bin on users.id and all four referencing user_id columns, and the contract test TestAccessRepoContract_LoginIdentityIsCaseAndSpaceSensitive (access_repo_test.go:452) runs on both stores. The migration-time gap is SEC-11-01 and is a different window, not a regression of this fix.",
+    "XSS: no dangerouslySetInnerHTML anywhere in the client; AdminUsersSection.jsx:31-39 and AccessRequestBanner.jsx:50-73 render user-derived values (login, display_name, email, contact_email) as JSX text nodes, which React escapes. No innerHTML, no eval, no new Function.",
+    "SSRF: every outbound URL is configuration-derived - cfg.YandexTokenURL (auth.go:389, 437), cfg.YandexUserInfoURL (auth.go:579), the DeepSeek endpoint. No user-supplied value reaches an HTTP client. redirect_uri comes from the request body but is only submitted as a form field to Yandex, never dereferenced by this server (and is an accepted risk per the tech-spec).",
+    "Insecure deserialization: JSON only, into typed structs, with DisallowUnknownFields on the API surface (http.go:250-263) and a map decode with UseNumber for Yandex responses (auth.go:659-668). No pickle/YAML/gob paths.",
+    "Session token cryptography: refresh cookie is 32 bytes from crypto/rand hex-encoded (auth.go:702-706, 256 bits) and stored only as SHA-256 (auth/store.go:38-41), so a database read does not yield usable cookies. Cookies are HttpOnly on every write path (auth.go:480-491, 493-504). The rand.Read error is discarded, which is safe on Go 1.24+ where crypto/rand.Read cannot fail.",
+    "Fail-closed behaviour of the middleware chain: verified for all five failure modes - no identity in context (middleware.go:154-161 and 54-61), nil AccessService (middleware.go:163-166), repository error (middleware.go:176), user row absent (middleware.go:170-175, deliberately 403 not 404 so logins are not enumerable), and unknown session-rejection reason (middleware.go:98-114, which collapses an unrecognised error to session_not_found instead of echoing arbitrary text into the 401 body).",
+    "Hardcoded secrets scan across the whole tree: no API keys, tokens, passwords, private keys or connection strings with embedded credentials in application source. Every secret is read from the environment (config/config.go:58-90). The only literal credentials are the development compose defaults (SEC-11-13) and the single-use CI values in test.yml, which are namespaced away from production. The two administrator logins are hardcoded in migration 004 - already accepted and documented in the tech-spec Risks table as a public-repository exposure, not re-flagged.",
+    "openapi.yaml is consistent with the implemented routes: the five /api/v1/users/ paths carry no {userID} segment (openapi.yaml:21-24 documents why), the four access/admin routes are present with their 401/403/404 responses (openapi.yaml:206-289), and no /auth/yandex path is documented. No stale contract that would send a client to a removed address.",
+    "Client gating is a UX layer and never an authorization source: hasPanelAccess (Panel.jsx:176-177) and isAdmin (Panel.jsx:355) only select which component renders; every data request still passes RequireAuth plus RequireAccess or RequireAdmin server-side, verified against the real assembly.",
+    "Admin cannot escalate role through any API path: AccessService.SetAccess (service/access.go:181-229) and PostgresRepository.SetAccess (postgres.go:678-737) write has_access only; role is written nowhere outside migration 004. The client-only guard against un-ticking an admin row (AdminUsersSection.jsx:45-46) is cosmetic, but harmless, because Decision 10 makes the flag irrelevant for an administrator - confirmed by reading both the service rule and RequireAdmin.",
+    "Cross-task interaction check: BuildRoutes (routes.go:47-95) is the single route table, called by both cmd/main.go:97-105 and the handler tests, so there is no second assembly that could drift. Every registration in the nested muxes (APIHandler.Register at http.go:23-25, AccessHandler.RegisterAccess/RegisterAdmin at access.go:36-44) sits behind the intended prefix chain - probed each one individually. No route registered by one task bypasses another task's middleware."
+  ],
+  "scope_boundary_respected": [
+    "Plaintext ya_access / yandex_refresh_token in oauth_sessions - accepted risk, not re-flagged. Noted only as context in SEC-11-11 (the sliding session lengthens the window in which a stored token stays valuable), not as a new finding.",
+    "redirect_uri taken from the request body (handler/auth.go:138-144) - accepted risk, Yandex validates it server-side, not re-flagged.",
+    "No admin-demotion path in the API - intentional per user-spec, not re-flagged. SEC-11-01 is the opposite problem (an unintended demotion via migration ordering) and is a different issue.",
+    "SMTP notifier - Phase 2 / Task 16, does not exist in the tree, not audited. Confirmed no SMTP-shaped secret leaks through the Task 9 compose/workflow changes: no SMTP_* variable appears in deploy.yml, docker-compose.prod.yml or docker-compose.yml.",
+    "Banner and admin-section styling - Task 17, Phase 2, not security-relevant, not reviewed.",
+    "RequireSameOrigin's same-origin fallback trusting r.Host - raised and accepted in the Task 5 review (decisions.md:186) as an infrastructure invariant; referenced inside SEC-11-08 for context, not re-filed as a new finding.",
+    "TOCTOU between GetUser and DecideRequest in AccessService.SetAccess - documented and accepted after Task 3, not re-flagged."
+  ],
+  "files_reviewed": {
+    "specs": ["work/access-control/user-spec.md", "work/access-control/tech-spec.md", "work/access-control/decisions.md", "work/access-control/tasks/11.md"],
+    "server": [
+      "server/migrations/004_access_control.up.sql",
+      "server/migrations/005_identity_collation.up.sql",
+      "server/migrations/migrate.go",
+      "server/migrations/002_costing_schema.up.sql",
+      "server/internal/service/access.go",
+      "server/internal/service/access_test.go",
+      "server/internal/service/costing.go",
+      "server/internal/repository/postgres.go",
+      "server/internal/repository/memory.go",
+      "server/internal/repository/access_repo_test.go",
+      "server/internal/auth/store.go",
+      "server/internal/auth/store_test.go",
+      "server/internal/handler/auth.go",
+      "server/internal/handler/auth_test.go",
+      "server/internal/handler/middleware.go",
+      "server/internal/handler/middleware_test.go",
+      "server/internal/handler/http.go",
+      "server/internal/handler/http_test.go",
+      "server/internal/handler/access.go",
+      "server/internal/handler/access_test.go",
+      "server/internal/handler/metrics.go",
+      "server/internal/handler/metrics_test.go",
+      "server/internal/handler/routes.go",
+      "server/internal/handler/cors.go",
+      "server/internal/config/config.go",
+      "server/cmd/main.go",
+      "server/api/openapi.yaml",
+      "server/go.mod"
+    ],
+    "client": [
+      "client/src/utils/accessApi.js",
+      "client/src/utils/yandexAuth.js",
+      "client/src/utils/panelApi.js",
+      "client/src/pages/AuthCallback.jsx",
+      "client/src/pages/Panel.jsx",
+      "client/src/components/AccessRequestBanner.jsx",
+      "client/src/components/AdminUsersSection.jsx",
+      "client/src/components/AuthModal.jsx",
+      "client/package.json"
+    ],
+    "deploy": [
+      ".github/workflows/deploy.yml",
+      ".github/workflows/test.yml",
+      "docker-compose.prod.yml",
+      "docker-compose.yml",
+      "client/nginx.conf"
+    ]
+  }
+}
