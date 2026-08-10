@@ -1920,7 +1920,13 @@ h1.hero-title span { color: var(--accent); }
   min-width: 0;
 }
 
-.panel__content,
+/* .panel__content не в этом списке: этот блок идёт позже в каскаде, чем её собственное
+   overflow-y: auto (см. выше), и shorthand overflow: hidden молча выключал вертикальный
+   скролл всей рабочей панели — именно поэтому фикс с height: 100vh не спасал ситуацию. */
+.panel__content {
+  overflow-x: hidden;
+}
+
 .panel__card,
 .panel-summary__card,
 .panel-chat-list__item,
