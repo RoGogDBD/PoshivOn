@@ -14,6 +14,8 @@ import { footerContacts, navItems } from "./data/landing.js";
 import { useAuthModal } from "./hooks/useAuthModal.js";
 import AuthCallback from "./pages/AuthCallback.jsx";
 import Panel from "./pages/Panel.jsx";
+import PrivacyPolicy from "./pages/PrivacyPolicy.jsx";
+import CookieConsent from "./components/CookieConsent.jsx";
 import { checkAuthStatus } from "./utils/yandexAuth.js";
 
 function App() {
@@ -25,30 +27,47 @@ function App() {
 
   useEffect(() => {
     const pathname = window.location.pathname;
-    if (pathname.startsWith("/auth") || pathname.startsWith("/panel")) return;
+    if (pathname.startsWith("/auth") || pathname.startsWith("/panel") || pathname.startsWith("/privacy")) {
+      return;
+    }
     checkAuthStatus()
       .then((isAuthed) => { if (isAuthed) window.location.replace("/panel"); })
       .catch(() => {});
   }, []);
 
-  if (window.location.pathname.startsWith("/auth")) return <AuthCallback />;
-  if (window.location.pathname.startsWith("/panel")) return <Panel />;
+  let content;
+  if (window.location.pathname.startsWith("/auth")) {
+    content = <AuthCallback />;
+  } else if (window.location.pathname.startsWith("/panel")) {
+    content = <Panel />;
+  } else if (window.location.pathname.startsWith("/privacy")) {
+    content = <PrivacyPolicy />;
+  } else {
+    content = (
+      <div>
+        <Header navItems={navItems} onAuthOpen={handleAuthOpen} />
+        <main>
+          <HeroSection onAuthOpen={handleAuthOpen} />
+          <FeaturesSection />
+          <StepsSection />
+          <CasesSection />
+          <SolutionsSection />
+          <FAQSection />
+          <CtaSection onAuthOpen={handleAuthOpen} />
+        </main>
+        <Footer navItems={navItems} contacts={footerContacts} />
+        <AuthModal isOpen={isAuthOpen} onClose={handleAuthClose} />
+      </div>
+    );
+  }
 
+  // Уведомление о cookie — на каждом маршруте, а не только на лендинге: обработка данных
+  // Яндекс-логина начинается уже на /panel (в т.ч. при заходе туда напрямую по ссылке).
   return (
-    <div>
-      <Header navItems={navItems} onAuthOpen={handleAuthOpen} />
-      <main>
-        <HeroSection onAuthOpen={handleAuthOpen} />
-        <FeaturesSection />
-        <StepsSection />
-        <CasesSection />
-        <SolutionsSection />
-        <FAQSection />
-        <CtaSection onAuthOpen={handleAuthOpen} />
-      </main>
-      <Footer navItems={navItems} contacts={footerContacts} />
-      <AuthModal isOpen={isAuthOpen} onClose={handleAuthClose} />
-    </div>
+    <>
+      {content}
+      <CookieConsent />
+    </>
   );
 }
 

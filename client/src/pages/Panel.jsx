@@ -13,6 +13,49 @@ import {
   saveUserSettings,
 } from "../utils/panelApi.js";
 
+// Иконки навигации сайдбара — инлайн SVG, без внешней библиотеки (в client/package.json её
+// нет, а трёх-четырёх глифов ради одной панели не стоит заводить новую зависимость).
+// currentColor — чтобы цвет наследовался от .panel__link/.panel__sidebar-toggle без
+// отдельных цветовых пропсов.
+const NavWorkspaceIcon = () => (
+  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M21 11.5a8.38 8.38 0 0 1-4.2 7.26 8.5 8.5 0 0 1-8.9-.3L3 21l1.9-4.9a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 8.5-8.5h.4a8.48 8.48 0 0 1 8 8v.7z" />
+  </svg>
+);
+
+const NavSettingsIcon = () => (
+  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <line x1="4" y1="7" x2="20" y2="7" />
+    <circle cx="9" cy="7" r="2" />
+    <line x1="4" y1="14" x2="20" y2="14" />
+    <circle cx="16" cy="14" r="2" />
+    <line x1="4" y1="19" x2="20" y2="19" />
+    <circle cx="10" cy="19" r="2" />
+  </svg>
+);
+
+const NavUsersIcon = () => (
+  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+    <circle cx="9" cy="7" r="4" />
+    <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+    <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+  </svg>
+);
+
+const SunIcon = () => (
+  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <circle cx="12" cy="12" r="4" />
+    <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+  </svg>
+);
+
+const MoonIcon = () => (
+  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+  </svg>
+);
+
 const calculatorModes = [
   {
     value: "masterpiece",
@@ -606,13 +649,17 @@ const Panel = () => {
   return (
     <div className={`page panel panel--${theme}`}>
       <aside className="panel__sidebar">
-        <div className="panel__brand">PoshivOn</div>
+        <div className="panel__brand">
+          <span className="panel__brand-mark" aria-hidden="true">P</span>
+          <span className="panel__brand-name">PoshivOn</span>
+        </div>
         <nav className="panel__nav">
           <button
             className={`panel__link ${activeSection === "workspace" ? "panel__link--active" : ""}`}
             type="button"
             onClick={() => setActiveSection("workspace")}
           >
+            <span className="panel__link-icon"><NavWorkspaceIcon /></span>
             Чаты и расчёты
           </button>
           <button
@@ -620,6 +667,7 @@ const Panel = () => {
             type="button"
             onClick={() => setActiveSection("settings")}
           >
+            <span className="panel__link-icon"><NavSettingsIcon /></span>
             Настройки модели
           </button>
           {/* Не-админу пункт не рендерится вовсе, а не прячется стилями: сам факт наличия
@@ -630,10 +678,23 @@ const Panel = () => {
               type="button"
               onClick={() => setActiveSection("users")}
             >
+              <span className="panel__link-icon"><NavUsersIcon /></span>
               Пользователи
             </button>
           ) : null}
         </nav>
+        <div className="panel__sidebar-bottom">
+          <button
+            className="panel__sidebar-toggle"
+            type="button"
+            onClick={() => setTheme(theme === "light" ? "dark" : "light")}
+          >
+            <span className="panel__sidebar-toggle-icon">
+              {theme === "light" ? <MoonIcon /> : <SunIcon />}
+            </span>
+            {theme === "light" ? "Тёмная тема" : "Светлая тема"}
+          </button>
+        </div>
       </aside>
       <main className="panel__content">
         <div className="panel__header">
@@ -643,13 +704,6 @@ const Panel = () => {
             <p className="panel__meta">Пользователь: {userID}</p>
           </div>
           <div className="panel__actions">
-            <button
-              className="panel__theme-toggle"
-              type="button"
-              onClick={() => setTheme(theme === "light" ? "dark" : "light")}
-            >
-              {theme === "light" ? "Темная" : "Светлая"}
-            </button>
             <button className="panel__logout" type="button" onClick={handleLogout}>
               Выйти
             </button>
