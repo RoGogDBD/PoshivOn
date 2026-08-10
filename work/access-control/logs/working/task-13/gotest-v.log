@@ -1,0 +1,922 @@
+=== RUN   TestNewMux_LegacyTokenRouteIsGone
+--- PASS: TestNewMux_LegacyTokenRouteIsGone (0.00s)
+=== RUN   TestNewMux_ExpectedRoutesRegistered
+=== RUN   TestNewMux_ExpectedRoutesRegistered/http://api.example/auth/yandex/code
+=== RUN   TestNewMux_ExpectedRoutesRegistered/http://api.example/auth/status
+=== RUN   TestNewMux_ExpectedRoutesRegistered/http://api.example/auth/me
+=== RUN   TestNewMux_ExpectedRoutesRegistered/http://api.example/auth/refresh
+=== RUN   TestNewMux_ExpectedRoutesRegistered/http://api.example/auth/logout
+=== RUN   TestNewMux_ExpectedRoutesRegistered/http://api.example/health
+=== RUN   TestNewMux_ExpectedRoutesRegistered/http://api.example/metrics
+=== RUN   TestNewMux_ExpectedRoutesRegistered/http://api.example/api/v1/users/ivanov/chats
+--- PASS: TestNewMux_ExpectedRoutesRegistered (0.00s)
+    --- PASS: TestNewMux_ExpectedRoutesRegistered/http://api.example/auth/yandex/code (0.00s)
+    --- PASS: TestNewMux_ExpectedRoutesRegistered/http://api.example/auth/status (0.00s)
+    --- PASS: TestNewMux_ExpectedRoutesRegistered/http://api.example/auth/me (0.00s)
+    --- PASS: TestNewMux_ExpectedRoutesRegistered/http://api.example/auth/refresh (0.00s)
+    --- PASS: TestNewMux_ExpectedRoutesRegistered/http://api.example/auth/logout (0.00s)
+    --- PASS: TestNewMux_ExpectedRoutesRegistered/http://api.example/health (0.00s)
+    --- PASS: TestNewMux_ExpectedRoutesRegistered/http://api.example/metrics (0.00s)
+    --- PASS: TestNewMux_ExpectedRoutesRegistered/http://api.example/api/v1/users/ivanov/chats (0.00s)
+=== RUN   TestNewMux_SameOriginGuardRejectsForeignOriginOnLogin
+2026/08/10 01:53:24 api error: status=403 code=forbidden err=origin "http://evil.example" is not allowed: forbidden
+--- PASS: TestNewMux_SameOriginGuardRejectsForeignOriginOnLogin (0.00s)
+=== RUN   TestNewMux_ConfigValuesReachMiddleware
+=== RUN   TestNewMux_ConfigValuesReachMiddleware/CookieSecure_задаёт_схему_в_same-origin_fallback
+=== RUN   TestNewMux_ConfigValuesReachMiddleware/CookieSecure_задаёт_схему_в_same-origin_fallback/прод:_https-origin_совпадает_с_хостом
+=== RUN   TestNewMux_ConfigValuesReachMiddleware/CookieSecure_задаёт_схему_в_same-origin_fallback/прод:_http-origin_того_же_хоста_отклонён
+2026/08/10 01:53:24 api error: status=403 code=forbidden err=origin "http://api.example" is not allowed: forbidden
+=== RUN   TestNewMux_ConfigValuesReachMiddleware/CookieSecure_задаёт_схему_в_same-origin_fallback/разработка:_http-origin_совпадает_с_хостом
+=== RUN   TestNewMux_ConfigValuesReachMiddleware/CookieSecure_задаёт_схему_в_same-origin_fallback/разработка:_https-origin_того_же_хоста_отклонён
+2026/08/10 01:53:24 api error: status=403 code=forbidden err=origin "https://api.example" is not allowed: forbidden
+=== RUN   TestNewMux_ConfigValuesReachMiddleware/AllowedOrigins_разбирается_из_CSV_и_попадает_в_проверку
+=== RUN   TestNewMux_ConfigValuesReachMiddleware/AllowedOrigins_разбирается_из_CSV_и_попадает_в_проверку/https://app.example
+=== RUN   TestNewMux_ConfigValuesReachMiddleware/AllowedOrigins_разбирается_из_CSV_и_попадает_в_проверку/https://panel.example
+=== RUN   TestNewMux_ConfigValuesReachMiddleware/AllowedOrigins_разбирается_из_CSV_и_попадает_в_проверку/https://evil.example
+2026/08/10 01:53:24 api error: status=403 code=forbidden err=origin "https://evil.example" is not allowed: forbidden
+=== RUN   TestNewMux_ConfigValuesReachMiddleware/AllowedOrigins_разбирается_из_CSV_и_попадает_в_проверку/https://api.example
+2026/08/10 01:53:24 api error: status=403 code=forbidden err=origin "https://api.example" is not allowed: forbidden
+--- PASS: TestNewMux_ConfigValuesReachMiddleware (0.00s)
+    --- PASS: TestNewMux_ConfigValuesReachMiddleware/CookieSecure_задаёт_схему_в_same-origin_fallback (0.00s)
+        --- PASS: TestNewMux_ConfigValuesReachMiddleware/CookieSecure_задаёт_схему_в_same-origin_fallback/прод:_https-origin_совпадает_с_хостом (0.00s)
+        --- PASS: TestNewMux_ConfigValuesReachMiddleware/CookieSecure_задаёт_схему_в_same-origin_fallback/прод:_http-origin_того_же_хоста_отклонён (0.00s)
+        --- PASS: TestNewMux_ConfigValuesReachMiddleware/CookieSecure_задаёт_схему_в_same-origin_fallback/разработка:_http-origin_совпадает_с_хостом (0.00s)
+        --- PASS: TestNewMux_ConfigValuesReachMiddleware/CookieSecure_задаёт_схему_в_same-origin_fallback/разработка:_https-origin_того_же_хоста_отклонён (0.00s)
+    --- PASS: TestNewMux_ConfigValuesReachMiddleware/AllowedOrigins_разбирается_из_CSV_и_попадает_в_проверку (0.00s)
+        --- PASS: TestNewMux_ConfigValuesReachMiddleware/AllowedOrigins_разбирается_из_CSV_и_попадает_в_проверку/https://app.example (0.00s)
+        --- PASS: TestNewMux_ConfigValuesReachMiddleware/AllowedOrigins_разбирается_из_CSV_и_попадает_в_проверку/https://panel.example (0.00s)
+        --- PASS: TestNewMux_ConfigValuesReachMiddleware/AllowedOrigins_разбирается_из_CSV_и_попадает_в_проверку/https://evil.example (0.00s)
+        --- PASS: TestNewMux_ConfigValuesReachMiddleware/AllowedOrigins_разбирается_из_CSV_и_попадает_в_проверку/https://api.example (0.00s)
+=== RUN   TestNewMux_AccessChainsAreAttached
+=== RUN   TestNewMux_AccessChainsAreAttached/users_закрыт
+=== RUN   TestNewMux_AccessChainsAreAttached/admin_закрыт
+=== RUN   TestNewMux_AccessChainsAreAttached/access_закрыт
+=== RUN   TestNewMux_AccessChainsAreAttached/health_открыт
+=== RUN   TestNewMux_AccessChainsAreAttached/metrics_открыт
+--- PASS: TestNewMux_AccessChainsAreAttached (0.00s)
+    --- PASS: TestNewMux_AccessChainsAreAttached/users_закрыт (0.00s)
+    --- PASS: TestNewMux_AccessChainsAreAttached/admin_закрыт (0.00s)
+    --- PASS: TestNewMux_AccessChainsAreAttached/access_закрыт (0.00s)
+    --- PASS: TestNewMux_AccessChainsAreAttached/health_открыт (0.00s)
+    --- PASS: TestNewMux_AccessChainsAreAttached/metrics_открыт (0.00s)
+=== RUN   TestBuildRepositories_ProvidesAccessRepositories
+--- PASS: TestBuildRepositories_ProvidesAccessRepositories (0.00s)
+=== RUN   TestBuildRepositories_UnknownStorageFails
+--- PASS: TestBuildRepositories_UnknownStorageFails (0.00s)
+PASS
+ok  	github.com/RoGogDBD/PoshivOn/cmd	0.005s
+=== RUN   TestAuthStore_CreateSessionPersistsIdentity
+--- PASS: TestAuthStore_CreateSessionPersistsIdentity (0.02s)
+=== RUN   TestAuthStore_UpdateSessionTokensPreservesIdentity
+--- PASS: TestAuthStore_UpdateSessionTokensPreservesIdentity (0.01s)
+=== RUN   TestAuthStore_NullYandexLoginRoundTrips
+--- PASS: TestAuthStore_NullYandexLoginRoundTrips (0.00s)
+PASS
+ok  	github.com/RoGogDBD/PoshivOn/internal/auth	0.035s
+=== RUN   TestLoad_ContactEmail
+=== RUN   TestLoad_ContactEmail/значение_берётся_из_окружения
+2026/08/10 01:53:24 config: CORS_ALLOWED_ORIGINS пуст и COOKIE_SECURE=false — RequireSameOrigin сравнивает Origin с http://<r.Host> и почти наверняка отклонит запросы через nginx/Vite прокси, включая вход; задайте оба значения явно на проде
+=== RUN   TestLoad_ContactEmail/по_умолчанию_пусто
+2026/08/10 01:53:24 config: CORS_ALLOWED_ORIGINS пуст и COOKIE_SECURE=false — RequireSameOrigin сравнивает Origin с http://<r.Host> и почти наверняка отклонит запросы через nginx/Vite прокси, включая вход; задайте оба значения явно на проде
+--- PASS: TestLoad_ContactEmail (0.00s)
+    --- PASS: TestLoad_ContactEmail/значение_берётся_из_окружения (0.00s)
+    --- PASS: TestLoad_ContactEmail/по_умолчанию_пусто (0.00s)
+=== RUN   TestLoad_OriginFallbackGuard
+=== RUN   TestLoad_OriginFallbackGuard/memory_+_пусто_+_insecure_—_предупреждение,_не_отказ
+2026/08/10 01:53:24 config: CORS_ALLOWED_ORIGINS пуст и COOKIE_SECURE=false — RequireSameOrigin сравнивает Origin с http://<r.Host> и почти наверняка отклонит запросы через nginx/Vite прокси, включая вход; задайте оба значения явно на проде
+=== RUN   TestLoad_OriginFallbackGuard/mysql_+_пусто_+_insecure_—_жёсткий_отказ
+=== RUN   TestLoad_OriginFallbackGuard/mysql_+_пусто_из_пробелов_и_запятых_+_insecure_—_тоже_отказ
+=== RUN   TestLoad_OriginFallbackGuard/mysql_+_непустой_allowlist_+_insecure_—_успех
+=== RUN   TestLoad_OriginFallbackGuard/mysql_+_пусто_+_secure_—_успех
+--- PASS: TestLoad_OriginFallbackGuard (0.00s)
+    --- PASS: TestLoad_OriginFallbackGuard/memory_+_пусто_+_insecure_—_предупреждение,_не_отказ (0.00s)
+    --- PASS: TestLoad_OriginFallbackGuard/mysql_+_пусто_+_insecure_—_жёсткий_отказ (0.00s)
+    --- PASS: TestLoad_OriginFallbackGuard/mysql_+_пусто_из_пробелов_и_запятых_+_insecure_—_тоже_отказ (0.00s)
+    --- PASS: TestLoad_OriginFallbackGuard/mysql_+_непустой_allowlist_+_insecure_—_успех (0.00s)
+    --- PASS: TestLoad_OriginFallbackGuard/mysql_+_пусто_+_secure_—_успех (0.00s)
+PASS
+ok  	github.com/RoGogDBD/PoshivOn/internal/config	0.003s
+?   	github.com/RoGogDBD/PoshivOn/internal/db	[no test files]
+=== RUN   TestAccessMe_NoCookies401
+--- PASS: TestAccessMe_NoCookies401 (0.00s)
+=== RUN   TestAccessMe_SessionWithoutYandexLogin401
+--- PASS: TestAccessMe_SessionWithoutYandexLogin401 (0.00s)
+=== RUN   TestAccessMe_UserWithoutAccess200
+--- PASS: TestAccessMe_UserWithoutAccess200 (0.00s)
+=== RUN   TestAccessMe_ContactEmailComesFromConfig
+=== RUN   TestAccessMe_ContactEmailComesFromConfig/support@poshivon.example
+=== RUN   TestAccessMe_ContactEmailComesFromConfig/admin@example.org
+=== RUN   TestAccessMe_ContactEmailComesFromConfig/#00
+--- PASS: TestAccessMe_ContactEmailComesFromConfig (0.00s)
+    --- PASS: TestAccessMe_ContactEmailComesFromConfig/support@poshivon.example (0.00s)
+    --- PASS: TestAccessMe_ContactEmailComesFromConfig/admin@example.org (0.00s)
+    --- PASS: TestAccessMe_ContactEmailComesFromConfig/#00 (0.00s)
+=== RUN   TestAccessMe_AdminWithoutFlagReportsAccess
+--- PASS: TestAccessMe_AdminWithoutFlagReportsAccess (0.00s)
+=== RUN   TestAccessRequests_DuplicateConflict
+--- PASS: TestAccessRequests_DuplicateConflict (0.00s)
+=== RUN   TestAccessRequests_AlreadyGrantedConflict
+=== RUN   TestAccessRequests_AlreadyGrantedConflict/ivanov
+=== RUN   TestAccessRequests_AlreadyGrantedConflict/RoGogDBD
+--- PASS: TestAccessRequests_AlreadyGrantedConflict (0.00s)
+    --- PASS: TestAccessRequests_AlreadyGrantedConflict/ivanov (0.00s)
+    --- PASS: TestAccessRequests_AlreadyGrantedConflict/RoGogDBD (0.00s)
+=== RUN   TestAccessRequests_AfterRejectionAllowed
+--- PASS: TestAccessRequests_AfterRejectionAllowed (0.00s)
+=== RUN   TestAccessRequests_NoOriginRejected
+--- PASS: TestAccessRequests_NoOriginRejected (0.00s)
+=== RUN   TestAdminUsers_NoCookies401AndNonAdmin403
+=== RUN   TestAdminUsers_NoCookies401AndNonAdmin403/без_кук_401
+=== RUN   TestAdminUsers_NoCookies401AndNonAdmin403/не-администратором_403
+--- PASS: TestAdminUsers_NoCookies401AndNonAdmin403 (0.00s)
+    --- PASS: TestAdminUsers_NoCookies401AndNonAdmin403/без_кук_401 (0.00s)
+    --- PASS: TestAdminUsers_NoCookies401AndNonAdmin403/не-администратором_403 (0.00s)
+=== RUN   TestAdminUsers_AsAdmin200
+--- PASS: TestAdminUsers_AsAdmin200 (0.00s)
+=== RUN   TestSetAccess_NonAdminOtherLogin403Unchanged
+--- PASS: TestSetAccess_NonAdminOtherLogin403Unchanged (0.00s)
+=== RUN   TestSetAccess_NonAdminSelfLogin403Unchanged
+--- PASS: TestSetAccess_NonAdminSelfLogin403Unchanged (0.00s)
+=== RUN   TestSetAccess_NoCookies401Unchanged
+--- PASS: TestSetAccess_NoCookies401Unchanged (0.00s)
+=== RUN   TestSetAccess_NoOriginIs403NotUnauthorized
+--- PASS: TestSetAccess_NoOriginIs403NotUnauthorized (0.00s)
+=== RUN   TestSetAccess_UnknownLogin404NoChange
+--- PASS: TestSetAccess_UnknownLogin404NoChange (0.00s)
+=== RUN   TestSetAccess_GrantAndRevoke204
+--- PASS: TestSetAccess_GrantAndRevoke204 (0.00s)
+=== RUN   TestSetAccess_UnknownField400
+=== RUN   TestSetAccess_UnknownField400/лишнее_поле_рядом_с_granted
+=== RUN   TestSetAccess_UnknownField400/только_лишнее_поле
+=== RUN   TestSetAccess_UnknownField400/тело_не_объект
+=== RUN   TestSetAccess_UnknownField400/два_объекта_подряд
+--- PASS: TestSetAccess_UnknownField400 (0.00s)
+    --- PASS: TestSetAccess_UnknownField400/лишнее_поле_рядом_с_granted (0.00s)
+    --- PASS: TestSetAccess_UnknownField400/только_лишнее_поле (0.00s)
+    --- PASS: TestSetAccess_UnknownField400/тело_не_объект (0.00s)
+    --- PASS: TestSetAccess_UnknownField400/два_объекта_подряд (0.00s)
+=== RUN   TestSetAccess_MissingGrantedField400
+=== RUN   TestSetAccess_MissingGrantedField400/{}
+=== RUN   TestSetAccess_MissingGrantedField400/{"granted":null}
+--- PASS: TestSetAccess_MissingGrantedField400 (0.00s)
+    --- PASS: TestSetAccess_MissingGrantedField400/{} (0.00s)
+    --- PASS: TestSetAccess_MissingGrantedField400/{"granted":null} (0.00s)
+=== RUN   TestSetAccess_EmptyBody400
+--- PASS: TestSetAccess_EmptyBody400 (0.00s)
+=== RUN   TestUsersRoutesAreClosedByAccessChain
+=== RUN   TestUsersRoutesAreClosedByAccessChain/без_кук
+=== RUN   TestUsersRoutesAreClosedByAccessChain/сессия_без_личности
+=== RUN   TestUsersRoutesAreClosedByAccessChain/пользователь_без_доступа
+=== RUN   TestUsersRoutesAreClosedByAccessChain/пользователь_с_доступом
+--- PASS: TestUsersRoutesAreClosedByAccessChain (0.00s)
+    --- PASS: TestUsersRoutesAreClosedByAccessChain/без_кук (0.00s)
+    --- PASS: TestUsersRoutesAreClosedByAccessChain/сессия_без_личности (0.00s)
+    --- PASS: TestUsersRoutesAreClosedByAccessChain/пользователь_без_доступа (0.00s)
+    --- PASS: TestUsersRoutesAreClosedByAccessChain/пользователь_с_доступом (0.00s)
+=== RUN   TestUsersMutatingRoutesRequireSameOrigin
+--- PASS: TestUsersMutatingRoutesRequireSameOrigin (0.00s)
+=== RUN   TestAuthMutatingRoutesRequireSameOrigin
+=== RUN   TestAuthMutatingRoutesRequireSameOrigin/POST_/auth/yandex/code
+=== RUN   TestAuthMutatingRoutesRequireSameOrigin/POST_/auth/yandex/code_с_чужого_origin
+=== RUN   TestAuthMutatingRoutesRequireSameOrigin/POST_/auth/refresh
+=== RUN   TestAuthMutatingRoutesRequireSameOrigin/POST_/auth/refresh_с_чужого_origin
+=== RUN   TestAuthMutatingRoutesRequireSameOrigin/POST_/auth/logout
+=== RUN   TestAuthMutatingRoutesRequireSameOrigin/POST_/auth/logout_с_чужого_origin
+=== RUN   TestAuthMutatingRoutesRequireSameOrigin/GET_/auth/status
+=== RUN   TestAuthMutatingRoutesRequireSameOrigin/GET_/auth/me
+--- PASS: TestAuthMutatingRoutesRequireSameOrigin (0.00s)
+    --- PASS: TestAuthMutatingRoutesRequireSameOrigin/POST_/auth/yandex/code (0.00s)
+    --- PASS: TestAuthMutatingRoutesRequireSameOrigin/POST_/auth/yandex/code_с_чужого_origin (0.00s)
+    --- PASS: TestAuthMutatingRoutesRequireSameOrigin/POST_/auth/refresh (0.00s)
+    --- PASS: TestAuthMutatingRoutesRequireSameOrigin/POST_/auth/refresh_с_чужого_origin (0.00s)
+    --- PASS: TestAuthMutatingRoutesRequireSameOrigin/POST_/auth/logout (0.00s)
+    --- PASS: TestAuthMutatingRoutesRequireSameOrigin/POST_/auth/logout_с_чужого_origin (0.00s)
+    --- PASS: TestAuthMutatingRoutesRequireSameOrigin/GET_/auth/status (0.00s)
+    --- PASS: TestAuthMutatingRoutesRequireSameOrigin/GET_/auth/me (0.00s)
+=== RUN   TestBuildRoutes_LegacyYandexTokenRouteIsGone
+--- PASS: TestBuildRoutes_LegacyYandexTokenRouteIsGone (0.00s)
+=== RUN   TestBuildRoutes_HealthAndMetricsStayOpen
+=== RUN   TestBuildRoutes_HealthAndMetricsStayOpen//health
+=== RUN   TestBuildRoutes_HealthAndMetricsStayOpen//metrics
+--- PASS: TestBuildRoutes_HealthAndMetricsStayOpen (0.00s)
+    --- PASS: TestBuildRoutes_HealthAndMetricsStayOpen//health (0.00s)
+    --- PASS: TestBuildRoutes_HealthAndMetricsStayOpen//metrics (0.00s)
+=== RUN   TestWriteAPIDomainError_NoInternalTextLeak
+=== RUN   TestWriteAPIDomainError_NoInternalTextLeak/GET_/api/v1/access/me
+=== RUN   TestWriteAPIDomainError_NoInternalTextLeak/POST_/api/v1/access/requests
+=== RUN   TestWriteAPIDomainError_NoInternalTextLeak/GET_/api/v1/admin/users
+=== RUN   TestWriteAPIDomainError_NoInternalTextLeak/POST_/api/v1/admin/users/{login}/access
+=== RUN   TestWriteAPIDomainError_NoInternalTextLeak/GET_/api/v1/users/chats
+--- PASS: TestWriteAPIDomainError_NoInternalTextLeak (0.00s)
+    --- PASS: TestWriteAPIDomainError_NoInternalTextLeak/GET_/api/v1/access/me (0.00s)
+    --- PASS: TestWriteAPIDomainError_NoInternalTextLeak/POST_/api/v1/access/requests (0.00s)
+    --- PASS: TestWriteAPIDomainError_NoInternalTextLeak/GET_/api/v1/admin/users (0.00s)
+    --- PASS: TestWriteAPIDomainError_NoInternalTextLeak/POST_/api/v1/admin/users/{login}/access (0.00s)
+    --- PASS: TestWriteAPIDomainError_NoInternalTextLeak/GET_/api/v1/users/chats (0.00s)
+=== RUN   TestAccessHandler_RepositoryFailureAfterGatePasses
+=== RUN   TestAccessHandler_RepositoryFailureAfterGatePasses/ListUsers_падает,_гейт_пройден
+=== RUN   TestAccessHandler_RepositoryFailureAfterGatePasses/GetUser_целевого_логина_падает,_гейт_пройден
+=== RUN   TestAccessHandler_RepositoryFailureAfterGatePasses/SetAccess_падает,_гейт_пройден
+=== RUN   TestAccessHandler_RepositoryFailureAfterGatePasses/CreateRequest_падает,_гейт_пройден
+--- PASS: TestAccessHandler_RepositoryFailureAfterGatePasses (0.00s)
+    --- PASS: TestAccessHandler_RepositoryFailureAfterGatePasses/ListUsers_падает,_гейт_пройден (0.00s)
+    --- PASS: TestAccessHandler_RepositoryFailureAfterGatePasses/GetUser_целевого_логина_падает,_гейт_пройден (0.00s)
+    --- PASS: TestAccessHandler_RepositoryFailureAfterGatePasses/SetAccess_падает,_гейт_пройден (0.00s)
+    --- PASS: TestAccessHandler_RepositoryFailureAfterGatePasses/CreateRequest_падает,_гейт_пройден (0.00s)
+=== RUN   TestHandleYandexCode_CreatesUserBeforeAnyPanelAction
+--- PASS: TestHandleYandexCode_CreatesUserBeforeAnyPanelAction (0.00s)
+=== RUN   TestHandleYandexCode_MissingOriginRejected
+2026/08/10 01:53:24 api error: status=403 code=forbidden err=origin "" is not allowed: forbidden
+--- PASS: TestHandleYandexCode_MissingOriginRejected (0.00s)
+=== RUN   TestHandleYandexCode_ForeignOriginRejected
+2026/08/10 01:53:24 api error: status=403 code=forbidden err=origin "https://evil.example" is not allowed: forbidden
+--- PASS: TestHandleYandexCode_ForeignOriginRejected (0.00s)
+=== RUN   TestHandleYandexCode_AllowedOriginPasses
+--- PASS: TestHandleYandexCode_AllowedOriginPasses (0.00s)
+=== RUN   TestHandleYandexCode_ProfileFailureCreatesNoSession
+2026/08/10 01:53:24 вход: не удалось получить профиль Яндекса: user_info_failed
+--- PASS: TestHandleYandexCode_ProfileFailureCreatesNoSession (0.00s)
+=== RUN   TestHandleYandexCode_EmptyLoginCreatesNoSession
+2026/08/10 01:53:24 вход: профиль Яндекса не содержит логина
+--- PASS: TestHandleYandexCode_EmptyLoginCreatesNoSession (0.00s)
+=== RUN   TestHandleYandexCode_EnsureUserFailureCreatesNoSession
+2026/08/10 01:53:24 вход: не удалось завести пользователя: ensure user: dial tcp 127.0.0.1:3306: connect: connection refused
+--- PASS: TestHandleYandexCode_EnsureUserFailureCreatesNoSession (0.00s)
+=== RUN   TestHandleYandexCode_SessionFailureAfterEnsureUser
+2026/08/10 01:53:24 вход: не удалось сохранить сессию: Error 1146: Table 'oauth_sessions' doesn't exist
+--- PASS: TestHandleYandexCode_SessionFailureAfterEnsureUser (0.00s)
+=== RUN   TestHandleYandexCode_MissingDefaultEmailIsNotAnError
+--- PASS: TestHandleYandexCode_MissingDefaultEmailIsNotAnError (0.00s)
+=== RUN   TestNewLoginSession_MapsIdentityToNullableColumns
+=== RUN   TestNewLoginSession_MapsIdentityToNullableColumns/полная_личность
+=== RUN   TestNewLoginSession_MapsIdentityToNullableColumns/без_email,_имени_и_refresh-токена_Яндекса
+--- PASS: TestNewLoginSession_MapsIdentityToNullableColumns (0.00s)
+    --- PASS: TestNewLoginSession_MapsIdentityToNullableColumns/полная_личность (0.00s)
+    --- PASS: TestNewLoginSession_MapsIdentityToNullableColumns/без_email,_имени_и_refresh-токена_Яндекса (0.00s)
+=== RUN   TestParseYandexProfile_NameFallbackChain
+=== RUN   TestParseYandexProfile_NameFallbackChain/display_name_важнее_остальных
+=== RUN   TestParseYandexProfile_NameFallbackChain/real_name,_если_нет_display_name
+=== RUN   TestParseYandexProfile_NameFallbackChain/имя_и_фамилия,_если_нет_ни_того,_ни_другого
+=== RUN   TestParseYandexProfile_NameFallbackChain/логин_как_последнее_средство
+--- PASS: TestParseYandexProfile_NameFallbackChain (0.00s)
+    --- PASS: TestParseYandexProfile_NameFallbackChain/display_name_важнее_остальных (0.00s)
+    --- PASS: TestParseYandexProfile_NameFallbackChain/real_name,_если_нет_display_name (0.00s)
+    --- PASS: TestParseYandexProfile_NameFallbackChain/имя_и_фамилия,_если_нет_ни_того,_ни_другого (0.00s)
+    --- PASS: TestParseYandexProfile_NameFallbackChain/логин_как_последнее_средство (0.00s)
+=== RUN   TestHandleRefresh_DoesNotRefetchProfile
+--- PASS: TestHandleRefresh_DoesNotRefetchProfile (0.00s)
+=== RUN   TestResolveSessionIsIndependentOfAuthHandler
+--- PASS: TestResolveSessionIsIndependentOfAuthHandler (0.00s)
+=== RUN   TestResolveSession_RejectionSlugs
+=== RUN   TestResolveSession_RejectionSlugs/нет_access-куки
+=== RUN   TestResolveSession_RejectionSlugs/нет_refresh-куки
+=== RUN   TestResolveSession_RejectionSlugs/сессии_нет_в_хранилище
+=== RUN   TestResolveSession_RejectionSlugs/сессия_отозвана
+=== RUN   TestResolveSession_RejectionSlugs/истёк_refresh
+=== RUN   TestResolveSession_RejectionSlugs/истёк_access
+=== RUN   TestResolveSession_RejectionSlugs/кука_не_совпадает_с_сессией
+--- PASS: TestResolveSession_RejectionSlugs (0.00s)
+    --- PASS: TestResolveSession_RejectionSlugs/нет_access-куки (0.00s)
+    --- PASS: TestResolveSession_RejectionSlugs/нет_refresh-куки (0.00s)
+    --- PASS: TestResolveSession_RejectionSlugs/сессии_нет_в_хранилище (0.00s)
+    --- PASS: TestResolveSession_RejectionSlugs/сессия_отозвана (0.00s)
+    --- PASS: TestResolveSession_RejectionSlugs/истёк_refresh (0.00s)
+    --- PASS: TestResolveSession_RejectionSlugs/истёк_access (0.00s)
+    --- PASS: TestResolveSession_RejectionSlugs/кука_не_совпадает_с_сессией (0.00s)
+=== RUN   TestFetchYandexProfile_ExtractsDefaultEmail
+=== RUN   TestFetchYandexProfile_ExtractsDefaultEmail/полный_профиль
+=== RUN   TestFetchYandexProfile_ExtractsDefaultEmail/без_default_email
+=== RUN   TestFetchYandexProfile_ExtractsDefaultEmail/пробелы_обрезаются
+--- PASS: TestFetchYandexProfile_ExtractsDefaultEmail (0.00s)
+    --- PASS: TestFetchYandexProfile_ExtractsDefaultEmail/полный_профиль (0.00s)
+    --- PASS: TestFetchYandexProfile_ExtractsDefaultEmail/без_default_email (0.00s)
+    --- PASS: TestFetchYandexProfile_ExtractsDefaultEmail/пробелы_обрезаются (0.00s)
+=== RUN   TestAuthHandlerHasNoLegacyTokenEntryPoint
+--- PASS: TestAuthHandlerHasNoLegacyTokenEntryPoint (0.00s)
+=== RUN   TestWriteAPIDomainError_NoInternalTextInAnyBranch
+=== RUN   TestWriteAPIDomainError_NoInternalTextInAnyBranch/400_invalid_argument
+=== RUN   TestWriteAPIDomainError_NoInternalTextInAnyBranch/403_forbidden
+=== RUN   TestWriteAPIDomainError_NoInternalTextInAnyBranch/404_not_found
+=== RUN   TestWriteAPIDomainError_NoInternalTextInAnyBranch/409_conflict
+=== RUN   TestWriteAPIDomainError_NoInternalTextInAnyBranch/429_rate_limited
+=== RUN   TestWriteAPIDomainError_NoInternalTextInAnyBranch/503_service_unavailable
+=== RUN   TestWriteAPIDomainError_NoInternalTextInAnyBranch/504_timeout
+=== RUN   TestWriteAPIDomainError_NoInternalTextInAnyBranch/500_unclassified
+--- PASS: TestWriteAPIDomainError_NoInternalTextInAnyBranch (0.00s)
+    --- PASS: TestWriteAPIDomainError_NoInternalTextInAnyBranch/400_invalid_argument (0.00s)
+    --- PASS: TestWriteAPIDomainError_NoInternalTextInAnyBranch/403_forbidden (0.00s)
+    --- PASS: TestWriteAPIDomainError_NoInternalTextInAnyBranch/404_not_found (0.00s)
+    --- PASS: TestWriteAPIDomainError_NoInternalTextInAnyBranch/409_conflict (0.00s)
+    --- PASS: TestWriteAPIDomainError_NoInternalTextInAnyBranch/429_rate_limited (0.00s)
+    --- PASS: TestWriteAPIDomainError_NoInternalTextInAnyBranch/503_service_unavailable (0.00s)
+    --- PASS: TestWriteAPIDomainError_NoInternalTextInAnyBranch/504_timeout (0.00s)
+    --- PASS: TestWriteAPIDomainError_NoInternalTextInAnyBranch/500_unclassified (0.00s)
+=== RUN   TestWriteAPIDomainError_LogsOriginalError
+=== RUN   TestWriteAPIDomainError_LogsOriginalError/400_invalid_argument
+=== RUN   TestWriteAPIDomainError_LogsOriginalError/403_forbidden
+=== RUN   TestWriteAPIDomainError_LogsOriginalError/404_not_found
+=== RUN   TestWriteAPIDomainError_LogsOriginalError/409_conflict
+=== RUN   TestWriteAPIDomainError_LogsOriginalError/429_rate_limited
+=== RUN   TestWriteAPIDomainError_LogsOriginalError/503_service_unavailable
+=== RUN   TestWriteAPIDomainError_LogsOriginalError/504_timeout
+=== RUN   TestWriteAPIDomainError_LogsOriginalError/500_unclassified
+--- PASS: TestWriteAPIDomainError_LogsOriginalError (0.00s)
+    --- PASS: TestWriteAPIDomainError_LogsOriginalError/400_invalid_argument (0.00s)
+    --- PASS: TestWriteAPIDomainError_LogsOriginalError/403_forbidden (0.00s)
+    --- PASS: TestWriteAPIDomainError_LogsOriginalError/404_not_found (0.00s)
+    --- PASS: TestWriteAPIDomainError_LogsOriginalError/409_conflict (0.00s)
+    --- PASS: TestWriteAPIDomainError_LogsOriginalError/429_rate_limited (0.00s)
+    --- PASS: TestWriteAPIDomainError_LogsOriginalError/503_service_unavailable (0.00s)
+    --- PASS: TestWriteAPIDomainError_LogsOriginalError/504_timeout (0.00s)
+    --- PASS: TestWriteAPIDomainError_LogsOriginalError/500_unclassified (0.00s)
+=== RUN   TestWriteAPIDomainError_NilErrorDoesNotPanic
+--- PASS: TestWriteAPIDomainError_NilErrorDoesNotPanic (0.00s)
+=== RUN   TestWriteAPIDecodeError_LogsOriginalError
+--- PASS: TestWriteAPIDecodeError_LogsOriginalError (0.00s)
+=== RUN   TestHandleUsers_NoCookies_401
+=== RUN   TestHandleUsers_NoCookies_401/GET_/api/v1/users/chats
+=== RUN   TestHandleUsers_NoCookies_401/GET_/api/v1/users/settings
+=== RUN   TestHandleUsers_NoCookies_401/POST_/api/v1/users/chats/chat-petrov/calculate
+--- PASS: TestHandleUsers_NoCookies_401 (0.00s)
+    --- PASS: TestHandleUsers_NoCookies_401/GET_/api/v1/users/chats (0.00s)
+    --- PASS: TestHandleUsers_NoCookies_401/GET_/api/v1/users/settings (0.00s)
+    --- PASS: TestHandleUsers_NoCookies_401/POST_/api/v1/users/chats/chat-petrov/calculate (0.00s)
+=== RUN   TestHandleUsers_NoAccess_403
+=== RUN   TestHandleUsers_NoAccess_403/GET_/api/v1/users/chats
+=== RUN   TestHandleUsers_NoAccess_403/GET_/api/v1/users/settings
+=== RUN   TestHandleUsers_NoAccess_403/POST_/api/v1/users/chats/chat-petrov/calculate
+--- PASS: TestHandleUsers_NoAccess_403 (0.00s)
+    --- PASS: TestHandleUsers_NoAccess_403/GET_/api/v1/users/chats (0.00s)
+    --- PASS: TestHandleUsers_NoAccess_403/GET_/api/v1/users/settings (0.00s)
+    --- PASS: TestHandleUsers_NoAccess_403/POST_/api/v1/users/chats/chat-petrov/calculate (0.00s)
+=== RUN   TestHandleUsers_WithAccess_200_OwnerScoped
+=== RUN   TestHandleUsers_WithAccess_200_OwnerScoped/POST_/settings_204
+=== RUN   TestHandleUsers_WithAccess_200_OwnerScoped/GET_/settings_200
+=== RUN   TestHandleUsers_WithAccess_200_OwnerScoped/POST_/chats_201
+=== RUN   TestHandleUsers_WithAccess_200_OwnerScoped/GET_/chats_200_и_чужой_логин_в_query_не_действует
+=== RUN   TestHandleUsers_WithAccess_200_OwnerScoped/POST_/chats/{id}/calculate_200
+=== RUN   TestHandleUsers_WithAccess_200_OwnerScoped/GET_/chats/{id}/calculations_200
+=== RUN   TestHandleUsers_WithAccess_200_OwnerScoped/DELETE_/chats/{id}_204
+=== RUN   TestHandleUsers_WithAccess_200_OwnerScoped/POST_/chats/{id}/restore_204
+=== RUN   TestHandleUsers_WithAccess_200_OwnerScoped/POST_/market-feedback_503,_а_не_404
+--- PASS: TestHandleUsers_WithAccess_200_OwnerScoped (0.00s)
+    --- PASS: TestHandleUsers_WithAccess_200_OwnerScoped/POST_/settings_204 (0.00s)
+    --- PASS: TestHandleUsers_WithAccess_200_OwnerScoped/GET_/settings_200 (0.00s)
+    --- PASS: TestHandleUsers_WithAccess_200_OwnerScoped/POST_/chats_201 (0.00s)
+    --- PASS: TestHandleUsers_WithAccess_200_OwnerScoped/GET_/chats_200_и_чужой_логин_в_query_не_действует (0.00s)
+    --- PASS: TestHandleUsers_WithAccess_200_OwnerScoped/POST_/chats/{id}/calculate_200 (0.00s)
+    --- PASS: TestHandleUsers_WithAccess_200_OwnerScoped/GET_/chats/{id}/calculations_200 (0.00s)
+    --- PASS: TestHandleUsers_WithAccess_200_OwnerScoped/DELETE_/chats/{id}_204 (0.00s)
+    --- PASS: TestHandleUsers_WithAccess_200_OwnerScoped/POST_/chats/{id}/restore_204 (0.00s)
+    --- PASS: TestHandleUsers_WithAccess_200_OwnerScoped/POST_/market-feedback_503,_а_не_404 (0.00s)
+=== RUN   TestHandleUsers_ForeignOwnerUnreachable
+=== RUN   TestHandleUsers_ForeignOwnerUnreachable/чужой_логин_в_query_на_чтении_настроек
+=== RUN   TestHandleUsers_ForeignOwnerUnreachable/чужой_логин_в_query_на_списке_чатов
+=== RUN   TestHandleUsers_ForeignOwnerUnreachable/чужой_логин_в_теле_создания_чата
+=== RUN   TestHandleUsers_ForeignOwnerUnreachable/идентификатор_чужого_чата_на_удалении
+=== RUN   TestHandleUsers_ForeignOwnerUnreachable/идентификатор_чужого_чата_на_чтении_расчётов
+=== RUN   TestHandleUsers_ForeignOwnerUnreachable/расчёт_по_идентификатору_чужого_чата_не_пишет_чужому
+--- PASS: TestHandleUsers_ForeignOwnerUnreachable (0.00s)
+    --- PASS: TestHandleUsers_ForeignOwnerUnreachable/чужой_логин_в_query_на_чтении_настроек (0.00s)
+    --- PASS: TestHandleUsers_ForeignOwnerUnreachable/чужой_логин_в_query_на_списке_чатов (0.00s)
+    --- PASS: TestHandleUsers_ForeignOwnerUnreachable/чужой_логин_в_теле_создания_чата (0.00s)
+    --- PASS: TestHandleUsers_ForeignOwnerUnreachable/идентификатор_чужого_чата_на_удалении (0.00s)
+    --- PASS: TestHandleUsers_ForeignOwnerUnreachable/идентификатор_чужого_чата_на_чтении_расчётов (0.00s)
+    --- PASS: TestHandleUsers_ForeignOwnerUnreachable/расчёт_по_идентификатору_чужого_чата_не_пишет_чужому (0.00s)
+=== RUN   TestRegisterRoutes_LegacyUserIDSegment_NotFound
+=== RUN   TestRegisterRoutes_LegacyUserIDSegment_NotFound/GET_чужие_чаты
+=== RUN   TestRegisterRoutes_LegacyUserIDSegment_NotFound/GET_собственные_чаты_старой_формой
+=== RUN   TestRegisterRoutes_LegacyUserIDSegment_NotFound/GET_чужие_настройки
+=== RUN   TestRegisterRoutes_LegacyUserIDSegment_NotFound/POST_чат_чужому_владельцу
+=== RUN   TestRegisterRoutes_LegacyUserIDSegment_NotFound/POST_чужие_настройки
+=== RUN   TestRegisterRoutes_LegacyUserIDSegment_NotFound/DELETE_чужой_чат
+=== RUN   TestRegisterRoutes_LegacyUserIDSegment_NotFound/POST_восстановление_чужого_чата
+=== RUN   TestRegisterRoutes_LegacyUserIDSegment_NotFound/POST_расчёт_в_чужом_чате
+=== RUN   TestRegisterRoutes_LegacyUserIDSegment_NotFound/GET_расчёты_чужого_чата
+=== RUN   TestRegisterRoutes_LegacyUserIDSegment_NotFound/POST_market-feedback_от_чужого_имени
+--- PASS: TestRegisterRoutes_LegacyUserIDSegment_NotFound (0.00s)
+    --- PASS: TestRegisterRoutes_LegacyUserIDSegment_NotFound/GET_чужие_чаты (0.00s)
+    --- PASS: TestRegisterRoutes_LegacyUserIDSegment_NotFound/GET_собственные_чаты_старой_формой (0.00s)
+    --- PASS: TestRegisterRoutes_LegacyUserIDSegment_NotFound/GET_чужие_настройки (0.00s)
+    --- PASS: TestRegisterRoutes_LegacyUserIDSegment_NotFound/POST_чат_чужому_владельцу (0.00s)
+    --- PASS: TestRegisterRoutes_LegacyUserIDSegment_NotFound/POST_чужие_настройки (0.00s)
+    --- PASS: TestRegisterRoutes_LegacyUserIDSegment_NotFound/DELETE_чужой_чат (0.00s)
+    --- PASS: TestRegisterRoutes_LegacyUserIDSegment_NotFound/POST_восстановление_чужого_чата (0.00s)
+    --- PASS: TestRegisterRoutes_LegacyUserIDSegment_NotFound/POST_расчёт_в_чужом_чате (0.00s)
+    --- PASS: TestRegisterRoutes_LegacyUserIDSegment_NotFound/GET_расчёты_чужого_чата (0.00s)
+    --- PASS: TestRegisterRoutes_LegacyUserIDSegment_NotFound/POST_market-feedback_от_чужого_имени (0.00s)
+=== RUN   TestHandleUsers_DecodeError_NoInternalTextLeak
+=== RUN   TestHandleUsers_DecodeError_NoInternalTextLeak/POST_/api/v1/users/settings
+=== RUN   TestHandleUsers_DecodeError_NoInternalTextLeak/POST_/api/v1/users/chats
+=== RUN   TestHandleUsers_DecodeError_NoInternalTextLeak/POST_/api/v1/users/chats/chat-petrov/calculate
+--- PASS: TestHandleUsers_DecodeError_NoInternalTextLeak (0.00s)
+    --- PASS: TestHandleUsers_DecodeError_NoInternalTextLeak/POST_/api/v1/users/settings (0.00s)
+    --- PASS: TestHandleUsers_DecodeError_NoInternalTextLeak/POST_/api/v1/users/chats (0.00s)
+    --- PASS: TestHandleUsers_DecodeError_NoInternalTextLeak/POST_/api/v1/users/chats/chat-petrov/calculate (0.00s)
+=== RUN   TestNormalizePath_AdminUsersLoginCollapses
+=== RUN   TestNormalizePath_AdminUsersLoginCollapses/короткий_логин_без_дефиса
+=== RUN   TestNormalizePath_AdminUsersLoginCollapses/логин_администратора_из_миграции_004
+=== RUN   TestNormalizePath_AdminUsersLoginCollapses/числовой_логин
+=== RUN   TestNormalizePath_AdminUsersLoginCollapses/логин_с_кириллицей_и_пробелом_после_декодирования
+=== RUN   TestNormalizePath_AdminUsersLoginCollapses/сегмент_сворачивается_и_без_хвоста_/access
+=== RUN   TestNormalizePath_AdminUsersLoginCollapses/сам_список_пользователей_не_трогается
+--- PASS: TestNormalizePath_AdminUsersLoginCollapses (0.00s)
+    --- PASS: TestNormalizePath_AdminUsersLoginCollapses/короткий_логин_без_дефиса (0.00s)
+    --- PASS: TestNormalizePath_AdminUsersLoginCollapses/логин_администратора_из_миграции_004 (0.00s)
+    --- PASS: TestNormalizePath_AdminUsersLoginCollapses/числовой_логин (0.00s)
+    --- PASS: TestNormalizePath_AdminUsersLoginCollapses/логин_с_кириллицей_и_пробелом_после_декодирования (0.00s)
+    --- PASS: TestNormalizePath_AdminUsersLoginCollapses/сегмент_сворачивается_и_без_хвоста_/access (0.00s)
+    --- PASS: TestNormalizePath_AdminUsersLoginCollapses/сам_список_пользователей_не_трогается (0.00s)
+=== RUN   TestNormalizePath_AdminUsersCardinalityIsBounded
+--- PASS: TestNormalizePath_AdminUsersCardinalityIsBounded (0.00s)
+=== RUN   TestNormalizePath_ExistingRulesUnchanged
+=== RUN   TestNormalizePath_ExistingRulesUnchanged/числовой_сегмент
+=== RUN   TestNormalizePath_ExistingRulesUnchanged/UUID-подобный_сегмент
+=== RUN   TestNormalizePath_ExistingRulesUnchanged/короткий_логин_вне_админского_маршрута_не_сворачивается_(вне_объёма_Decision_18)
+=== RUN   TestNormalizePath_ExistingRulesUnchanged/первый_сегмент_не_сворачивается_даже_будучи_числом
+=== RUN   TestNormalizePath_ExistingRulesUnchanged/корень
+=== RUN   TestNormalizePath_ExistingRulesUnchanged/статические_маршруты_не_меняются
+--- PASS: TestNormalizePath_ExistingRulesUnchanged (0.00s)
+    --- PASS: TestNormalizePath_ExistingRulesUnchanged/числовой_сегмент (0.00s)
+    --- PASS: TestNormalizePath_ExistingRulesUnchanged/UUID-подобный_сегмент (0.00s)
+    --- PASS: TestNormalizePath_ExistingRulesUnchanged/короткий_логин_вне_админского_маршрута_не_сворачивается_(вне_объёма_Decision_18) (0.00s)
+    --- PASS: TestNormalizePath_ExistingRulesUnchanged/первый_сегмент_не_сворачивается_даже_будучи_числом (0.00s)
+    --- PASS: TestNormalizePath_ExistingRulesUnchanged/корень (0.00s)
+    --- PASS: TestNormalizePath_ExistingRulesUnchanged/статические_маршруты_не_меняются (0.00s)
+=== RUN   TestRequireAuth_MissingCookies
+=== RUN   TestRequireAuth_MissingCookies/нет_ни_одной_куки
+=== RUN   TestRequireAuth_MissingCookies/есть_access,_нет_refresh
+--- PASS: TestRequireAuth_MissingCookies (0.00s)
+    --- PASS: TestRequireAuth_MissingCookies/нет_ни_одной_куки (0.00s)
+    --- PASS: TestRequireAuth_MissingCookies/есть_access,_нет_refresh (0.00s)
+=== RUN   TestRequireAuth_NullIdentitySession
+=== RUN   TestRequireAuth_NullIdentitySession/NULL_в_колонке
+=== RUN   TestRequireAuth_NullIdentitySession/пустая_строка
+=== RUN   TestRequireAuth_NullIdentitySession/только_пробелы
+--- PASS: TestRequireAuth_NullIdentitySession (0.00s)
+    --- PASS: TestRequireAuth_NullIdentitySession/NULL_в_колонке (0.00s)
+    --- PASS: TestRequireAuth_NullIdentitySession/пустая_строка (0.00s)
+    --- PASS: TestRequireAuth_NullIdentitySession/только_пробелы (0.00s)
+=== RUN   TestRequireAuth_PutsIdentityInContext
+--- PASS: TestRequireAuth_PutsIdentityInContext (0.00s)
+=== RUN   TestRequireAuth_ResolverErrorSlugsUnchanged
+=== RUN   TestRequireAuth_ResolverErrorSlugsUnchanged/access_cookie_missing
+=== RUN   TestRequireAuth_ResolverErrorSlugsUnchanged/refresh_cookie_missing
+=== RUN   TestRequireAuth_ResolverErrorSlugsUnchanged/session_not_found
+=== RUN   TestRequireAuth_ResolverErrorSlugsUnchanged/session_expired
+=== RUN   TestRequireAuth_ResolverErrorSlugsUnchanged/access_expired
+=== RUN   TestRequireAuth_ResolverErrorSlugsUnchanged/access_mismatch
+--- PASS: TestRequireAuth_ResolverErrorSlugsUnchanged (0.00s)
+    --- PASS: TestRequireAuth_ResolverErrorSlugsUnchanged/access_cookie_missing (0.00s)
+    --- PASS: TestRequireAuth_ResolverErrorSlugsUnchanged/refresh_cookie_missing (0.00s)
+    --- PASS: TestRequireAuth_ResolverErrorSlugsUnchanged/session_not_found (0.00s)
+    --- PASS: TestRequireAuth_ResolverErrorSlugsUnchanged/session_expired (0.00s)
+    --- PASS: TestRequireAuth_ResolverErrorSlugsUnchanged/access_expired (0.00s)
+    --- PASS: TestRequireAuth_ResolverErrorSlugsUnchanged/access_mismatch (0.00s)
+=== RUN   TestRequireAuth_UnknownResolverErrorIsNotLeaked
+--- PASS: TestRequireAuth_UnknownResolverErrorIsNotLeaked (0.00s)
+=== RUN   TestRequireAuth_IdentityMissingCodeDoesNotTriggerClientRetry
+--- PASS: TestRequireAuth_IdentityMissingCodeDoesNotTriggerClientRetry (0.00s)
+=== RUN   TestRequireAccess_AdminBypassesHasAccessFalse
+--- PASS: TestRequireAccess_AdminBypassesHasAccessFalse (0.00s)
+=== RUN   TestRequireAccess_Gate
+=== RUN   TestRequireAccess_Gate/пользователь_с_доступом_проходит
+=== RUN   TestRequireAccess_Gate/пользователь_без_доступа_отклонён
+2026/08/10 01:53:24 api error: status=403 code=forbidden err=access is not granted for "user-no": forbidden
+=== RUN   TestRequireAccess_Gate/неизвестный_логин_отклонён_как_без_доступа
+2026/08/10 01:53:24 api error: status=403 code=forbidden err=no user record for "ghost": forbidden
+--- PASS: TestRequireAccess_Gate (0.00s)
+    --- PASS: TestRequireAccess_Gate/пользователь_с_доступом_проходит (0.00s)
+    --- PASS: TestRequireAccess_Gate/пользователь_без_доступа_отклонён (0.00s)
+    --- PASS: TestRequireAccess_Gate/неизвестный_логин_отклонён_как_без_доступа (0.00s)
+=== RUN   TestRequireAccess_WithoutIdentityFailsClosed
+--- PASS: TestRequireAccess_WithoutIdentityFailsClosed (0.00s)
+=== RUN   TestRequireAccess_RepositoryFailureIsNotAPass
+2026/08/10 01:53:24 api error: status=500 code=internal_error err=get user: dial tcp 127.0.0.1:3306: connect: connection refused
+--- PASS: TestRequireAccess_RepositoryFailureIsNotAPass (0.00s)
+=== RUN   TestRequireAdmin_Gate
+=== RUN   TestRequireAdmin_Gate/администратор_проходит
+=== RUN   TestRequireAdmin_Gate/пользователь_с_доступом,_но_без_роли,_отклонён
+2026/08/10 01:53:24 api error: status=403 code=forbidden err=admin role is required for "user-ok": forbidden
+=== RUN   TestRequireAdmin_Gate/неизвестный_логин_отклонён
+2026/08/10 01:53:24 api error: status=403 code=forbidden err=no user record for "ghost": forbidden
+--- PASS: TestRequireAdmin_Gate (0.00s)
+    --- PASS: TestRequireAdmin_Gate/администратор_проходит (0.00s)
+    --- PASS: TestRequireAdmin_Gate/пользователь_с_доступом,_но_без_роли,_отклонён (0.00s)
+    --- PASS: TestRequireAdmin_Gate/неизвестный_логин_отклонён (0.00s)
+=== RUN   TestRequireAdmin_WithoutIdentityFailsClosed
+--- PASS: TestRequireAdmin_WithoutIdentityFailsClosed (0.00s)
+=== RUN   TestRequireSameOrigin_EmptyAllowlistFallsBackToHost
+=== RUN   TestRequireSameOrigin_EmptyAllowlistFallsBackToHost/origin_совпадает_с_хостом_(http)
+=== RUN   TestRequireSameOrigin_EmptyAllowlistFallsBackToHost/посторонний_origin_при_пустом_списке
+2026/08/10 01:53:24 api error: status=403 code=forbidden err=origin "http://evil.example" is not allowed: forbidden
+=== RUN   TestRequireSameOrigin_EmptyAllowlistFallsBackToHost/origin_отсутствует
+2026/08/10 01:53:24 api error: status=403 code=forbidden err=origin "" is not allowed: forbidden
+=== RUN   TestRequireSameOrigin_EmptyAllowlistFallsBackToHost/origin_совпадает_с_хостом_(https_в_проде)
+=== RUN   TestRequireSameOrigin_EmptyAllowlistFallsBackToHost/та_же_схема,_что_у_клиента,_но_не_прод
+2026/08/10 01:53:24 api error: status=403 code=forbidden err=origin "http://app.example" is not allowed: forbidden
+--- PASS: TestRequireSameOrigin_EmptyAllowlistFallsBackToHost (0.00s)
+    --- PASS: TestRequireSameOrigin_EmptyAllowlistFallsBackToHost/origin_совпадает_с_хостом_(http) (0.00s)
+    --- PASS: TestRequireSameOrigin_EmptyAllowlistFallsBackToHost/посторонний_origin_при_пустом_списке (0.00s)
+    --- PASS: TestRequireSameOrigin_EmptyAllowlistFallsBackToHost/origin_отсутствует (0.00s)
+    --- PASS: TestRequireSameOrigin_EmptyAllowlistFallsBackToHost/origin_совпадает_с_хостом_(https_в_проде) (0.00s)
+    --- PASS: TestRequireSameOrigin_EmptyAllowlistFallsBackToHost/та_же_схема,_что_у_клиента,_но_не_прод (0.00s)
+=== RUN   TestRequireSameOrigin_Allowlist
+=== RUN   TestRequireSameOrigin_Allowlist/первый_разрешённый
+=== RUN   TestRequireSameOrigin_Allowlist/второй_разрешённый
+=== RUN   TestRequireSameOrigin_Allowlist/посторонний
+2026/08/10 01:53:24 api error: status=403 code=forbidden err=origin "https://evil.example" is not allowed: forbidden
+=== RUN   TestRequireSameOrigin_Allowlist/тот_же_хост,_но_не_из_списка
+2026/08/10 01:53:24 api error: status=403 code=forbidden err=origin "https://api.example" is not allowed: forbidden
+=== RUN   TestRequireSameOrigin_Allowlist/origin_отсутствует
+2026/08/10 01:53:24 api error: status=403 code=forbidden err=origin "" is not allowed: forbidden
+=== RUN   TestRequireSameOrigin_Allowlist/null_origin
+2026/08/10 01:53:24 api error: status=403 code=forbidden err=origin "null" is not allowed: forbidden
+--- PASS: TestRequireSameOrigin_Allowlist (0.00s)
+    --- PASS: TestRequireSameOrigin_Allowlist/первый_разрешённый (0.00s)
+    --- PASS: TestRequireSameOrigin_Allowlist/второй_разрешённый (0.00s)
+    --- PASS: TestRequireSameOrigin_Allowlist/посторонний (0.00s)
+    --- PASS: TestRequireSameOrigin_Allowlist/тот_же_хост,_но_не_из_списка (0.00s)
+    --- PASS: TestRequireSameOrigin_Allowlist/origin_отсутствует (0.00s)
+    --- PASS: TestRequireSameOrigin_Allowlist/null_origin (0.00s)
+=== RUN   TestRequireSameOrigin_SafeMethodsNeverBlocked
+=== RUN   TestRequireSameOrigin_SafeMethodsNeverBlocked/GET_origin=""
+=== RUN   TestRequireSameOrigin_SafeMethodsNeverBlocked/GET_origin="https://evil.example"
+=== RUN   TestRequireSameOrigin_SafeMethodsNeverBlocked/HEAD_origin=""
+=== RUN   TestRequireSameOrigin_SafeMethodsNeverBlocked/HEAD_origin="https://evil.example"
+--- PASS: TestRequireSameOrigin_SafeMethodsNeverBlocked (0.00s)
+    --- PASS: TestRequireSameOrigin_SafeMethodsNeverBlocked/GET_origin="" (0.00s)
+    --- PASS: TestRequireSameOrigin_SafeMethodsNeverBlocked/GET_origin="https://evil.example" (0.00s)
+    --- PASS: TestRequireSameOrigin_SafeMethodsNeverBlocked/HEAD_origin="" (0.00s)
+    --- PASS: TestRequireSameOrigin_SafeMethodsNeverBlocked/HEAD_origin="https://evil.example" (0.00s)
+=== RUN   TestRequireSameOrigin_MutatingMethodsCovered
+=== RUN   TestRequireSameOrigin_MutatingMethodsCovered/POST
+2026/08/10 01:53:24 api error: status=403 code=forbidden err=origin "" is not allowed: forbidden
+=== RUN   TestRequireSameOrigin_MutatingMethodsCovered/PUT
+2026/08/10 01:53:24 api error: status=403 code=forbidden err=origin "" is not allowed: forbidden
+=== RUN   TestRequireSameOrigin_MutatingMethodsCovered/PATCH
+2026/08/10 01:53:24 api error: status=403 code=forbidden err=origin "" is not allowed: forbidden
+=== RUN   TestRequireSameOrigin_MutatingMethodsCovered/DELETE
+2026/08/10 01:53:24 api error: status=403 code=forbidden err=origin "" is not allowed: forbidden
+--- PASS: TestRequireSameOrigin_MutatingMethodsCovered (0.00s)
+    --- PASS: TestRequireSameOrigin_MutatingMethodsCovered/POST (0.00s)
+    --- PASS: TestRequireSameOrigin_MutatingMethodsCovered/PUT (0.00s)
+    --- PASS: TestRequireSameOrigin_MutatingMethodsCovered/PATCH (0.00s)
+    --- PASS: TestRequireSameOrigin_MutatingMethodsCovered/DELETE (0.00s)
+=== RUN   TestRequireAccess_AdminWithoutFlagPasses
+--- PASS: TestRequireAccess_AdminWithoutFlagPasses (0.00s)
+=== RUN   TestRequireSameOrigin_Matrix
+=== RUN   TestRequireSameOrigin_Matrix/без_заголовка_Origin_при_непустом_списке
+=== RUN   TestRequireSameOrigin_Matrix/посторонний_Origin_при_непустом_списке
+=== RUN   TestRequireSameOrigin_Matrix/разрешённый_Origin_при_непустом_списке_проходит
+=== RUN   TestRequireSameOrigin_Matrix/Origin_совпадает_с_r.Host_при_пустом_списке_—_проходит_(same-origin_fallback)
+=== RUN   TestRequireSameOrigin_Matrix/посторонний_Origin_при_пустом_списке_—_всё_равно_403,_а_не_пропуск
+=== RUN   TestRequireSameOrigin_Matrix/без_заголовка_Origin_при_пустом_списке
+=== RUN   TestRequireSameOrigin_Matrix/схема_не_та,_что_в_конфигурации
+--- PASS: TestRequireSameOrigin_Matrix (0.00s)
+    --- PASS: TestRequireSameOrigin_Matrix/без_заголовка_Origin_при_непустом_списке (0.00s)
+    --- PASS: TestRequireSameOrigin_Matrix/посторонний_Origin_при_непустом_списке (0.00s)
+    --- PASS: TestRequireSameOrigin_Matrix/разрешённый_Origin_при_непустом_списке_проходит (0.00s)
+    --- PASS: TestRequireSameOrigin_Matrix/Origin_совпадает_с_r.Host_при_пустом_списке_—_проходит_(same-origin_fallback) (0.00s)
+    --- PASS: TestRequireSameOrigin_Matrix/посторонний_Origin_при_пустом_списке_—_всё_равно_403,_а_не_пропуск (0.00s)
+    --- PASS: TestRequireSameOrigin_Matrix/без_заголовка_Origin_при_пустом_списке (0.00s)
+    --- PASS: TestRequireSameOrigin_Matrix/схема_не_та,_что_в_конфигурации (0.00s)
+=== RUN   TestRequireSameOrigin_MatrixSafeMethod
+=== RUN   TestRequireSameOrigin_MatrixSafeMethod/посторонний_Origin
+=== RUN   TestRequireSameOrigin_MatrixSafeMethod/без_заголовка_Origin
+--- PASS: TestRequireSameOrigin_MatrixSafeMethod (0.00s)
+    --- PASS: TestRequireSameOrigin_MatrixSafeMethod/посторонний_Origin (0.00s)
+    --- PASS: TestRequireSameOrigin_MatrixSafeMethod/без_заголовка_Origin (0.00s)
+PASS
+ok  	github.com/RoGogDBD/PoshivOn/internal/handler	0.023s
+?   	github.com/RoGogDBD/PoshivOn/internal/metrics	[no test files]
+=== RUN   TestAccessRepoContract_EnsureUserCreatesUser
+=== RUN   TestAccessRepoContract_EnsureUserCreatesUser/memory
+=== RUN   TestAccessRepoContract_EnsureUserCreatesUser/postgres
+--- PASS: TestAccessRepoContract_EnsureUserCreatesUser (0.00s)
+    --- PASS: TestAccessRepoContract_EnsureUserCreatesUser/memory (0.00s)
+    --- PASS: TestAccessRepoContract_EnsureUserCreatesUser/postgres (0.00s)
+=== RUN   TestAccessRepoContract_EnsureUserPreservesAdminRoleAndAccess
+=== RUN   TestAccessRepoContract_EnsureUserPreservesAdminRoleAndAccess/memory
+=== RUN   TestAccessRepoContract_EnsureUserPreservesAdminRoleAndAccess/postgres
+--- PASS: TestAccessRepoContract_EnsureUserPreservesAdminRoleAndAccess (0.01s)
+    --- PASS: TestAccessRepoContract_EnsureUserPreservesAdminRoleAndAccess/memory (0.00s)
+    --- PASS: TestAccessRepoContract_EnsureUserPreservesAdminRoleAndAccess/postgres (0.01s)
+=== RUN   TestAccessRepoContract_EnsureUserUpdatesProfileFields
+=== RUN   TestAccessRepoContract_EnsureUserUpdatesProfileFields/memory
+=== RUN   TestAccessRepoContract_EnsureUserUpdatesProfileFields/postgres
+--- PASS: TestAccessRepoContract_EnsureUserUpdatesProfileFields (0.01s)
+    --- PASS: TestAccessRepoContract_EnsureUserUpdatesProfileFields/memory (0.00s)
+    --- PASS: TestAccessRepoContract_EnsureUserUpdatesProfileFields/postgres (0.01s)
+=== RUN   TestAccessRepoContract_GetUserReturnsRoleAndAccess
+=== RUN   TestAccessRepoContract_GetUserReturnsRoleAndAccess/memory
+=== RUN   TestAccessRepoContract_GetUserReturnsRoleAndAccess/postgres
+--- PASS: TestAccessRepoContract_GetUserReturnsRoleAndAccess (0.01s)
+    --- PASS: TestAccessRepoContract_GetUserReturnsRoleAndAccess/memory (0.00s)
+    --- PASS: TestAccessRepoContract_GetUserReturnsRoleAndAccess/postgres (0.01s)
+=== RUN   TestAccessRepoContract_GetUserUnknownLoginNotFound
+=== RUN   TestAccessRepoContract_GetUserUnknownLoginNotFound/memory
+=== RUN   TestAccessRepoContract_GetUserUnknownLoginNotFound/postgres
+--- PASS: TestAccessRepoContract_GetUserUnknownLoginNotFound (0.00s)
+    --- PASS: TestAccessRepoContract_GetUserUnknownLoginNotFound/memory (0.00s)
+    --- PASS: TestAccessRepoContract_GetUserUnknownLoginNotFound/postgres (0.00s)
+=== RUN   TestAccessRepoContract_SetAccessGrant
+=== RUN   TestAccessRepoContract_SetAccessGrant/memory
+=== RUN   TestAccessRepoContract_SetAccessGrant/postgres
+--- PASS: TestAccessRepoContract_SetAccessGrant (0.01s)
+    --- PASS: TestAccessRepoContract_SetAccessGrant/memory (0.00s)
+    --- PASS: TestAccessRepoContract_SetAccessGrant/postgres (0.01s)
+=== RUN   TestAccessRepoContract_SetAccessRevoke
+=== RUN   TestAccessRepoContract_SetAccessRevoke/memory
+=== RUN   TestAccessRepoContract_SetAccessRevoke/postgres
+--- PASS: TestAccessRepoContract_SetAccessRevoke (0.01s)
+    --- PASS: TestAccessRepoContract_SetAccessRevoke/memory (0.00s)
+    --- PASS: TestAccessRepoContract_SetAccessRevoke/postgres (0.01s)
+=== RUN   TestAccessRepoContract_SetAccessUnknownLoginNotFound
+=== RUN   TestAccessRepoContract_SetAccessUnknownLoginNotFound/memory
+=== RUN   TestAccessRepoContract_SetAccessUnknownLoginNotFound/postgres
+--- PASS: TestAccessRepoContract_SetAccessUnknownLoginNotFound (0.00s)
+    --- PASS: TestAccessRepoContract_SetAccessUnknownLoginNotFound/memory (0.00s)
+    --- PASS: TestAccessRepoContract_SetAccessUnknownLoginNotFound/postgres (0.00s)
+=== RUN   TestAccessRepoContract_SetAccessRepeatedGrantIsNotNotFound
+=== RUN   TestAccessRepoContract_SetAccessRepeatedGrantIsNotNotFound/memory
+=== RUN   TestAccessRepoContract_SetAccessRepeatedGrantIsNotNotFound/postgres
+--- PASS: TestAccessRepoContract_SetAccessRepeatedGrantIsNotNotFound (0.01s)
+    --- PASS: TestAccessRepoContract_SetAccessRepeatedGrantIsNotNotFound/memory (0.00s)
+    --- PASS: TestAccessRepoContract_SetAccessRepeatedGrantIsNotNotFound/postgres (0.01s)
+=== RUN   TestAccessRepoContract_SetAccessRevokeWhenAlreadyRevoked
+=== RUN   TestAccessRepoContract_SetAccessRevokeWhenAlreadyRevoked/memory
+=== RUN   TestAccessRepoContract_SetAccessRevokeWhenAlreadyRevoked/postgres
+--- PASS: TestAccessRepoContract_SetAccessRevokeWhenAlreadyRevoked (0.00s)
+    --- PASS: TestAccessRepoContract_SetAccessRevokeWhenAlreadyRevoked/memory (0.00s)
+    --- PASS: TestAccessRepoContract_SetAccessRevokeWhenAlreadyRevoked/postgres (0.00s)
+=== RUN   TestAccessRepoContract_LoginIdentityIsCaseAndSpaceSensitive
+=== RUN   TestAccessRepoContract_LoginIdentityIsCaseAndSpaceSensitive/memory
+=== RUN   TestAccessRepoContract_LoginIdentityIsCaseAndSpaceSensitive/memory/upper_case
+=== RUN   TestAccessRepoContract_LoginIdentityIsCaseAndSpaceSensitive/memory/trailing_space
+=== RUN   TestAccessRepoContract_LoginIdentityIsCaseAndSpaceSensitive/postgres
+=== RUN   TestAccessRepoContract_LoginIdentityIsCaseAndSpaceSensitive/postgres/upper_case
+=== RUN   TestAccessRepoContract_LoginIdentityIsCaseAndSpaceSensitive/postgres/trailing_space
+--- PASS: TestAccessRepoContract_LoginIdentityIsCaseAndSpaceSensitive (0.02s)
+    --- PASS: TestAccessRepoContract_LoginIdentityIsCaseAndSpaceSensitive/memory (0.00s)
+        --- PASS: TestAccessRepoContract_LoginIdentityIsCaseAndSpaceSensitive/memory/upper_case (0.00s)
+        --- PASS: TestAccessRepoContract_LoginIdentityIsCaseAndSpaceSensitive/memory/trailing_space (0.00s)
+    --- PASS: TestAccessRepoContract_LoginIdentityIsCaseAndSpaceSensitive/postgres (0.02s)
+        --- PASS: TestAccessRepoContract_LoginIdentityIsCaseAndSpaceSensitive/postgres/upper_case (0.01s)
+        --- PASS: TestAccessRepoContract_LoginIdentityIsCaseAndSpaceSensitive/postgres/trailing_space (0.01s)
+=== RUN   TestAccessRepoContract_ListUsersIncludesLoginOnlyUsers
+=== RUN   TestAccessRepoContract_ListUsersIncludesLoginOnlyUsers/memory
+=== RUN   TestAccessRepoContract_ListUsersIncludesLoginOnlyUsers/postgres
+--- PASS: TestAccessRepoContract_ListUsersIncludesLoginOnlyUsers (0.01s)
+    --- PASS: TestAccessRepoContract_ListUsersIncludesLoginOnlyUsers/memory (0.00s)
+    --- PASS: TestAccessRepoContract_ListUsersIncludesLoginOnlyUsers/postgres (0.01s)
+=== RUN   TestAccessRepoContract_CreateRequestConflictWhilePending
+=== RUN   TestAccessRepoContract_CreateRequestConflictWhilePending/memory
+=== RUN   TestAccessRepoContract_CreateRequestConflictWhilePending/postgres
+--- PASS: TestAccessRepoContract_CreateRequestConflictWhilePending (0.01s)
+    --- PASS: TestAccessRepoContract_CreateRequestConflictWhilePending/memory (0.00s)
+    --- PASS: TestAccessRepoContract_CreateRequestConflictWhilePending/postgres (0.01s)
+=== RUN   TestAccessRepoContract_GetRequestUnknownLoginNotFound
+=== RUN   TestAccessRepoContract_GetRequestUnknownLoginNotFound/memory
+=== RUN   TestAccessRepoContract_GetRequestUnknownLoginNotFound/postgres
+--- PASS: TestAccessRepoContract_GetRequestUnknownLoginNotFound (0.00s)
+    --- PASS: TestAccessRepoContract_GetRequestUnknownLoginNotFound/memory (0.00s)
+    --- PASS: TestAccessRepoContract_GetRequestUnknownLoginNotFound/postgres (0.00s)
+=== RUN   TestAccessRepoContract_DecideRequestPreservesDecision
+=== RUN   TestAccessRepoContract_DecideRequestPreservesDecision/memory
+=== RUN   TestAccessRepoContract_DecideRequestPreservesDecision/postgres
+--- PASS: TestAccessRepoContract_DecideRequestPreservesDecision (0.01s)
+    --- PASS: TestAccessRepoContract_DecideRequestPreservesDecision/memory (0.00s)
+    --- PASS: TestAccessRepoContract_DecideRequestPreservesDecision/postgres (0.01s)
+=== RUN   TestAccessRepoContract_DecideRequestNoRowIsNotError
+=== RUN   TestAccessRepoContract_DecideRequestNoRowIsNotError/memory
+=== RUN   TestAccessRepoContract_DecideRequestNoRowIsNotError/postgres
+--- PASS: TestAccessRepoContract_DecideRequestNoRowIsNotError (0.00s)
+    --- PASS: TestAccessRepoContract_DecideRequestNoRowIsNotError/memory (0.00s)
+    --- PASS: TestAccessRepoContract_DecideRequestNoRowIsNotError/postgres (0.00s)
+=== RUN   TestAccessRepoContract_CreateRequestAfterRejectedSucceeds
+=== RUN   TestAccessRepoContract_CreateRequestAfterRejectedSucceeds/memory
+=== RUN   TestAccessRepoContract_CreateRequestAfterRejectedSucceeds/postgres
+--- PASS: TestAccessRepoContract_CreateRequestAfterRejectedSucceeds (0.02s)
+    --- PASS: TestAccessRepoContract_CreateRequestAfterRejectedSucceeds/memory (0.00s)
+    --- PASS: TestAccessRepoContract_CreateRequestAfterRejectedSucceeds/postgres (0.02s)
+=== RUN   TestAccessRepoContract_CreateRequestRowsAffectedSemantics
+--- PASS: TestAccessRepoContract_CreateRequestRowsAffectedSemantics (0.02s)
+=== RUN   TestAccessRepoContract_ExistingWritePathsSurviveAccessColumns
+=== RUN   TestAccessRepoContract_ExistingWritePathsSurviveAccessColumns/UpsertSettings
+=== RUN   TestAccessRepoContract_ExistingWritePathsSurviveAccessColumns/CreateChat
+=== RUN   TestAccessRepoContract_ExistingWritePathsSurviveAccessColumns/AppendCalculation
+--- PASS: TestAccessRepoContract_ExistingWritePathsSurviveAccessColumns (0.03s)
+    --- PASS: TestAccessRepoContract_ExistingWritePathsSurviveAccessColumns/UpsertSettings (0.01s)
+    --- PASS: TestAccessRepoContract_ExistingWritePathsSurviveAccessColumns/CreateChat (0.01s)
+    --- PASS: TestAccessRepoContract_ExistingWritePathsSurviveAccessColumns/AppendCalculation (0.01s)
+=== RUN   TestAccessRepoContract_WritePathsCreateUserRow
+=== RUN   TestAccessRepoContract_WritePathsCreateUserRow/memory
+=== RUN   TestAccessRepoContract_WritePathsCreateUserRow/memory/UpsertSettings
+=== RUN   TestAccessRepoContract_WritePathsCreateUserRow/memory/CreateChat
+=== RUN   TestAccessRepoContract_WritePathsCreateUserRow/memory/AppendCalculation
+=== RUN   TestAccessRepoContract_WritePathsCreateUserRow/postgres
+=== RUN   TestAccessRepoContract_WritePathsCreateUserRow/postgres/UpsertSettings
+=== RUN   TestAccessRepoContract_WritePathsCreateUserRow/postgres/CreateChat
+=== RUN   TestAccessRepoContract_WritePathsCreateUserRow/postgres/AppendCalculation
+--- PASS: TestAccessRepoContract_WritePathsCreateUserRow (0.03s)
+    --- PASS: TestAccessRepoContract_WritePathsCreateUserRow/memory (0.00s)
+        --- PASS: TestAccessRepoContract_WritePathsCreateUserRow/memory/UpsertSettings (0.00s)
+        --- PASS: TestAccessRepoContract_WritePathsCreateUserRow/memory/CreateChat (0.00s)
+        --- PASS: TestAccessRepoContract_WritePathsCreateUserRow/memory/AppendCalculation (0.00s)
+    --- PASS: TestAccessRepoContract_WritePathsCreateUserRow/postgres (0.03s)
+        --- PASS: TestAccessRepoContract_WritePathsCreateUserRow/postgres/UpsertSettings (0.01s)
+        --- PASS: TestAccessRepoContract_WritePathsCreateUserRow/postgres/CreateChat (0.00s)
+        --- PASS: TestAccessRepoContract_WritePathsCreateUserRow/postgres/AppendCalculation (0.02s)
+=== RUN   TestAccessRepoContract_WritePathsPreserveAdminRoleAndAccess
+=== RUN   TestAccessRepoContract_WritePathsPreserveAdminRoleAndAccess/memory
+=== RUN   TestAccessRepoContract_WritePathsPreserveAdminRoleAndAccess/memory/UpsertSettings
+=== RUN   TestAccessRepoContract_WritePathsPreserveAdminRoleAndAccess/memory/CreateChat
+=== RUN   TestAccessRepoContract_WritePathsPreserveAdminRoleAndAccess/memory/AppendCalculation
+=== RUN   TestAccessRepoContract_WritePathsPreserveAdminRoleAndAccess/postgres
+=== RUN   TestAccessRepoContract_WritePathsPreserveAdminRoleAndAccess/postgres/UpsertSettings
+=== RUN   TestAccessRepoContract_WritePathsPreserveAdminRoleAndAccess/postgres/CreateChat
+=== RUN   TestAccessRepoContract_WritePathsPreserveAdminRoleAndAccess/postgres/AppendCalculation
+--- PASS: TestAccessRepoContract_WritePathsPreserveAdminRoleAndAccess (0.04s)
+    --- PASS: TestAccessRepoContract_WritePathsPreserveAdminRoleAndAccess/memory (0.00s)
+        --- PASS: TestAccessRepoContract_WritePathsPreserveAdminRoleAndAccess/memory/UpsertSettings (0.00s)
+        --- PASS: TestAccessRepoContract_WritePathsPreserveAdminRoleAndAccess/memory/CreateChat (0.00s)
+        --- PASS: TestAccessRepoContract_WritePathsPreserveAdminRoleAndAccess/memory/AppendCalculation (0.00s)
+    --- PASS: TestAccessRepoContract_WritePathsPreserveAdminRoleAndAccess/postgres (0.04s)
+        --- PASS: TestAccessRepoContract_WritePathsPreserveAdminRoleAndAccess/postgres/UpsertSettings (0.02s)
+        --- PASS: TestAccessRepoContract_WritePathsPreserveAdminRoleAndAccess/postgres/CreateChat (0.01s)
+        --- PASS: TestAccessRepoContract_WritePathsPreserveAdminRoleAndAccess/postgres/AppendCalculation (0.01s)
+PASS
+ok  	github.com/RoGogDBD/PoshivOn/internal/repository	0.261s
+=== RUN   TestAccessService_NoAccessNoRequest_ReturnsEmptyState
+=== PAUSE TestAccessService_NoAccessNoRequest_ReturnsEmptyState
+=== RUN   TestAccessService_AdminWithoutAccessFlag_HasAccess
+=== PAUSE TestAccessService_AdminWithoutAccessFlag_HasAccess
+=== RUN   TestAccessService_GetAccessState_UnknownLogin_ReturnsErrNotFound
+=== PAUSE TestAccessService_GetAccessState_UnknownLogin_ReturnsErrNotFound
+=== RUN   TestAccessService_ListUsers_PassesRecordsThroughUnmodified
+=== PAUSE TestAccessService_ListUsers_PassesRecordsThroughUnmodified
+=== RUN   TestAccessService_ListUsers_RepositoryFailureIsPropagated
+=== PAUSE TestAccessService_ListUsers_RepositoryFailureIsPropagated
+=== RUN   TestAccessService_EnsureUser_DelegatesWithoutResettingRoleAndAccess
+=== PAUSE TestAccessService_EnsureUser_DelegatesWithoutResettingRoleAndAccess
+=== RUN   TestAccessService_CreateRequest_ByUserWithoutAccess_CreatesPending
+=== PAUSE TestAccessService_CreateRequest_ByUserWithoutAccess_CreatesPending
+=== RUN   TestAccessService_CreateRequest_RepoZeroRowsAffected_ReturnsErrConflict
+=== PAUSE TestAccessService_CreateRequest_RepoZeroRowsAffected_ReturnsErrConflict
+=== RUN   TestAccessService_CreateRequest_RepositoryFailure_IsNotReportedAsConflict
+=== PAUSE TestAccessService_CreateRequest_RepositoryFailure_IsNotReportedAsConflict
+=== RUN   TestAccessService_CreateRequest_UserAlreadyHasAccess_ReturnsErrConflictWithoutRepoCall
+=== PAUSE TestAccessService_CreateRequest_UserAlreadyHasAccess_ReturnsErrConflictWithoutRepoCall
+=== RUN   TestAccessService_CreateRequest_AfterRejected_Allowed
+=== PAUSE TestAccessService_CreateRequest_AfterRejected_Allowed
+=== RUN   TestAccessService_SetAccess_Grant_SetsFlagAndApprovesRequestWithDecidedBy
+=== PAUSE TestAccessService_SetAccess_Grant_SetsFlagAndApprovesRequestWithDecidedBy
+=== RUN   TestAccessService_SetAccess_Revoke_UnsetsFlagAndRejectsRequest
+=== PAUSE TestAccessService_SetAccess_Revoke_UnsetsFlagAndRejectsRequest
+=== RUN   TestAccessService_SetAccess_UnknownLogin_ReturnsErrNotFound
+=== PAUSE TestAccessService_SetAccess_UnknownLogin_ReturnsErrNotFound
+=== RUN   TestAccessService_SetAccess_NoExistingRequest_DoesNotCallDecideRequest
+=== PAUSE TestAccessService_SetAccess_NoExistingRequest_DoesNotCallDecideRequest
+=== RUN   TestAccessService_SetAccess_FlagUpdateFails_DoesNotDecideRequest
+=== PAUSE TestAccessService_SetAccess_FlagUpdateFails_DoesNotDecideRequest
+=== RUN   TestAccessService_LoginAtColumnWidth_IsAccepted
+=== PAUSE TestAccessService_LoginAtColumnWidth_IsAccepted
+=== RUN   TestAccessService_SetAccess_DecideFails_ReportsErrorAfterFlagIsWritten
+=== PAUSE TestAccessService_SetAccess_DecideFails_ReportsErrorAfterFlagIsWritten
+=== RUN   TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls
+=== PAUSE TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls
+=== RUN   TestCostingService_CalculateInChat_UsesExpandedPricingModel
+=== PAUSE TestCostingService_CalculateInChat_UsesExpandedPricingModel
+=== RUN   TestCostingService_CalculateInChat_RespectsMinimumMarginFloor
+=== PAUSE TestCostingService_CalculateInChat_RespectsMinimumMarginFloor
+=== RUN   TestCostingService_CreateDeleteRestoreChat
+=== PAUSE TestCostingService_CreateDeleteRestoreChat
+=== RUN   TestCostingService_CalculateInChat_UnknownOperation
+=== PAUSE TestCostingService_CalculateInChat_UnknownOperation
+=== RUN   TestCostingService_CalculateInChat_QuickMode
+=== PAUSE TestCostingService_CalculateInChat_QuickMode
+=== CONT  TestCostingService_CalculateInChat_QuickMode
+=== CONT  TestAccessService_AdminWithoutAccessFlag_HasAccess
+--- PASS: TestAccessService_AdminWithoutAccessFlag_HasAccess (0.00s)
+=== CONT  TestAccessService_NoAccessNoRequest_ReturnsEmptyState
+--- PASS: TestAccessService_NoAccessNoRequest_ReturnsEmptyState (0.00s)
+=== CONT  TestCostingService_CalculateInChat_UnknownOperation
+=== CONT  TestAccessService_ListUsers_RepositoryFailureIsPropagated
+=== CONT  TestAccessService_EnsureUser_DelegatesWithoutResettingRoleAndAccess
+--- PASS: TestCostingService_CalculateInChat_UnknownOperation (0.00s)
+=== CONT  TestCostingService_CalculateInChat_RespectsMinimumMarginFloor
+--- PASS: TestCostingService_CalculateInChat_QuickMode (0.00s)
+--- PASS: TestCostingService_CalculateInChat_RespectsMinimumMarginFloor (0.00s)
+--- PASS: TestAccessService_EnsureUser_DelegatesWithoutResettingRoleAndAccess (0.00s)
+--- PASS: TestAccessService_ListUsers_RepositoryFailureIsPropagated (0.00s)
+=== CONT  TestCostingService_CalculateInChat_UsesExpandedPricingModel
+--- PASS: TestCostingService_CalculateInChat_UsesExpandedPricingModel (0.00s)
+=== CONT  TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls
+=== RUN   TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/GetAccessState_с_пробельным_логином
+=== PAUSE TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/GetAccessState_с_пробельным_логином
+=== RUN   TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/CreateRequest_с_пробельным_логином
+=== PAUSE TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/CreateRequest_с_пробельным_логином
+=== RUN   TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/SetAccess_без_указания_администратора
+=== PAUSE TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/SetAccess_без_указания_администратора
+=== RUN   TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/SetAccess_с_пробельным_администратором
+=== PAUSE TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/SetAccess_с_пробельным_администратором
+=== RUN   TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/EnsureUser_с_логином_длиннее_users.id
+=== CONT  TestAccessService_SetAccess_DecideFails_ReportsErrorAfterFlagIsWritten
+=== PAUSE TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/EnsureUser_с_логином_длиннее_users.id
+=== RUN   TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/EnsureUser_с_пустым_логином
+=== PAUSE TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/EnsureUser_с_пустым_логином
+--- PASS: TestAccessService_SetAccess_DecideFails_ReportsErrorAfterFlagIsWritten (0.00s)
+=== CONT  TestAccessService_LoginAtColumnWidth_IsAccepted
+=== RUN   TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/EnsureUser_с_пробельным_логином
+=== PAUSE TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/EnsureUser_с_пробельным_логином
+=== RUN   TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/CreateRequest_с_пустым_логином
+=== PAUSE TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/CreateRequest_с_пустым_логином
+=== RUN   TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/CreateRequest_с_логином_длиннее_users.id
+=== PAUSE TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/CreateRequest_с_логином_длиннее_users.id
+=== RUN   TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/SetAccess_с_логином_длиннее_users.id
+=== PAUSE TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/SetAccess_с_логином_длиннее_users.id
+=== RUN   TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/логин_из_кириллицы_длиннее_users.id
+=== PAUSE TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/логин_из_кириллицы_длиннее_users.id
+=== RUN   TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/SetAccess_с_пустым_логином
+=== PAUSE TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/SetAccess_с_пустым_логином
+=== RUN   TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/GetAccessState_с_логином_длиннее_users.id
+=== PAUSE TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/GetAccessState_с_логином_длиннее_users.id
+=== RUN   TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/SetAccess_с_пробельным_логином
+=== PAUSE TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/SetAccess_с_пробельным_логином
+=== RUN   TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/GetAccessState_с_пустым_логином
+=== PAUSE TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/GetAccessState_с_пустым_логином
+=== CONT  TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/GetAccessState_с_пробельным_логином
+=== CONT  TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/SetAccess_с_пробельным_администратором
+=== CONT  TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/CreateRequest_с_логином_длиннее_users.id
+=== CONT  TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/SetAccess_с_пробельным_логином
+--- PASS: TestAccessService_LoginAtColumnWidth_IsAccepted (0.00s)
+=== CONT  TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/SetAccess_с_пустым_логином
+=== CONT  TestAccessService_SetAccess_NoExistingRequest_DoesNotCallDecideRequest
+--- PASS: TestAccessService_SetAccess_NoExistingRequest_DoesNotCallDecideRequest (0.00s)
+=== CONT  TestAccessService_SetAccess_UnknownLogin_ReturnsErrNotFound
+--- PASS: TestAccessService_SetAccess_UnknownLogin_ReturnsErrNotFound (0.00s)
+=== CONT  TestAccessService_SetAccess_Revoke_UnsetsFlagAndRejectsRequest
+--- PASS: TestAccessService_SetAccess_Revoke_UnsetsFlagAndRejectsRequest (0.00s)
+=== CONT  TestAccessService_SetAccess_Grant_SetsFlagAndApprovesRequestWithDecidedBy
+--- PASS: TestAccessService_SetAccess_Grant_SetsFlagAndApprovesRequestWithDecidedBy (0.00s)
+=== CONT  TestAccessService_CreateRequest_AfterRejected_Allowed
+--- PASS: TestAccessService_CreateRequest_AfterRejected_Allowed (0.00s)
+=== CONT  TestAccessService_CreateRequest_UserAlreadyHasAccess_ReturnsErrConflictWithoutRepoCall
+=== CONT  TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/GetAccessState_с_логином_длиннее_users.id
+=== RUN   TestAccessService_CreateRequest_UserAlreadyHasAccess_ReturnsErrConflictWithoutRepoCall/через_роль_admin
+=== PAUSE TestAccessService_CreateRequest_UserAlreadyHasAccess_ReturnsErrConflictWithoutRepoCall/через_роль_admin
+=== RUN   TestAccessService_CreateRequest_UserAlreadyHasAccess_ReturnsErrConflictWithoutRepoCall/через_флаг_has_access
+=== PAUSE TestAccessService_CreateRequest_UserAlreadyHasAccess_ReturnsErrConflictWithoutRepoCall/через_флаг_has_access
+=== CONT  TestAccessService_CreateRequest_UserAlreadyHasAccess_ReturnsErrConflictWithoutRepoCall/через_роль_admin
+=== CONT  TestAccessService_ListUsers_PassesRecordsThroughUnmodified
+--- PASS: TestAccessService_ListUsers_PassesRecordsThroughUnmodified (0.00s)
+=== CONT  TestAccessService_GetAccessState_UnknownLogin_ReturnsErrNotFound
+--- PASS: TestAccessService_GetAccessState_UnknownLogin_ReturnsErrNotFound (0.00s)
+=== CONT  TestAccessService_CreateRequest_UserAlreadyHasAccess_ReturnsErrConflictWithoutRepoCall/через_флаг_has_access
+=== CONT  TestCostingService_CreateDeleteRestoreChat
+--- PASS: TestAccessService_CreateRequest_UserAlreadyHasAccess_ReturnsErrConflictWithoutRepoCall (0.00s)
+    --- PASS: TestAccessService_CreateRequest_UserAlreadyHasAccess_ReturnsErrConflictWithoutRepoCall/через_роль_admin (0.00s)
+    --- PASS: TestAccessService_CreateRequest_UserAlreadyHasAccess_ReturnsErrConflictWithoutRepoCall/через_флаг_has_access (0.00s)
+=== CONT  TestAccessService_CreateRequest_ByUserWithoutAccess_CreatesPending
+--- PASS: TestCostingService_CreateDeleteRestoreChat (0.00s)
+=== CONT  TestAccessService_CreateRequest_RepoZeroRowsAffected_ReturnsErrConflict
+--- PASS: TestAccessService_CreateRequest_RepoZeroRowsAffected_ReturnsErrConflict (0.00s)
+--- PASS: TestAccessService_CreateRequest_ByUserWithoutAccess_CreatesPending (0.00s)
+=== CONT  TestAccessService_SetAccess_FlagUpdateFails_DoesNotDecideRequest
+--- PASS: TestAccessService_SetAccess_FlagUpdateFails_DoesNotDecideRequest (0.00s)
+=== CONT  TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/SetAccess_без_указания_администратора
+=== CONT  TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/EnsureUser_с_логином_длиннее_users.id
+=== CONT  TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/CreateRequest_с_пустым_логином
+=== CONT  TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/EnsureUser_с_пробельным_логином
+=== CONT  TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/CreateRequest_с_пробельным_логином
+=== CONT  TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/логин_из_кириллицы_длиннее_users.id
+=== CONT  TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/EnsureUser_с_пустым_логином
+=== CONT  TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/GetAccessState_с_пустым_логином
+=== CONT  TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/SetAccess_с_логином_длиннее_users.id
+--- PASS: TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls (0.00s)
+    --- PASS: TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/GetAccessState_с_пробельным_логином (0.00s)
+    --- PASS: TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/SetAccess_с_пробельным_администратором (0.00s)
+    --- PASS: TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/CreateRequest_с_логином_длиннее_users.id (0.00s)
+    --- PASS: TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/SetAccess_с_пробельным_логином (0.00s)
+    --- PASS: TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/SetAccess_с_пустым_логином (0.00s)
+    --- PASS: TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/GetAccessState_с_логином_длиннее_users.id (0.00s)
+    --- PASS: TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/SetAccess_без_указания_администратора (0.00s)
+    --- PASS: TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/EnsureUser_с_логином_длиннее_users.id (0.00s)
+    --- PASS: TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/CreateRequest_с_пустым_логином (0.00s)
+    --- PASS: TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/EnsureUser_с_пробельным_логином (0.00s)
+    --- PASS: TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/CreateRequest_с_пробельным_логином (0.00s)
+    --- PASS: TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/логин_из_кириллицы_длиннее_users.id (0.00s)
+    --- PASS: TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/EnsureUser_с_пустым_логином (0.00s)
+    --- PASS: TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/GetAccessState_с_пустым_логином (0.00s)
+    --- PASS: TestAccessService_InvalidArguments_ReturnErrInvalidArgumentWithoutRepoCalls/SetAccess_с_логином_длиннее_users.id (0.00s)
+=== CONT  TestAccessService_CreateRequest_RepositoryFailure_IsNotReportedAsConflict
+--- PASS: TestAccessService_CreateRequest_RepositoryFailure_IsNotReportedAsConflict (0.00s)
+PASS
+ok  	github.com/RoGogDBD/PoshivOn/internal/service	0.003s
+=== RUN   TestAdminSeed_SurvivesCollisionUnderLegacyCollation
+--- PASS: TestAdminSeed_SurvivesCollisionUnderLegacyCollation (0.93s)
+=== RUN   TestAdminSeed_SurvivesCollisionUnderLegacyCollation_ViaRun
+--- PASS: TestAdminSeed_SurvivesCollisionUnderLegacyCollation_ViaRun (0.88s)
+PASS
+ok  	github.com/RoGogDBD/PoshivOn/migrations	1.805s

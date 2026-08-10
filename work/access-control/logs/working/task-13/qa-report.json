@@ -1,0 +1,432 @@
+{
+  "task": "Task 13 — Pre-deploy QA (Phase 1, feature: access-control)",
+  "commitUnderTest": "4c0d90e",
+  "workingTreeClean": true,
+  "runDate": "2026-08-10",
+  "status": "passed",
+  "summary": {
+    "totalChecks": 42,
+    "passed": 40,
+    "failed": 0,
+    "notVerifiable": 2,
+    "criticals": 0,
+    "majors": 1,
+    "minors": 2
+  },
+  "testSuite": {
+    "status": "passed",
+    "details": "go test ./... -v -count=1 against live MariaDB 11.4 (poshivon_db, database poshivon_test): 397 '--- PASS', 0 '--- FAIL', 0 '--- SKIP'. All 7 packages ok (cmd, internal/auth, internal/config, internal/handler, internal/repository, internal/service, migrations). Full verbose log: work/access-control/logs/working/task-13/gotest-v.log",
+    "environment": {
+      "toolchain": "docker golang:1.25-alpine (no Go toolchain on host), module cache volume poshivon_gomodcache",
+      "TEST_DB_DSN": "poshivon:poshivon@tcp(127.0.0.1:3306)/poshivon_test?parseTime=true&charset=utf8mb4",
+      "TEST_MIGRATION_ADMIN_DSN": "root:***@tcp(127.0.0.1:3306)/?parseTime=true&charset=utf8mb4&multiStatements=true"
+    },
+    "skipHazardControl": {
+      "description": "tasks/13.md's central hazard: without TEST_DB_DSN the DB-backed contract suites t.Skip() and the package still reports 'ok'. A negative control run was executed to prove the green run is genuinely distinguishable from the skip case.",
+      "controlRun": "go test ./internal/repository/ ./internal/auth/ ./migrations/ -v WITHOUT TEST_DB_DSN and WITHOUT TEST_MIGRATION_ADMIN_DSN",
+      "controlResult": "26 '--- SKIP' lines",
+      "actualRun": "0 '--- SKIP' lines, 27 postgres contract subtests PASS, 27 memory contract subtests PASS",
+      "conclusion": "DSN was genuinely picked up; every load-bearing DB-backed test really executed"
+    },
+    "loadBearingTests": [
+      {
+        "source": "internal/repository/access_repo_test.go",
+        "requirement": "EnsureUser does not reset role/has_access for an existing admin (Decision 11 admin-demotion guard)",
+        "result": "--- PASS: TestAccessRepoContract_EnsureUserPreservesAdminRoleAndAccess/postgres (0.01s) and /memory"
+      },
+      {
+        "source": "internal/repository/access_repo_test.go",
+        "requirement": "SetAccess in BOTH directions, visible to a subsequent GetUser, against PostgresRepository (zero-value reset bug MemoryRepository cannot reproduce)",
+        "result": "--- PASS: TestAccessRepoContract_SetAccessGrant/postgres (0.01s); --- PASS: TestAccessRepoContract_SetAccessRevoke/postgres (0.01s); plus SetAccessRepeatedGrantIsNotNotFound/postgres and SetAccessRevokeWhenAlreadyRevoked/postgres"
+      },
+      {
+        "source": "internal/repository/access_repo_test.go",
+        "requirement": "Existing write paths survive the CHECK-constrained columns (Decision 13 regression guard)",
+        "result": "--- PASS: TestAccessRepoContract_WritePathsCreateUserRow/postgres/UpsertSettings, /CreateChat, /AppendCalculation; TestAccessRepoContract_WritePathsPreserveAdminRoleAndAccess/postgres/* ; TestAccessRepoContract_ExistingWritePathsSurviveAccessColumns"
+      },
+      {
+        "source": "internal/auth/store_test.go",
+        "requirement": "CreateSession persists yandex_login / yandex_email / yandex_display_name",
+        "result": "--- PASS: TestAuthStore_CreateSessionPersistsIdentity (0.02s)"
+      },
+      {
+        "source": "internal/auth/store_test.go",
+        "requirement": "UpdateSessionTokens preserves identity across token rotation",
+        "result": "--- PASS: TestAuthStore_UpdateSessionTokensPreservesIdentity (0.01s)"
+      },
+      {
+        "source": "internal/auth/store_test.go",
+        "requirement": "Session with NULL yandex_login (pre-migration row) reads cleanly via FindByRefreshHash — basis for RequireAuth fail-closed (Decision 2)",
+        "result": "--- PASS: TestAuthStore_NullYandexLoginRoundTrips (0.00s); handler side --- PASS: TestRequireAuth_NullIdentitySession/{NULL_в_колонке,пустая_строка,только_пробелы}"
+      },
+      {
+        "source": "migrations/migrate_test.go (NEW — added by the SEC-11-01 remediation, not in tasks/13.md's original list; treated as load-bearing per lead instruction)",
+        "requirement": "Admin seed survives a collation-colliding pre-existing row (SEC-11-01 privilege escalation)",
+        "result": "--- PASS: TestAdminSeed_SurvivesCollisionUnderLegacyCollation (0.93s); --- PASS: TestAdminSeed_SurvivesCollisionUnderLegacyCollation_ViaRun (0.88s)"
+      }
+    ]
+  },
+  "independentVerification": {
+    "note": "Per lead instruction, the remediation's own verification claims were re-derived from a fresh run rather than assumed.",
+    "checks": [
+      {
+        "claim": "Migration chain applies cleanly on a clean MariaDB 11.4 and yields exactly 2 admins",
+        "method": "Fresh database qa13_fresh; applied 001..006 *.up.sql in migrate.go's glob+sort order (0001_init.sql correctly excluded — it is PostgreSQL-era and does not match *.up.sql)",
+        "result": "CONFIRMED — all 6 files applied without error; users with role='admin' = RoGogDBD, irina2000aleshina; admin_count = 2"
+      },
+      {
+        "claim": "Re-running the same migration file is idempotent and does not duplicate admin rows",
+        "method": "Re-applied 004_access_control.up.sql and 006_admin_identity_reassert.up.sql on the already-migrated database",
+        "result": "CONFIRMED — both re-applied without error, admin_count still 2"
+      },
+      {
+        "claim": "SEC-11-01 (privilege escalation via migration ordering) is closed by migration 006",
+        "method": "Fresh database qa13_sec1101; applied 001-003, seeded a colliding pre-existing row id='rogogdbd', applied 004, then 005, then simulated the attacker self-granting (UPDATE has_access=1) in the window before 006, then applied 006",
+        "result": "CONFIRMED — the vulnerability reproduces as described (after 004 alone, 'rogogdbd' holds role='admin' and the real 'RoGogDBD' row does not exist); after 006 the colliding row is demoted to role='user' with has_access=0, the real 'RoGogDBD' is seeded as admin, and admin_count = 2"
+      },
+      {
+        "claim": "No temporary migration databases leak after the run",
+        "method": "SHOW DATABASES filtered for migration_race_* and qa13_*",
+        "result": "CONFIRMED — none remaining; scratch databases created by this QA were dropped"
+      },
+      {
+        "claim": "Remediation-added tests are present and green (both migration tests, TestLoad_OriginFallbackGuard, writeAPIDecodeError tests)",
+        "method": "Grep of the fresh verbose log",
+        "result": "CONFIRMED — TestAdminSeed_* (2), TestLoad_OriginFallbackGuard, TestHandleUsers_DecodeError_NoInternalTextLeak, TestWriteAPIDecodeError_LogsOriginalError all PASS"
+      },
+      {
+        "claim": "Compile-time interface assertions exist for both repository implementations",
+        "method": "Direct grep + successful compilation of the package",
+        "result": "CONFIRMED — postgres.go:156-157 and memory.go:47-48 assert both service.UserRepository and service.AccessRequestRepository"
+      }
+    ]
+  },
+  "acceptanceCriteria": [
+    {
+      "id": "TS-01",
+      "criterion": "Миграция 004_access_control применяется на чистой MariaDB 11.4 и на БД с текущей прод-схемой без ошибок; повторный прогон того же файла также проходит",
+      "status": "passed",
+      "evidence": "Fresh DB qa13_fresh: 001→006 applied without error (prod schema = 001-003, then the feature's 004-006). Re-apply of 004 and 006 succeeded, admin_count unchanged at 2. Also covered by TestAdminSeed_SurvivesCollisionUnderLegacyCollation_ViaRun, which exercises migrations.Run and asserts idempotency of a repeated call plus schema_migrations bookkeeping."
+    },
+    {
+      "id": "TS-02",
+      "criterion": "MemoryRepository и PostgresRepository оба реализуют UserRepository и AccessRequestRepository; compile-time assertions добавлены для обеих реализаций",
+      "status": "passed",
+      "evidence": "server/internal/repository/postgres.go:156-157 and memory.go:47-48; package compiles. Behaviourally confirmed: all 27 contract tests run against both stores (27 /memory PASS, 27 /postgres PASS). TestBuildRepositories_ProvidesAccessRepositories PASS."
+    },
+    {
+      "id": "TS-03",
+      "criterion": "EnsureUser при повторном входе не изменяет role и has_access — проверено контрактным тестом на обоих репозиториях",
+      "status": "passed",
+      "evidence": "TestAccessRepoContract_EnsureUserPreservesAdminRoleAndAccess/memory and /postgres both PASS against live MariaDB. Unit-level: TestAccessService_EnsureUser_DelegatesWithoutResettingRoleAndAccess."
+    },
+    {
+      "id": "TS-04",
+      "criterion": "UpsertSettings, CreateChat и расчёт работают для нового пользователя после добавления колонок с CHECK-констрейнтом",
+      "status": "passed",
+      "evidence": "TestAccessRepoContract_WritePathsCreateUserRow/postgres/{UpsertSettings,CreateChat,AppendCalculation} PASS; TestAccessRepoContract_WritePathsPreserveAdminRoleAndAccess/postgres/* PASS; TestAccessRepoContract_ExistingWritePathsSurviveAccessColumns PASS."
+    },
+    {
+      "id": "TS-05",
+      "criterion": "GET /api/v1/access/me без валидных кук возвращает 401",
+      "status": "passed",
+      "evidence": "TestAccessMe_NoCookies401 PASS; TestAccessMe_SessionWithoutYandexLogin401 PASS (fail-closed on missing session identity, Decision 2); TestRequireAuth_MissingCookies and TestResolveSession_RejectionSlugs cover all 7 rejection paths."
+    },
+    {
+      "id": "TS-06",
+      "criterion": "GET /api/v1/admin/users неадминистратором возвращает 403",
+      "status": "passed",
+      "evidence": "TestAdminUsers_NoCookies401AndNonAdmin403 PASS; TestRequireAdmin_Gate and TestRequireAdmin_WithoutIdentityFailsClosed PASS."
+    },
+    {
+      "id": "TS-07",
+      "criterion": "POST /api/v1/admin/users/{login}/access неадминистратором возвращает 403 и не изменяет флаг доступа — в том числе когда {login} равен логину вызывающего",
+      "status": "passed",
+      "evidence": "TestSetAccess_NonAdminSelfLogin403Unchanged PASS (the self-grant case explicitly) and TestSetAccess_NonAdminOtherLogin403Unchanged PASS; both assert the access flag is unchanged, not merely the status code. TestSetAccess_NoCookies401Unchanged PASS."
+    },
+    {
+      "id": "TS-08",
+      "criterion": "Изменяющий запрос без заголовка Origin или с посторонним значением отклоняется и не изменяет состояние — в том числе при пустом CORS_ALLOWED_ORIGINS (same-origin fallback, Decision 8), и в том числе на POST /auth/yandex/code",
+      "status": "passed",
+      "evidence": "TestRequireSameOrigin_Matrix, _Allowlist, _EmptyAllowlistFallsBackToHost, _MutatingMethodsCovered, _SafeMethodsNeverBlocked, _MatrixSafeMethod all PASS. Login-CSRF branch: TestHandleYandexCode_MissingOriginRejected, _ForeignOriginRejected, _AllowedOriginPasses, TestNewMux_SameOriginGuardRejectsForeignOriginOnLogin PASS. Endpoint-level: TestSetAccess_NoOriginIs403NotUnauthorized, TestAccessRequests_NoOriginRejected, TestUsersMutatingRoutesRequireSameOrigin, TestAuthMutatingRoutesRequireSameOrigin PASS."
+    },
+    {
+      "id": "TS-09",
+      "criterion": "Повторная подача заявки при статусе pending возвращает 409",
+      "status": "passed",
+      "evidence": "TestAccessRequests_DuplicateConflict PASS (HTTP layer); TestAccessRepoContract_CreateRequestConflictWhilePending/{memory,postgres} PASS; TestAccessRepoContract_CreateRequestRowsAffectedSemantics PASS; TestAccessRepoContract_CreateRequestAfterRejectedSucceeds/postgres PASS confirms the conflict is scoped to pending only."
+    },
+    {
+      "id": "TS-10",
+      "criterion": "Подача заявки пользователем, у которого доступ уже есть, возвращает 409",
+      "status": "passed",
+      "evidence": "TestAccessRequests_AlreadyGrantedConflict PASS; TestAccessService_CreateRequest_UserAlreadyHasAccess_ReturnsErrConflictWithoutRepoCall PASS (also asserts no repository call is made)."
+    },
+    {
+      "id": "TS-11",
+      "criterion": "Пользователь с role='admin' и has_access=false проходит проверку доступа",
+      "status": "passed",
+      "evidence": "TestRequireAccess_AdminBypassesHasAccessFalse PASS; TestRequireAccess_AdminWithoutFlagPasses PASS; TestAccessService_AdminWithoutAccessFlag_HasAccess PASS; TestAccessMe_AdminWithoutFlagReportsAccess PASS."
+    },
+    {
+      "id": "TS-12",
+      "criterion": "SELECT COUNT(*) FROM users WHERE role='admin' возвращает 2 после выкатки",
+      "status": "passed",
+      "evidence": "Direct SQL on a fresh database after the full 001→006 chain: admin_count = 2 (RoGogDBD, irina2000aleshina). Still 2 after re-applying 004 and 006. Still 2 in the SEC-11-01 collision reproduction, where the colliding row is demoted rather than counted."
+    },
+    {
+      "id": "TS-13",
+      "criterion": "Запрос к /api/v1/users/** без кук возвращает 401, а без выданного доступа — 403",
+      "status": "passed",
+      "evidence": "TestHandleUsers_NoCookies_401 PASS; TestHandleUsers_NoAccess_403 PASS; TestUsersRoutesAreClosedByAccessChain PASS; TestNewMux_AccessChainsAreAttached PASS."
+    },
+    {
+      "id": "TS-14",
+      "criterion": "Пользователь не может получить данные другого владельца ни через адрес, ни через тело запроса",
+      "status": "passed",
+      "evidence": "TestHandleUsers_ForeignOwnerUnreachable PASS; TestRegisterRoutes_LegacyUserIDSegment_NotFound PASS (the URL-segment path is gone entirely); TestHandleUsers_WithAccess_200_OwnerScoped PASS (owner resolved from session, not from request)."
+    },
+    {
+      "id": "TS-15",
+      "criterion": "POST /auth/yandex возвращает 404",
+      "status": "passed",
+      "evidence": "TestBuildRoutes_LegacyYandexTokenRouteIsGone PASS (against the real BuildRoutes); TestNewMux_LegacyTokenRouteIsGone PASS; TestAuthHandlerHasNoLegacyTokenEntryPoint PASS."
+    },
+    {
+      "id": "TS-16",
+      "criterion": "Вход с несовпадающим state прерывается без создания сессии",
+      "status": "passed",
+      "evidence": "Code trace (no automated coverage — client has no test runner, see finding QA-13-02): client/src/pages/AuthCallback.jsx:54-59 consumes the one-shot state from sessionStorage and returns via finalize('error') BEFORE exchangeYandexCode is called, so /auth/yandex/code is never reached and no session is created; a missing stored state is treated as a mismatch. state generation is crypto-random and non-exported (client/src/utils/yandexAuth.js, createAuthState/saveAuthState). Server-side defense-in-depth for cross-site login is independently covered by TestHandleYandexCode_ForeignOriginRejected / _MissingOriginRejected."
+    },
+    {
+      "id": "TS-17",
+      "criterion": "UpdateSessionTokens сохраняет личность сессии при ротации токенов",
+      "status": "passed",
+      "evidence": "TestAuthStore_UpdateSessionTokensPreservesIdentity PASS against live MariaDB (confirmed not skipped — see skipHazardControl). TestHandleRefresh_DoesNotRefetchProfile PASS."
+    },
+    {
+      "id": "TS-18",
+      "criterion": "Строка users появляется после входа, до каких-либо действий в панели",
+      "status": "passed",
+      "evidence": "TestHandleYandexCode_CreatesUserBeforeAnyPanelAction PASS; TestAccessRepoContract_ListUsersIncludesLoginOnlyUsers/{memory,postgres} PASS (login-only rows are listed for the admin)."
+    },
+    {
+      "id": "TS-19",
+      "criterion": "Пользователь без доступа не отправляет запросов к /settings, /chats, /calculations",
+      "status": "passed",
+      "evidence": "Code trace (no automated coverage — see finding QA-13-02): client/src/pages/Panel.jsx both data-loading effects guard on status === 'ready' (lines 260 and 310), and status only becomes 'ready' when hasPanelAccess(accessState) is true (line 242). The guard is on status rather than userID specifically to prevent the pre-gate fetch. Calculations are triggered only from the workspace, which is not rendered in the no-access state."
+    },
+    {
+      "id": "TS-20",
+      "criterion": "Пользователь без прав администратора не видит пункт «Пользователи» в навигации",
+      "status": "passed",
+      "evidence": "Code trace (no automated coverage — see finding QA-13-02): client/src/pages/Panel.jsx:627 renders the «Пользователи» nav item only under isAdmin (access?.role === 'admin', line 355), and line 895 re-checks isAdmin before rendering AdminUsersSection. Server-side enforcement is independent: TestAdminUsers_NoCookies401AndNonAdmin403 PASS."
+    },
+    {
+      "id": "TS-21",
+      "criterion": "403 и 409 корректно отображаются в writeAPIDomainError",
+      "status": "passed",
+      "evidence": "TestWriteAPIDomainError_NoInternalTextInAnyBranch PASS (all 8 branches incl. inherited 400/404/429/500/503/504); TestWriteAPIDomainError_LogsOriginalError PASS; TestWriteAPIDomainError_NilErrorDoesNotPanic PASS."
+    },
+    {
+      "id": "TS-22",
+      "criterion": "Ответ 500 не содержит текста внутренней ошибки",
+      "status": "passed",
+      "evidence": "TestWriteAPIDomainError_NoInternalTextLeak and _NoInternalTextInAnyBranch PASS; TestHandleUsers_DecodeError_NoInternalTextLeak PASS (the C2/SEC-11-05 remediation, 3 of 4 decode sites through real BuildRoutes); TestWriteAPIDecodeError_LogsOriginalError PASS (confirms the error reaches the log rather than merely being dropped); TestRequireAuth_UnknownResolverErrorIsNotLeaked PASS; TestAccessHandler_RepositoryFailureAfterGatePasses PASS."
+    },
+    {
+      "id": "TS-23",
+      "criterion": "Все существующие тесты проходят; регрессий в costing_test.go нет",
+      "status": "passed",
+      "evidence": "397 PASS / 0 FAIL / 0 SKIP across all 7 packages. costing suite green: TestCostingService_CalculateInChat_QuickMode, _RespectsMinimumMarginFloor, _UnknownOperation, _UsesExpandedPricingModel, TestCostingService_CreateDeleteRestoreChat all PASS."
+    },
+    {
+      "id": "TS-24",
+      "criterion": "go test ./... запускается в CI и блокирует деплой при падении",
+      "status": "passed",
+      "evidence": "Config trace. .github/workflows/test.yml exposes workflow_call, runs a mariadb:11.4 service container, applies server/migrations/*.up.sql in the same glob+sort order as migrate.go, and runs 'go test ./... -v' with BOTH TEST_DB_DSN and TEST_MIGRATION_ADMIN_DSN set — so CI reproduces exactly the non-skipping condition this QA verified locally, and the mandatory -v is documented in the workflow itself. .github/workflows/deploy.yml declares jobs.test with 'uses: ./.github/workflows/test.yml' and jobs.build-and-deploy with 'needs: test', so a red suite prevents image build, push and the SSH deploy step from running at all."
+    },
+    {
+      "id": "TS-25",
+      "criterion": "CONTACT_EMAIL доходит до контейнера poshivon_app на проде и виден на плашке",
+      "status": "not_verifiable",
+      "evidence": "Full static chain verified end to end, but the live leg cannot be exercised pre-deploy. Chain: secrets.CONTACT_EMAIL → deploy.yml:109 job env → deploy.yml:131 ssh-action 'envs:' list (CONTACT_EMAIL present) → deploy.yml:251 writes CONTACT_EMAIL=${CONTACT_EMAIL:-} into $HOME/poshivon/.env → docker-compose.prod.yml:15 'CONTACT_EMAIL: ${CONTACT_EMAIL}' on the service whose container_name is poshivon_app (line 4) → config.go:85 envOrDefault('CONTACT_EMAIL','') → handler/access.go serves it on GET /api/v1/access/me → client/src/components/AccessRequestBanner.jsx renders it. Handler and config legs are covered by TestAccessMe_ContactEmailComesFromConfig and TestLoad_ContactEmail (both PASS). What remains unverifiable: whether the GitHub secret is actually populated, and the rendered banner on the live host."
+    },
+    {
+      "id": "US-1",
+      "criterion": "Авторизованный пользователь без доступа видит плашку запроса доступа вместо рабочего интерфейса панели",
+      "status": "passed",
+      "evidence": "Server: TestAccessMe_UserWithoutAccess200 PASS (state reports no access), TestRequireAccess_Gate PASS. Client: Panel.jsx:242 sets status 'no-access' when hasPanelAccess is false, and line 587 renders AccessRequestBanner in that state instead of the workspace. Visual confirmation on the live host is listed under deferredToPostDeploy."
+    },
+    {
+      "id": "US-2",
+      "criterion": "Плашка содержит кнопку «Запросить доступ» и контактный email",
+      "status": "passed",
+      "evidence": "client/src/components/AccessRequestBanner.jsx renders the «Запросить доступ» button (line 47) and the contact email block (line 56); an empty contact_email is a supported configuration, not a load error. Server side: TestAccessMe_ContactEmailComesFromConfig PASS, TestLoad_ContactEmail PASS."
+    },
+    {
+      "id": "US-3",
+      "criterion": "Нажатие кнопки создаёт заявку; повторная подача при заявке на рассмотрении невозможна",
+      "status": "passed",
+      "evidence": "TestAccessService_CreateRequest_ByUserWithoutAccess_CreatesPending PASS; TestAccessRequests_DuplicateConflict PASS (409); TestAccessRepoContract_CreateRequestConflictWhilePending/{memory,postgres} PASS. Client disables the button while pending (AccessRequestBanner.jsx:65) and treats 409 as a normal response, not a failure (line 26-29)."
+    },
+    {
+      "id": "US-4",
+      "criterion": "После подачи заявки плашка отображает статус «на рассмотрении»",
+      "status": "passed",
+      "evidence": "AccessRequestBanner.jsx: requestState 'pending' yields the button label «Заявка на рассмотрении» (line 42) and the notice «Заявка на рассмотрении. Мы сообщим о решении.» (line 70); initial state is derived from requestStatus === 'pending' (line 15), so the status survives a page reload. Server supplies request_status via GET /api/v1/access/me (handler/access.go:81)."
+    },
+    {
+      "id": "US-5",
+      "criterion": "При создании заявки администраторам уходит email-уведомление с логином и email заявителя",
+      "status": "not_verifiable",
+      "evidence": "OUT OF SCOPE for this gate, not a failure. user-spec.md:53 and tech-spec.md's Implementation Tasks both assign US-5 to Phase 2 (Tasks 16-20); notifier code does not exist yet at commit 4c0d90e. tasks/13.md step 6 explicitly instructs not to fail this gate over it. Recorded under deferredToPostDeploy for Task 18 (Phase 2 Pre-deploy QA)."
+    },
+    {
+      "id": "US-6",
+      "criterion": "Ровно два выделенных аккаунта имеют права администратора",
+      "status": "passed",
+      "evidence": "Fresh 001→006 chain on a clean MariaDB 11.4: exactly 2 rows with role='admin' (RoGogDBD, irina2000aleshina); still 2 after re-applying 004 and 006. In the SEC-11-01 collision reproduction the colliding row is demoted by 006 so the count stays 2 with the correct byte-exact identities. Note: user-spec.md:143 reserves confirmation that these two logins are the intended ones to the user."
+    },
+    {
+      "id": "US-7",
+      "criterion": "Администратор видит в панели раздел со списком всех пользователей",
+      "status": "passed",
+      "evidence": "TestAdminUsers_AsAdmin200 PASS; TestAccessService_ListUsers_PassesRecordsThroughUnmodified PASS; TestAccessRepoContract_ListUsersIncludesLoginOnlyUsers/{memory,postgres} PASS (users who only ever logged in still appear). Client: AdminUsersSection.jsx renders the «Пользователи» section, mounted from Panel.jsx:899."
+    },
+    {
+      "id": "US-8",
+      "criterion": "Напротив каждого пользователя есть галочка «есть доступ к сервису», отражающая текущее состояние",
+      "status": "passed",
+      "evidence": "AdminUsersSection.jsx renders a per-row control bound to the user's has_access, and marks admin rows distinctly (lines 26, 37, 45). Backing state comes from GET /api/v1/admin/users — TestAdminUsers_AsAdmin200 PASS, TestAccessRepoContract_GetUserReturnsRoleAndAccess/{memory,postgres} PASS."
+    },
+    {
+      "id": "US-9",
+      "criterion": "Администратор может выдать доступ, поставив галочку",
+      "status": "passed",
+      "evidence": "TestSetAccess_GrantAndRevoke204 PASS; TestAccessRepoContract_SetAccessGrant/postgres PASS (flag readable by a subsequent GetUser); TestAccessService_SetAccess_Grant_SetsFlagAndApprovesRequestWithDecidedBy PASS; TestAccessRepoContract_SetAccessRepeatedGrantIsNotNotFound/postgres PASS."
+    },
+    {
+      "id": "US-10",
+      "criterion": "Администратор может отозвать доступ, сняв галочку",
+      "status": "passed",
+      "evidence": "TestSetAccess_GrantAndRevoke204 PASS; TestAccessRepoContract_SetAccessRevoke/postgres PASS — this is the branch a map-backed store cannot structurally exercise (Go zero-value write), and it ran against real MariaDB, confirmed not skipped. TestAccessService_SetAccess_Revoke_UnsetsFlagAndRejectsRequest PASS; TestAccessRepoContract_SetAccessRevokeWhenAlreadyRevoked/postgres PASS."
+    },
+    {
+      "id": "US-11",
+      "criterion": "Пользователь с выданным доступом видит рабочий интерфейс панели",
+      "status": "passed",
+      "evidence": "TestRequireAccess_Gate PASS; TestHandleUsers_WithAccess_200_OwnerScoped PASS (incl. POST /chats/{id}/restore 204). Client: hasPanelAccess (Panel.jsx:176) mirrors the server rule has_access || role=='admin' and drives status 'ready'."
+    },
+    {
+      "id": "US-12",
+      "criterion": "Пользователь без прав администратора не видит раздел управления пользователями",
+      "status": "passed",
+      "evidence": "Client: Panel.jsx:627 gates the nav item on isAdmin and line 895 re-checks isAdmin before mounting AdminUsersSection (deliberate duplication so a stale activeSection cannot expose it). Server enforcement is independent and tested: TestAdminUsers_NoCookies401AndNonAdmin403 PASS, TestRequireAdmin_Gate PASS, TestRequireAdmin_WithoutIdentityFailsClosed PASS."
+    },
+    {
+      "id": "US-13",
+      "criterion": "Неадминистратор не может выдать доступ никому, включая себя, обращаясь к API напрямую",
+      "status": "passed",
+      "evidence": "TestSetAccess_NonAdminSelfLogin403Unchanged PASS — the self-grant case specifically, asserting the flag did not change. TestSetAccess_NonAdminOtherLogin403Unchanged PASS. TestSetAccess_NoCookies401Unchanged PASS. TestRequireAdmin_WithoutIdentityFailsClosed PASS."
+    },
+    {
+      "id": "US-14",
+      "criterion": "Администратор всегда имеет доступ к сервису, отдельная заявка ему не нужна",
+      "status": "passed",
+      "evidence": "TestRequireAccess_AdminBypassesHasAccessFalse PASS; TestRequireAccess_AdminWithoutFlagPasses PASS; TestAccessService_AdminWithoutAccessFlag_HasAccess PASS; TestAccessMe_AdminWithoutFlagReportsAccess PASS. This is the mitigation for the user-spec risk of an admin accidentally unchecking their own box."
+    },
+    {
+      "id": "US-15",
+      "criterion": "Расчёты, чаты и настройки доступны через API только их владельцу и только при выданном доступе",
+      "status": "passed",
+      "evidence": "TestHandleUsers_WithAccess_200_OwnerScoped PASS (owner resolved from session); TestHandleUsers_ForeignOwnerUnreachable PASS; TestRegisterRoutes_LegacyUserIDSegment_NotFound PASS (the IDOR-prone URL segment is gone); TestHandleUsers_NoAccess_403 PASS; TestHandleUsers_NoCookies_401 PASS; TestUsersRoutesAreClosedByAccessChain PASS."
+    },
+    {
+      "id": "US-16",
+      "criterion": "После отзыва доступа пользователь теряет и доступ к данным через API, а не только интерфейс",
+      "status": "passed",
+      "evidence": "Revocation persists to the DB and is visible to the next read: TestAccessRepoContract_SetAccessRevoke/postgres PASS. The gate then denies API data access: TestHandleUsers_NoAccess_403 PASS, TestUsersRoutesAreClosedByAccessChain PASS, TestRequireAccess_Gate PASS. TestRequireAccess_RepositoryFailureIsNotAPass PASS ensures a repository error does not fail open."
+    },
+    {
+      "id": "US-17",
+      "criterion": "Сессию нельзя получить, предъявив серверу готовый OAuth-токен в обход штатного входа",
+      "status": "passed",
+      "evidence": "TestBuildRoutes_LegacyYandexTokenRouteIsGone PASS (against the real route table), TestNewMux_LegacyTokenRouteIsGone PASS, TestAuthHandlerHasNoLegacyTokenEntryPoint PASS (no handler method remains, so the route cannot be reintroduced by accident). The surviving code path /auth/yandex/code performs its own exchange with Yandex and is Origin-guarded (TestHandleYandexCode_ForeignOriginRejected PASS) and creates no session on any failure (TestHandleYandexCode_{ProfileFailure,EmptyLogin,EnsureUserFailure,SessionFailure}* PASS)."
+    }
+  ],
+  "coverageVerification": {
+    "featureFilesWithTests": "Every server-side file in the feature's scope has a corresponding test file: service/access.go → access_test.go (18 tests); repository/{postgres,memory}.go → access_repo_test.go (27 contract tests × 2 stores); auth/store.go → store_test.go (3 DB-backed tests); handler/{access,middleware,http,auth,routes}.go → access_test.go, middleware_test.go, http_test.go, auth_test.go, routes tests; config/config.go → config_test.go; migrations/ → migrate_test.go (new).",
+    "clientFiles": "client/ has no test runner by design (tech-spec Client tests section; confirmed by Task 12's test audit and by inspection of client/package.json). Client behaviour was covered by Verify-user in Tasks 7-8. tasks/13.md explicitly instructs not to expect client unit tests here.",
+    "coverageTooling": "No coverage threshold is configured in this project (no -coverprofile gate in test.yml, no codecov config), so no threshold regression could be measured. Not treated as a failure.",
+    "criteriaLinkedToRealBehaviourTests": "Spot-checked: the tests backing the load-bearing criteria assert observable state after the operation (read-back after write, access flag unchanged after a rejected request) rather than merely asserting a status code or an absence of error. Task 12's test audit reached the same conclusion independently."
+  },
+  "findings": [
+    {
+      "id": "QA-13-01",
+      "severity": "major",
+      "title": "Deploy will hard-fail at container start unless CORS_ALLOWED_ORIGINS and/or COOKIE_SECURE secrets are populated — new behaviour introduced by the C1 remediation, after the deploy pipeline (Task 9) was written and last exercised",
+      "expected": "poshivon_app starts on prod with the secrets currently configured in the repository's GitHub environment",
+      "actual": "server/internal/config/config.go:107-119 now returns an error from Load() when CORS_ALLOWED_ORIGINS contains no non-empty CSV entry AND COOKIE_SECURE is false, for any APP_STORAGE other than 'memory'. deploy.yml hardcodes APP_STORAGE: mysql (line ~100), so prod always takes the hard-fail branch, not the warn-only one. Both values come from optional GitHub secrets (deploy.yml:110-111); if either is unset the secret expands to an empty string and the app exits at startup instead of serving.",
+      "reproduction": "Set CORS_ALLOWED_ORIGINS='' and COOKIE_SECURE=false with APP_STORAGE=mysql, then call config.Load() — it returns 'config: CORS_ALLOWED_ORIGINS пуст и COOKIE_SECURE=false ...; задайте оба значения явно (APP_STORAGE=\"mysql\")'. Covered by TestLoad_OriginFallbackGuard, which passes — the behaviour is intentional and fail-loud, not a code defect. The risk is operational: this is a new precondition on the deploy that did not exist when Task 9's pipeline was last validated.",
+      "recommendation": "Before Wave 12, confirm in GitHub repository settings that secrets CORS_ALLOWED_ORIGINS (the real prod origin, e.g. https://<domain>) and COOKIE_SECURE=true are both set. This is a pre-deploy checklist item for the user, not a code change. Not classified critical because the failure is loud, immediate, and occurs before any traffic is served."
+    },
+    {
+      "id": "QA-13-02",
+      "severity": "minor",
+      "title": "Three Phase-1 acceptance criteria are client-side and have no automated coverage — verified by code inspection only",
+      "expected": "Every acceptance criterion is backed by an automated test",
+      "actual": "TS-16 (OAuth state mismatch aborts login), TS-19 (no /settings, /chats, /calculations requests before the access gate resolves) and TS-20 (non-admin does not see the «Пользователи» nav item) are enforced entirely in client/src and there is no client test runner, so they were verified by reading the code paths rather than by executing them.",
+      "reproduction": "client/package.json declares no test script; grep for *.test.jsx / *.spec.jsx in client/src returns nothing. The three code paths are unambiguous conditionals (AuthCallback.jsx:56, Panel.jsx:260/310 guarded on status==='ready', Panel.jsx:627/895 guarded on isAdmin) and each has independent server-side enforcement, which is why this is minor rather than major.",
+      "recommendation": "Known and accepted gap — tech-spec's Client tests section and tasks/13.md both state client unit tests are out of scope for Phase 1, and Tasks 7-8 covered these via Verify-user. Live confirmation is listed under deferredToPostDeploy. If a client test runner is introduced in Phase 2, these three are the highest-value first tests."
+    },
+    {
+      "id": "QA-13-03",
+      "severity": "minor",
+      "title": "The shared poshivon_test database's schema_migrations table records only 001_auth_sessions, although all six migrations' objects are present",
+      "expected": "schema_migrations reflects every applied migration",
+      "actual": "SELECT version FROM schema_migrations on poshivon_test returns only '001_auth_sessions', while access_requests, the role/has_access columns and the seeded admins are all present.",
+      "reproduction": "docker exec poshivon_db mariadb -uroot -proot poshivon_test -e \"SELECT version FROM schema_migrations;\"",
+      "recommendation": "No action needed — this is an artefact of the local/CI test fixture, not of the product. Both this QA run and .github/workflows/test.yml deliberately apply server/migrations/*.up.sql with the mariadb client rather than through migrations.Run, so the bookkeeping table is not written. Production applies migrations via migrations.Run on app start, and that path's bookkeeping is covered by TestAdminSeed_SurvivesCollisionUnderLegacyCollation_ViaRun, which asserts schema_migrations is written and that a repeated Run is idempotent. Recorded so a future reader does not mistake it for a missed migration."
+    }
+  ],
+  "deferredToPostDeploy": [
+    {
+      "criterion": "TS-25: CONTACT_EMAIL доходит до контейнера poshivon_app на проде и виден на плашке",
+      "reason": "The full config chain is statically verified, but whether the GitHub secret is populated and whether the value renders on the live banner cannot be observed without a deployed environment.",
+      "verificationCondition": "Deploy completed, poshivon_app running, a user account without access available",
+      "verificationSteps": "1) On the prod host: docker exec poshivon_app env | grep CONTACT_EMAIL → expect the real address, not empty. 2) Log in as a user with has_access=false and open /panel → the access-request banner must show that same address. 3) Cross-check GET /api/v1/access/me returns contact_email with the expected value."
+    },
+    {
+      "criterion": "US-5: При создании заявки администраторам уходит email-уведомление с логином и email заявителя",
+      "reason": "Phase 2 scope (tech-spec Implementation Tasks, Tasks 16-20). The notifier does not exist at commit 4c0d90e. Explicitly excluded from this gate by tasks/13.md step 6 — recorded as deferred, not failed.",
+      "verificationCondition": "Phase 2 shipped (Task 16 notifier + SMTP env vars configured)",
+      "verificationSteps": "Belongs to Task 18 (Phase 2 Pre-deploy QA) and the user's manual mailbox check described in user-spec.md:141. Not a Phase-1 post-deploy item."
+    },
+    {
+      "criterion": "US-1 / US-2 / US-4 / US-7 / US-8 / TS-19 / TS-20: rendered panel behaviour (banner instead of workspace, banner contents and pending state, admin users section with per-user checkboxes, no pre-gate data requests, no «Пользователи» item for non-admins)",
+      "reason": "Verified pre-deploy from component code and from the server APIs that back them, but the actual rendering and the actual absence of network requests need a browser against a running app. These correspond to user-spec.md's 'Agent verifies' steps 9-11, which the spec itself assigns to Playwright MCP.",
+      "verificationCondition": "Deployed app plus three accounts: one without access, one with access and no admin role, one admin",
+      "verificationSteps": "9) Open /panel as the no-access user → access-request banner rendered, no workspace; DevTools Network shows no requests to /settings, /chats or /calculations. 10) Open /panel as the admin → «Пользователи» section visible with a checkbox per user reflecting has_access; toggle one on and off and confirm 204 plus the DB flag changing in both directions. 11) Open /panel as the with-access non-admin → no «Пользователи» item in the navigation, and a direct GET /api/v1/admin/users returns 403."
+    },
+    {
+      "criterion": "US-6 / TS-12: the two seeded admin logins are the intended people",
+      "reason": "This QA confirms exactly two admin rows exist with the byte-exact ids RoGogDBD and irina2000aleshina after the migration chain. Whether those are the correct real-world accounts is knowable only to the user (user-spec.md:143).",
+      "verificationCondition": "Post-deploy, with the user available to confirm",
+      "verificationSteps": "On prod: SELECT id, role, has_access FROM users WHERE role='admin'; → expect exactly 2 rows; have the user confirm both logins, and confirm each admin can log in and reach the «Пользователи» section. Also re-run the SEC-11-01 check: SELECT id, role FROM users WHERE LOWER(id) IN ('rogogdbd','irina2000aleshina') AND id NOT IN ('RoGogDBD','irina2000aleshina') → must return zero rows."
+    }
+  ],
+  "outOfScopeConfirmed": {
+    "note": "Explicitly confirmed out of scope for this gate per tasks/13.md step 6 — recorded, not counted as failures.",
+    "items": [
+      "US-5 — email notification (Phase 2)",
+      "tech-spec 'Критерии Phase 2': письмо администраторам с логином и email заявителя; ошибка отправки не влияет на код ответа; старт сервера при незаданном SMTP_HOST; SMTP-переменные на проде; отсутствие SMTP-секретов в репозитории; оформление плашки и раздела «Пользователи» в обеих темах",
+      "Client unit tests — no test runner in client/package.json by design",
+      "Backlog items from Tasks 10/11 left out of the 'critical now' remediation (nginx security headers, OAuth rate limiting, open redirect, sliding sessions, VITE_ prefix on a server secret, npm/govulncheck advisories, dev-compose default DB credentials) — tracked in logs/working/task-10/code-audit.md and task-11/security-auditor-1.json, not Phase-1 acceptance criteria"
+    ]
+  },
+  "artifacts": {
+    "verboseTestLog": "/home/makar/PoshivOn/work/access-control/logs/working/task-13/gotest-v.log",
+    "report": "/home/makar/PoshivOn/work/access-control/logs/working/qa-report.json"
+  }
+}
