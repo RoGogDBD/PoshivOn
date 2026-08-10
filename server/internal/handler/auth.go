@@ -238,8 +238,7 @@ func (h *AuthHandler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err := ResolveSession(h.store, r)
-	if err != nil {
+	if _, err := requireIdentifiedSession(h.store, r); err != nil {
 		writeError(w, http.StatusUnauthorized, err.Error())
 		return
 	}
@@ -253,7 +252,7 @@ func (h *AuthHandler) HandleMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, err := ResolveSession(h.store, r)
+	session, err := requireIdentifiedSession(h.store, r)
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, err.Error())
 		return
@@ -560,6 +559,27 @@ func ResolveSession(finder SessionFinder, r *http.Request) (*auth.Session, error
 		return nil, errAccessMismatch
 	}
 
+	return session, nil
+}
+
+// requireIdentifiedSession — ResolveSession с дополнительной проверкой личности: сессия
+// валидна (куки, хеш, срок), но строка создана до миграции 004 и yandex_login в ней ещё
+// NULL (Decision 2). /auth/status и /auth/me звали голый ResolveSession и поэтому считали
+// такую сессию «залогинен», хотя RequireAuth на /api/v1/** её уже отклоняет как
+// session_identity_missing, — рассинхрон двух источников «авторизован» гонял пользователя
+// со старой сессией по кругу: лендинг (App.jsx) видел /auth/status=200, редиректил на
+// /panel, там GET /api/v1/access/me отклонялся, бутстрап-эффект уводил обратно на /, и
+// лендинг снова видел /auth/status=200 — быстрый цикл редиректов вместо однократной
+// отправки на вход, которую сам слаг session_identity_missing и предполагает (см.
+// комментарий у sessionIdentityMissingCode в middleware.go).
+func requireIdentifiedSession(store SessionFinder, r *http.Request) (*auth.Session, error) {
+	session, err := ResolveSession(store, r)
+	if err != nil {
+		return nil, err
+	}
+	if !session.YandexLogin.Valid || strings.TrimSpace(session.YandexLogin.String) == "" {
+		return nil, errors.New(sessionIdentityMissingCode)
+	}
 	return session, nil
 }
 

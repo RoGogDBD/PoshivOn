@@ -697,6 +697,67 @@ func TestResolveSessionIsIndependentOfAuthHandler(t *testing.T) {
 	}
 }
 
+// TestHandleStatus_RejectsSessionWithoutIdentity и TestHandleMe_RejectsSessionWithoutIdentity —
+// регрессия на цикл редиректов у пользователей со старой (до-миграционной) сессией.
+//
+// ResolveSession проверяет только валидность куки/сессии, не личность, — раньше
+// HandleStatus/HandleMe звали его напрямую и отвечали «залогинен» даже без yandex_login.
+// Лендинг (App.jsx) доверяет именно /auth/status, чтобы решить, редиректить ли на /panel;
+// там сессия без личности отклоняется RequireAuth (session_identity_missing) и bootstrap-
+// эффект Panel.jsx уводит обратно на "/", а лендинг снова видел /auth/status=200 и снова
+// редиректил на /panel — быстрый цикл вместо однократного ухода на вход. Хендлеры теперь
+// зовут requireIdentifiedSession, который добавляет ровно ту же проверку личности, что и
+// RequireAuth, — оба источника «авторизован» синхронизированы.
+func TestHandleStatus_RejectsSessionWithoutIdentity(t *testing.T) {
+	session := &auth.Session{
+		YandexAccessToken: "ya-access-token",
+		AccessExpiresAt:   time.Now().UTC().Add(time.Hour),
+		RefreshExpiresAt:  time.Now().UTC().Add(720 * time.Hour),
+		YandexLogin:       sql.NullString{Valid: false},
+	}
+	store := &stubSessionStore{log: &callLog{}, session: session}
+	handler := NewAuthHandler(store, newTestConfig(newFakeYandex(t, defaultProfile())), newAccessService(newStubUserRepo()))
+
+	req := httptest.NewRequest(http.MethodGet, "/auth/status", nil)
+	req.AddCookie(&http.Cookie{Name: accessCookieName, Value: "ya-access-token"})
+	req.AddCookie(&http.Cookie{Name: refreshCookieName, Value: "refresh-cookie-value"})
+	rec := httptest.NewRecorder()
+
+	handler.HandleStatus(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("статус = %d, ожидался 401 (сессия без личности не должна выглядеть залогиненной)", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), sessionIdentityMissingCode) {
+		t.Errorf("тело = %q, ожидался код %q", rec.Body.String(), sessionIdentityMissingCode)
+	}
+}
+
+func TestHandleMe_RejectsSessionWithoutIdentity(t *testing.T) {
+	session := &auth.Session{
+		YandexAccessToken: "ya-access-token",
+		AccessExpiresAt:   time.Now().UTC().Add(time.Hour),
+		RefreshExpiresAt:  time.Now().UTC().Add(720 * time.Hour),
+		YandexLogin:       sql.NullString{Valid: false},
+	}
+	store := &stubSessionStore{log: &callLog{}, session: session}
+	handler := NewAuthHandler(store, newTestConfig(newFakeYandex(t, defaultProfile())), newAccessService(newStubUserRepo()))
+
+	req := httptest.NewRequest(http.MethodGet, "/auth/me", nil)
+	req.AddCookie(&http.Cookie{Name: accessCookieName, Value: "ya-access-token"})
+	req.AddCookie(&http.Cookie{Name: refreshCookieName, Value: "refresh-cookie-value"})
+	rec := httptest.NewRecorder()
+
+	handler.HandleMe(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("статус = %d, ожидался 401 (сессия без личности не должна отдавать профиль)", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), sessionIdentityMissingCode) {
+		t.Errorf("тело = %q, ожидался код %q", rec.Body.String(), sessionIdentityMissingCode)
+	}
+}
+
 // TestResolveSession_RejectionSlugs: набор причин отказа не меняется — клиент матчит их
 // по точному значению (client/src/utils/yandexAuth.js:14-16).
 func TestResolveSession_RejectionSlugs(t *testing.T) {
