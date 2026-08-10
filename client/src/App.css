@@ -816,6 +816,13 @@ h1.hero-title span { color: var(--accent); }
   overflow: hidden;
   display: grid;
   grid-template-columns: 260px 1fr;
+  /* Без этого единственная строка сетки по умолчанию растёт по контенту (auto), даже при
+     заданной height:100vh на контейнере: .panel__content тогда становится выше вьюпорта,
+     overflow-y:auto на нём никогда не активируется (переполнения внутри него просто нет —
+     оно всё в самой высоте элемента), а overflow:hidden у .panel молча обрезает всё, что
+     не поместилось, без какого-либо скролла вообще. minmax(0, 1fr) убирает content-based
+     минимум строки и заставляет её остановиться на высоте контейнера. */
+  grid-template-rows: minmax(0, 1fr);
   background: var(--panel-bg);
   color: var(--panel-text);
 }
@@ -854,6 +861,7 @@ h1.hero-title span { color: var(--accent); }
   display: flex;
   flex-direction: column;
   gap: 28px;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -941,18 +949,65 @@ h1.hero-title span { color: var(--accent); }
 }
 
 /* Карточка профиля — самый нижний элемент сайдбара: аватар-инициалы, имя и логин из
-   бывшего заголовка «Здравствуйте, .../Пользователь: ...», теперь в виде компактного
-   чипа, как на референсе. Шеврон — чисто визуальный, без выпадающего меню под ним
-   (тот же принцип «только стиль», что и у пунктов навигации): открывать поверх него
-   что-либо не просили, а держать на кнопке необъяснённый интерактив хуже, чем не
-   держать вовсе. */
+   бывшего заголовка «Здравствуйте, .../Пользователь: ...». Шеврон открывает меню с
+   единственным пунктом — выходом из аккаунта (та же кнопка, что раньше жила в шапке);
+   .panel__profile — якорь позиционирования, сама кнопка — .panel__profile-trigger. */
 .panel__profile {
+  position: relative;
   margin-top: 14px;
+}
+
+.panel__profile-trigger {
   display: flex;
   align-items: center;
+  width: 100%;
   gap: 10px;
   padding: 8px 10px;
   border-radius: 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.panel__profile-trigger:hover,
+.panel__profile-trigger[aria-expanded="true"] {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.panel__profile-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 8px);
+  background: #182238;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 6px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
+  z-index: 5;
+}
+
+.panel__profile-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.panel__profile-menu-item:hover {
+  background: color-mix(in srgb, var(--panel-accent) 20%, transparent);
 }
 
 .panel__profile-avatar {
@@ -1005,6 +1060,7 @@ h1.hero-title span { color: var(--accent); }
 
 .panel__content {
   height: 100%;
+  min-height: 0;
   overflow-y: auto;
   padding: 48px;
   color: var(--panel-text);
@@ -1024,15 +1080,6 @@ h1.hero-title span { color: var(--accent); }
   font-size: 13px;
   color: #93a2c8;
   margin-bottom: 6px;
-}
-
-.panel__logout {
-  border: 1px solid var(--panel-border);
-  background: transparent;
-  color: var(--panel-text);
-  padding: 8px 14px;
-  border-radius: 10px;
-  cursor: pointer;
 }
 
 .panel__card {
@@ -1093,11 +1140,6 @@ h1.hero-title span { color: var(--accent); }
      пунктов не просили). */
 }
 
-.panel__actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
 
 .panel__notice {
   margin: 0;
@@ -1297,11 +1339,6 @@ h1.hero-title span { color: var(--accent); }
     flex-direction: column;
   }
 
-  .panel__actions {
-    width: 100%;
-    justify-content: space-between;
-  }
-
   .panel-chat-list__create,
   .panel-form__row,
   .panel-form__grid {
@@ -1396,21 +1433,11 @@ h1.hero-title span { color: var(--accent); }
   color: #91a0c1;
 }
 
-.panel__actions {
-  gap: 10px;
-}
-
-.panel__logout,
 .panel__theme-toggle,
 .panel-chat-list__create button {
   min-height: 42px;
   padding: 10px 16px;
   font-weight: 700;
-}
-
-.panel__logout {
-  background: transparent;
-  backdrop-filter: blur(14px);
 }
 
 .panel__theme-toggle,
@@ -1612,7 +1639,6 @@ h1.hero-title span { color: var(--accent); }
   }
 
   .panel__header,
-  .panel__actions,
   .panel-form__row,
   .panel-form__grid,
   .panel-history__head,
@@ -1620,14 +1646,6 @@ h1.hero-title span { color: var(--accent); }
     grid-template-columns: 1fr;
     flex-direction: column;
     align-items: stretch;
-  }
-
-  .panel__actions {
-    width: 100%;
-  }
-
-  .panel__actions > * {
-    width: 100%;
   }
 }
 
@@ -2008,16 +2026,6 @@ h1.hero-title span { color: var(--accent); }
   .panel__header {
     flex-direction: column;
     align-items: stretch;
-  }
-
-  .panel__actions {
-    width: 100%;
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .panel__actions > * {
-    width: 100%;
   }
 }
 

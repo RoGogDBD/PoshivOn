@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { checkAuthStatus, fetchAuthProfile, logout } from "../utils/yandexAuth.js";
 import AccessRequestBanner from "../components/AccessRequestBanner.jsx";
 import AdminUsersSection from "../components/AdminUsersSection.jsx";
@@ -421,6 +421,33 @@ const Panel = () => {
   // админским маршрутам сервер проверяет сам (RequireAdmin).
   const isAdmin = access?.role === "admin";
 
+  // Меню профиля — единственный пункт в нём (выход) и так был отдельной кнопкой; шеврон
+  // просто даёт ему то же место, что в референсе, а не вводит новую функциональность.
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const profileMenuRef = useRef(null);
+
+  useEffect(() => {
+    if (!profileMenuOpen) {
+      return undefined;
+    }
+    const closeOnOutsideClick = (event) => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target)) {
+        setProfileMenuOpen(false);
+      }
+    };
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") {
+        setProfileMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeOnOutsideClick);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [profileMenuOpen]);
+
   const handleLogout = () => {
     logout()
       .catch(() => {})
@@ -714,28 +741,41 @@ const Panel = () => {
             </span>
             {theme === "light" ? "Тёмная тема" : "Светлая тема"}
           </button>
-          <div className="panel__profile">
-            <span className="panel__profile-avatar" aria-hidden="true">
-              {initialsFrom(profile?.name, userID)}
-            </span>
-            <span className="panel__profile-info">
-              <span className="panel__profile-name">{profile?.name || userID}</span>
-              <span className="panel__profile-login">{userID}</span>
-            </span>
-            <span className="panel__profile-chevron"><ChevronUpDownIcon /></span>
+          <div className="panel__profile" ref={profileMenuRef}>
+            {profileMenuOpen ? (
+              <div className="panel__profile-menu" role="menu">
+                <button
+                  type="button"
+                  className="panel__profile-menu-item"
+                  role="menuitem"
+                  onClick={handleLogout}
+                >
+                  Выход из аккаунта
+                </button>
+              </div>
+            ) : null}
+            <button
+              type="button"
+              className="panel__profile-trigger"
+              onClick={() => setProfileMenuOpen((open) => !open)}
+              aria-haspopup="menu"
+              aria-expanded={profileMenuOpen}
+            >
+              <span className="panel__profile-avatar" aria-hidden="true">
+                {initialsFrom(profile?.name, userID)}
+              </span>
+              <span className="panel__profile-info">
+                <span className="panel__profile-name">{profile?.name || userID}</span>
+                <span className="panel__profile-login">{userID}</span>
+              </span>
+              <span className="panel__profile-chevron"><ChevronUpDownIcon /></span>
+            </button>
           </div>
         </div>
       </aside>
       <main className="panel__content">
         <div className="panel__header">
-          <div>
-            <p className="panel__eyebrow">Рабочая панель</p>
-          </div>
-          <div className="panel__actions">
-            <button className="panel__logout" type="button" onClick={handleLogout}>
-              Выйти
-            </button>
-          </div>
+          <p className="panel__eyebrow">Рабочая панель</p>
         </div>
 
         {activeSection === "settings" ? (
