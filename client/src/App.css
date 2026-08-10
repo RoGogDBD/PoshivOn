@@ -899,7 +899,7 @@ h1.hero-title span { color: var(--accent); }
   border: 1px solid transparent;
   color: inherit;
   padding: 10px 14px;
-  border-radius: 12px;
+  border-radius: 999px;
   font-size: 15px;
   font-weight: 600;
   cursor: pointer;
@@ -945,7 +945,7 @@ h1.hero-title span { color: var(--accent); }
   border: 1px solid rgba(255, 255, 255, 0.1);
   color: inherit;
   padding: 10px 14px;
-  border-radius: 12px;
+  border-radius: 999px;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
@@ -1053,23 +1053,13 @@ h1.hero-title span { color: var(--accent); }
     grid-template-columns: 1fr;
   }
 
-  .panel__sidebar {
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-  }
-
-  .panel__nav {
-    flex-direction: row;
-  }
-
-  /* В горизонтальной раскладке переключатель темы — обычный элемент строки, не
-     прижатая-к-низу секция: margin-top:auto и разделитель здесь не нужны. */
-  .panel__sidebar-bottom {
-    margin-top: 0;
-    padding-top: 0;
-    border-top: 0;
-  }
+  /* Раньше здесь сайдбар превращался в горизонтальную строку (flex-direction: row).
+     С иконками у пунктов меню и перенесённым сюда переключателем темы это уже не
+     помещается в 360-430px без переноса строк или обрезки — overflow:hidden на
+     .panel__sidebar тогда молча срезал бы то, что не влезло, вместо видимого скролла.
+     Проще и без потери функциональности — просто остаться в вертикальной колонке,
+     которую уже даёт брейкпоинт ≤1100px (полные подписи читаются, свернутых в иконки
+     пунктов не просили). */
 }
 
 .panel__actions {
@@ -1339,7 +1329,7 @@ h1.hero-title span { color: var(--accent); }
 
 .panel__link {
   padding: 12px 14px;
-  border-radius: 14px;
+  border-radius: 999px;
   font-weight: 600;
 }
 
@@ -2027,7 +2017,9 @@ h1.hero-title span { color: var(--accent); }
   left: 20px;
   right: 20px;
   bottom: 20px;
-  z-index: 60;
+  /* Ниже .modal-overlay (z-index: 50): баннер не должен перекрывать окно входа, пока
+     пользователь ещё не нажал «Принимаю». */
+  z-index: 40;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
