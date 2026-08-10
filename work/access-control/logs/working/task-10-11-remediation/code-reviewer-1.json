@@ -1,0 +1,184 @@
+{
+  "task": "10-11-remediation",
+  "round": 1,
+  "reviewer": "code-reviewer",
+  "status": "changes_required",
+  "review_target": "Point B review of the lead's direct remediation of Wave 10 audit findings (Task 10 code-audit C1/C2/C3/m9, Task 11 security-audit SEC-11-01/SEC-11-05/SEC-11-08). Files reviewed in full, not as a diff: server/migrations/006_admin_identity_reassert.up.sql (new), server/migrations/migrate_test.go (new), .github/workflows/test.yml, docker-compose.yml, server/internal/config/config.go, server/internal/handler/http.go, server/internal/handler/access.go, server/internal/handler/http_test.go, server/internal/handler/auth.go. Also read for context: migrations 004/005 + migrate.go, middleware.go (originAllowed/RequireSameOrigin), routes.go, cmd/main.go, internal/db/db.go, access_test.go (fixture + assertInvalidRequest), config_test.go, README.md env block, work/access-control/decisions.md.",
+  "verification_performed": [
+    "go vet ./... inside golang:1.25-alpine — clean.",
+    "Ran the new migration regression test live against the poshivon_db MariaDB 11.4 container with TEST_MIGRATION_ADMIN_DSN=root:root@tcp(127.0.0.1:3306)/?...&multiStatements=true — PASS in 0.80s.",
+    "Counted migration_race_* databases on the dev MariaDB before and after that run: 5 -> 6. The t.Cleanup DROP DATABASE never executes (see F1).",
+    "Replayed 006's two statements by hand in a scratch database against a users table already carrying utf8mb4_nopad_bin on id, with a colliding row that holds role='admin' AND has_access=1, plus a trailing-space variant 'RoGogDBD ' — confirmed the IN comparison resolves to the column's nopad_bin collation (byte-exact demotion works, trailing-space row is NOT matched) and confirmed the demoted row keeps has_access=1 (see F4).",
+    "go doc crypto/rand Read + read /usr/local/go/src/crypto/rand/rand.go inside golang:1.25-alpine (go1.25.12) to adjudicate C3.",
+    "Ran TestHandleUsers_DecodeError_NoInternalTextLeak and TestAccessMe_ContactEmailComesFromConfig — PASS.",
+    "Checked internal/db/db.go:63 — multiStatements=true is set on the production DSN, so 006's two-statement file applies through migrate.go's single db.Exec."
+  ],
+  "summary_counts": {
+    "totalFindings": 14,
+    "critical": 1,
+    "major": 4,
+    "minor": 9
+  },
+  "c3_verdict": {
+    "conclusion": "The lead is right. C3 is a genuine false positive and the decision not to change generateToken() is correct, not merely plausible.",
+    "evidence": "Verified on golang:1.25-alpine (go1.25.12). `go doc crypto/rand Read`: 'It never returns an error, and always fills b entirely. Read calls io.ReadFull on Reader and crashes the program irrecoverably if an error is returned.' Reading the source confirms it structurally, in BOTH branches, not just the documented happy path: for the default `*reader` the inner Read returns `len(b), nil` unconditionally; for a replaced package-level `Reader` the io.ReadFull error path falls into `fatal(...)` followed by `panic(\"unreachable\")`. There is no return path out of crypto/rand.Read that yields a non-nil error, and therefore none that yields a partially-filled or all-zero slice. C3's stated failure mode — 64 hex zeros minted as a session secret — is unreachable.",
+    "assumption_is_anchored": "The 'Go 1.24+' precondition is not a hope: server/go.mod declares `go 1.25.5`, so the module cannot be built by a toolchain that predates the behaviour. Dockerfile ARG GO_VERSION=1.25.5 and .github/workflows/test.yml go-version 1.25.5 agree. No drift risk to flag.",
+    "residual_nit": "None blocking. The comment discards `n` as well as `err` (`_, _ =`), which is fine given 'always fills b entirely', and the comment correctly frames the check as an untestable unreachable branch. Task 11's own verified_clean section reached the same conclusion independently."
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "file": "server/migrations/migrate_test.go",
+      "line": 54,
+      "severity": "critical",
+      "category": "error-handling",
+      "issue": "The throwaway test database is never dropped, and the error that proves it is swallowed. `defer admin.Close()` (line 54) is registered as a function-level defer, while the DROP DATABASE lives in `t.Cleanup` (lines 60-62). Go runs the test function's own defers first and t.Cleanup callbacks afterwards, so by the time the cleanup fires the admin `*sql.DB` pool is already closed; `admin.Exec(\"DROP DATABASE IF EXISTS \"+dbName)` returns sql.ErrConnDone and the result is discarded by `_, _ =`.",
+      "impact": "Empirically confirmed, not theoretical: the developer's MariaDB already carried five leaked `migration_race_*` databases from the lead's own verification runs before I touched anything, and my single run made it six. Every `go test ./...` with TEST_MIGRATION_ADMIN_DSN set permanently adds a schema. CI is unaffected (the service container is ephemeral), which is exactly why this will keep growing silently on developer machines and on any long-lived test host. The swallowed error is the reason the lead's otherwise careful live verification did not notice — this is the severity-anchor case 'swallowed error (catch without re-throw/log)'.",
+      "recommendation": "Register both teardown steps through t.Cleanup so LIFO ordering puts the DROP before the Close, and surface the error instead of discarding it:\n```go\nadmin, err := sql.Open(\"mysql\", adminDSN)\nif err != nil { t.Fatalf(...) }\nt.Cleanup(func() { _ = admin.Close() })          // registered first -> runs last\n...\nt.Cleanup(func() {                                // registered second -> runs first\n    if _, err := admin.Exec(\"DROP DATABASE IF EXISTS \" + dbName); err != nil {\n        t.Errorf(\"drop throwaway database %s: %v\", dbName, err)\n    }\n})\n```\nSame treatment for `defer db.Close()` on line 72 (it must also close before the DROP, so it can stay a defer, but converting both to t.Cleanup keeps the ordering rule in one place). Then drop the five already-leaked databases by hand."
+    },
+    {
+      "id": "F2",
+      "file": "server/internal/config/config.go",
+      "line": 100,
+      "severity": "major",
+      "category": "architecture",
+      "issue": "The new startup warning guards on the raw environment string (`cfg.AllowedOrigins == \"\"`) while the middleware that actually fails guards on the parsed list. main.go:66/103 pass `splitCSV(cfg.AllowedOrigins)` into RequireSameOrigin, and RequireSameOrigin (middleware.go:195-200) then TrimSpaces every entry and drops the empty ones. So `CORS_ALLOWED_ORIGINS=\" \"`, `CORS_ALLOWED_ORIGINS=\",\"`, or a value that is entirely whitespace/separators produces an empty allowlist, falls through to the broken `scheme://r.Host` comparison, and emits no warning at all — because the raw string is non-empty.",
+      "impact": "The warning exists for exactly one purpose: to make a silent misconfiguration visible. The most probable misconfiguration shapes — a stray space from a CI secret, a trailing comma, a quoted empty value — are precisely the ones it does not catch, and they produce the identical 403-on-every-write outage that SEC-11-08 describes, still with no diagnostic anywhere. A guard that disagrees with the code it is guarding is worse than none, because it manufactures a false 'we checked'.",
+      "recommendation": "Compute the guard from the same value the middleware sees. Either export/reuse the CSV split so config can evaluate `len(splitCSV(cfg.AllowedOrigins)) == 0`, or inline the equivalent trim-and-filter in config.Load. While there, log the positive case too — Task 10's C1 fix option 3 asked for 'a startup log line stating which comparison mode RequireSameOrigin is in and against what value', which also covers the currently-silent COOKIE_SECURE=true + empty-allowlist + non-443/Host-rewriting-proxy variant that the present condition skips."
+    },
+    {
+      "id": "F3",
+      "file": "docker-compose.yml",
+      "line": 23,
+      "severity": "major",
+      "category": "architecture",
+      "issue": "The CORS_ALLOWED_ORIGINS line closes the 403 symptom but does not make the docker-compose dev stack able to perform the flow the finding is written about. The same file still sets no APP_STORAGE (config.go:63 defaults to `memory`), so the stack applies migrations 004/005/006 to MariaDB and then serves every request from MemoryRepository, which knows nothing about the users table — the seeded administrators, and migration 006 itself, are invisible. It also still supplies none of YANDEX_CLIENT_ID / YANDEX_CLIENT_SECRET / YANDEX_REDIRECT_URI, so `POST /auth/yandex/code` cannot complete regardless of Origin.",
+      "impact": "C1's headline symptom is 'every mutating request, including login, gets 403 in the docker-compose dev stack'. After this change login no longer gets 403 — it gets an unconfigured-OAuth failure instead, and even a successful login would land on an in-memory store where the whole access-control feature is inert. Nothing in the repo, the report, or CI demonstrates the fix end to end, and the Verify-smoke/Verify-user steps written into Tasks 5/7/8 still do not describe the environment the repo produces. Task 10's own M4 fix text bundled `APP_STORAGE: ${APP_STORAGE:-mysql}` with this exact CORS line for that reason; only half was applied.",
+      "recommendation": "Add to the same environment block: `APP_STORAGE: ${APP_STORAGE:-mysql}`, `COOKIE_SECURE: \"false\"`, and pass-through defaults for `YANDEX_CLIENT_ID: ${YANDEX_CLIENT_ID:-}`, `YANDEX_CLIENT_SECRET: ${YANDEX_CLIENT_SECRET:-}`, `YANDEX_REDIRECT_URI: ${YANDEX_REDIRECT_URI:-http://localhost:5173/auth}` (README.md:163-185 already documents exactly these values as the minimal local set, so the compose file is the odd one out). If bundling M4 is deliberately out of scope for a criticals-only pass, say so explicitly in decisions.md rather than leaving the compose file half-fixed — see F10."
+    },
+    {
+      "id": "F4",
+      "file": "server/migrations/006_admin_identity_reassert.up.sql",
+      "line": 35,
+      "severity": "major",
+      "category": "security",
+      "issue": "The demotion UPDATE strips `role='admin'` but leaves `has_access` untouched, so a row that was escalated by the 004 collation collision is demoted to an ordinary user while keeping full application access if its has_access flag was ever set. Verified live: seeding `('rogogdbd','admin',TRUE)` and running 006's two statements verbatim yields `rogogdbd | user | 1` — RequireAccess (middleware.go:119-131 -> hasEffectiveAccess) still admits that account to every /api/v1/users/** route.",
+      "impact": "Narrow but real. In the exact SEC-11-01 repro the flag stays 0, because 004's `ON DUPLICATE KEY UPDATE role='admin'` does not touch has_access — so if production truly has not yet deployed the feature, 006 is sufficient today. It stops being sufficient the moment the window is ever live for even one deploy cycle: an attacker-admin's first act (granting themselves has_access, or granting a second account) survives 006 completely, and the migration is the only remediation that will ever run. The comment block claims 006 'переустанавливает инвариант независимо от того, что оказалось в таблице к моменту 004' — that claim is stronger than the SQL delivers.",
+      "recommendation": "Clear the flag on the same rows the UPDATE demotes — those rows are anomalous by construction (no API path sets role='admin'; only 004 and 006 do, and only for the two canonical logins), so this cannot revoke a legitimate grant:\n```sql\nUPDATE users SET role = 'user', has_access = FALSE\n WHERE role = 'admin'\n   AND id NOT IN ('RoGogDBD', 'irina2000aleshina');\n```\nIf the flag is deliberately preserved (e.g. to avoid surprising a real user whose row merely collided), say so in the comment and narrow the 'независимо от того, что оказалось в таблице' claim accordingly."
+    },
+    {
+      "id": "F5",
+      "file": "server/internal/handler/http_test.go",
+      "line": 806,
+      "severity": "major",
+      "category": "testing",
+      "issue": "The regression test pins only half of the fix. `writeAPIDecodeError` does two things — return the fixed slug AND write the parser text to the server log — and Task 10's C2 named the missing log line as part of the defect ('these four branches also write no log line at all, so the operator sees nothing'). The new test asserts the response body and the error code, and never asserts that anything was logged. The fixture actively suppresses the log (newRouteFixture -> `t.Cleanup(silenceLog(t))`, access_test.go:71), so a future edit that drops the `log.Printf` from the helper leaves every test green.",
+      "impact": "The half of Decision 17 that exists for operators, not for attackers, is unprotected against regression — and the package already establishes the opposite convention: TestWriteAPIDomainError_LogsOriginalError (http_test.go:122-136) exists precisely to pin the logging side of the sibling helper, using the `captureLog` helper that lives 30 lines below the new test.",
+      "recommendation": "Mirror TestWriteAPIDomainError_LogsOriginalError. Either add a direct unit test on the helper:\n```go\nvar buffer bytes.Buffer\nrestore := captureLog(t, &buffer)\ndefer restore()\nwriteAPIDecodeError(httptest.NewRecorder(), errors.New(\"invalid json: json: unknown field \\\"bogus_field\\\"\"))\nif !strings.Contains(buffer.String(), \"bogus_field\") { t.Errorf(...) }\n```\nor thread a capturing buffer through the route-level cases so the same assertion runs for all three sites."
+    },
+    {
+      "id": "F6",
+      "file": "server/internal/handler/http_test.go",
+      "line": 826,
+      "severity": "minor",
+      "category": "maintainability",
+      "issue": "The new test reimplements an assertion helper that already exists in the same package, and reimplements it more weakly. `assertInvalidRequest` (access_test.go:774-786) checks the 400, checks `errorCode == \"invalid_request\"`, and checks the body against `\"unknown field\", \"invalid json\", \"json:\", \"cannot unmarshal\", \"EOF\"`. The new inline list is `\"bogus_field\", \"unknown field\", \"invalid json\", \"json:\", \"struct field\"` — it adds two and silently drops `\"cannot unmarshal\"` and `\"EOF\"`.",
+      "impact": "`cannot unmarshal` is the leak form Task 10's C2 called out as the worst one (it is what produces `... into Go struct field PricingRules.pricing_rules.labor_minute_rate of type int64`), and it is the one the new test no longer looks for. Two divergent statements of one rule, 900 lines apart, is the same failure mode the shared `writeAPIDecodeError` helper was extracted to prevent — the production side was de-duplicated and the test side was duplicated in the same change.",
+      "recommendation": "Call `assertInvalidRequest(t, recorder)` from the new test and add `\"bogus_field\"`/`\"struct field\"` to that one helper's list, so both the admin route and the three /api/v1/users routes are held to the same bar. While there, add one case with a type-mismatch body (e.g. `{\"pricing_rules\":{\"labor_minute_rate\":\"x\"}}`) so the `cannot unmarshal ... Go struct field` shape is exercised and not merely asserted-absent."
+    },
+    {
+      "id": "F7",
+      "file": "server/migrations/migrate_test.go",
+      "line": 64,
+      "severity": "minor",
+      "category": "maintainability",
+      "issue": "The scoped DSN is built by `strings.SplitN(adminDSN, \"/\", 2)` and string concatenation. go-sql-driver DSNs contain unescaped `/` in two common shapes the driver itself accepts: a password containing `/` (`user:a/b@tcp(...)/`) and a unix-socket address (`user:pw@unix(/var/run/mysqld/mysqld.sock)/`). Both split at the wrong slash, and both still yield `len(parts) == 2`, so the guard on line 65 passes and hands a garbage DSN to sql.Open.",
+      "impact": "A developer whose local DB password happens to contain a slash gets an opaque connection error from a test whose failure message points at migration ordering, not at DSN parsing. The len==2 guard reads as validation but validates nothing that can actually go wrong.",
+      "recommendation": "The driver already exposes the correct primitives and is already imported: `cfg, err := mysql.ParseDSN(adminDSN); cfg.DBName = dbName; scoped := cfg.FormatDSN()`. That also removes the 'DSN must have no database name' precondition documented at lines 22-24 — any DSN works, the test just overrides the schema. Change the blank import on line 13 to a named one."
+    },
+    {
+      "id": "F8",
+      "file": "server/migrations/migrate_test.go",
+      "line": 24,
+      "severity": "minor",
+      "category": "error-handling",
+      "issue": "The test silently depends on `multiStatements=true` in the operator-supplied DSN — every migration file from 001 up contains multiple statements, and `applyMigrationFiles` feeds each whole file to a single `db.Exec`. The requirement appears only inside the example value in a doc comment; nothing checks it.",
+      "impact": "An operator who copies TEST_DB_DSN's shape (which does NOT carry multiStatements) and just strips the database name gets `Error 1064 ... syntax to use near 'ALTER TABLE ...'` attributed to `apply 001_auth_sessions.up.sql`, with no hint that the DSN is the problem. Cheap to prevent, annoying to diagnose.",
+      "recommendation": "After ParseDSN (see F7), force it rather than requiring it: `cfg.MultiStatements = true`. That makes the flag an implementation detail of the test instead of an undocumented contract with the caller, and lets the CI/dev DSNs drop it."
+    },
+    {
+      "id": "F9",
+      "file": "server/migrations/006_admin_identity_reassert.up.sql",
+      "line": 39,
+      "severity": "minor",
+      "category": "maintainability",
+      "issue": "The two administrator logins are now hardcoded in three places with no single source of truth: 004:27-30 (seed), 006:37 and 006:40-41 (re-assert), and migrate_test.go:121/130 (expectations). The set is also asserted by exact count in the test (`len(admins) != len(wantAdmins)`), so adding a third administrator later requires coordinated edits in a migration, a test, and possibly a fourth migration.",
+      "impact": "Literals in SQL migrations are unavoidable and 004/006 must not be parameterised — but the triplication has no comment tying the three sites together, so an edit to one is not obviously an edit to all three. The severity anchor for hardcoded configuration values applies in spirit; the practical risk here is drift, not exposure.",
+      "recommendation": "Add a one-line cross-reference comment in 006 ('список синхронизирован с 004:27-30 и migrate_test.go:121 — менять во всех трёх') and in the test. If the admin set is ever expected to change, a future migration should re-assert the full set the same way 006 does rather than append."
+    },
+    {
+      "id": "F10",
+      "file": "work/access-control/decisions.md",
+      "line": 0,
+      "severity": "minor",
+      "category": "maintainability",
+      "issue": "None of the remediation is recorded where this project records decisions. decisions.md is unmodified (git status confirms), yet this change adds a migration, adds a new required-for-coverage environment variable, overturns a critical audit finding as a false positive, and makes an explicit scope decision to fix the docker-compose path while leaving the bare `npm run dev` + Vite-proxy path unfixed. The prompt describes that last one as 'a documented gap' — I could not find it documented anywhere in the repository.",
+      "impact": "The project's own convention (decisions.md carries every accepted risk and per-task carry-forward, and Task 5's r.Host acceptance at decisions.md:186 is what let C1 hide for five tasks in the first place) is unfollowed for the change that exists to close C1. The next reader has no record that the Vite path was considered and deliberately left open.",
+      "recommendation": "Add a remediation entry to decisions.md covering: (a) migration 006 and why it re-asserts rather than patching 004; (b) the C3 false-positive determination with the go.mod-pinned toolchain floor as the anchor; (c) the explicit scope call on the Vite dev-proxy path — noting the mitigating fact that README.md:173 already ships `CORS_ALLOWED_ORIGINS=http://localhost:5173` in its minimal `.env` block and config.Load() walks `.env`/`../.env`/`../../.env`, so a developer who follows README is already covered and the new startup warning now fires for one who does not; (d) TEST_MIGRATION_ADMIN_DSN as a new optional test variable. On the scope decision itself: leaving the bare-Vite path to README plus the startup warning is defensible for a criticals-now pass — it is the absence of the record, not the decision, that I am flagging."
+    },
+    {
+      "id": "F11",
+      "file": "docker-compose.yml",
+      "line": 23,
+      "severity": "minor",
+      "category": "architecture",
+      "issue": "Setting an explicit allowlist narrows a dev path that previously worked. The app service publishes 8080:8080 (lines 30-31). Before this change, a browser or tool hitting `http://localhost:8080` directly sent `Origin: http://localhost:8080` and matched the `scheme://r.Host` fallback exactly; now the allowlist contains only `http://localhost:5173`, and originAllowed short-circuits on a populated allowlist (middleware.go:226-229), so direct-to-8080 mutating requests return 403.",
+      "impact": "Low — the SPA is served on 5173 and curl/Postman users can set any Origin they like — but it is a behaviour change in the opposite direction from the fix's stated intent, introduced silently and not mentioned in the comment block that otherwise explains the change thoroughly.",
+      "recommendation": "`CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:8080}` — splitCSV + RequireSameOrigin already trim and accept multiple entries. Or note the narrowing in the existing comment so it reads as intentional."
+    },
+    {
+      "id": "F12",
+      "file": "server/internal/handler/access_test.go",
+      "line": 770,
+      "severity": "minor",
+      "category": "cross-file-consistency",
+      "issue": "The doc comment on `assertInvalidRequest` still describes the pre-remediation world: 'это самостоятельный источник 400, и конвенция http.go для него (writeAPIError с err.Error()) утекла бы клиенту имя неизвестного поля'. After this change http.go has no such convention — all four sites route through writeAPIDecodeError.",
+      "impact": "The comment now states as current fact something the same commit removed. This is the identical class of drift the audits spent a full wave cataloguing (decisions.md claims contradicted by shipped code), reintroduced in the remediation itself.",
+      "recommendation": "Rewrite to reference the shared helper: 'decodeJSON — самостоятельный источник 400, не проходящий через writeAPIDomainError; конвенция для него теперь одна на пакет — writeAPIDecodeError (http.go:283)'. Same pass as F6."
+    },
+    {
+      "id": "F13",
+      "file": "server/migrations/migrate_test.go",
+      "line": 44,
+      "severity": "minor",
+      "category": "testing",
+      "issue": "The test does not exercise the two properties the SQL comment asserts most loudly. (a) Idempotency: 006's comment says 'Оба оператора идемпотентны, повторный прогон не меняет результат', and the lead verified it by hand, but the test applies the 004->006 block exactly once. (b) Collation vectors: the comment and 005 both stress that three vectors collide (case, accent, trailing space) and that only utf8mb4_nopad_bin closes all three; the test seeds only the lowercase variant, with a comment acknowledging the omission.",
+      "impact": "The trailing-space vector is the one that distinguishes utf8mb4_nopad_bin from utf8mb4_bin — the single riskiest detail in 005, and the one a future 'simplify to utf8mb4_bin' edit would break. Nothing in the suite would fail. Idempotency matters because the CI 'Apply migrations' step (test.yml:78-85) applies every file unconditionally on every run, so re-application is a real path, not a hypothetical.",
+      "recommendation": "Table-drive the seeded colliding id over `{\"rogogdbd\", \"RoGogDBD \", \"RoGogDBD\\u0301\"}` (the test already creates a fresh database per run, so a subtest per vector is cheap once F1 makes teardown work), and re-apply `006_admin_identity_reassert.up.sql` a second time before the assertions to pin idempotency in code rather than in a comment."
+    },
+    {
+      "id": "F14",
+      "file": "server/internal/config/config.go",
+      "line": 100,
+      "severity": "minor",
+      "category": "testing",
+      "issue": "The new warning branch has no test, although the package has a test file with exactly the right harness precedent (config_test.go:10 TestLoad_ContactEmail drives Load() through environment variables). server/internal/config/README.md, which enumerates the variables this package reads, is also not updated to mention the CORS_ALLOWED_ORIGINS <-> COOKIE_SECURE coupling that the warning now encodes.",
+      "impact": "A conditional whose whole value is that it fires in one specific configuration is shipped without a single assertion that it fires — and F2 shows the condition is in fact wrong for the likeliest misconfiguration shapes, which a table-driven test over `\"\"`, `\" \"`, `\",\"`, and a real origin would have surfaced immediately.",
+      "recommendation": "Add TestLoad_WarnsOnUnsetOriginAndInsecureCookie using captureLog-style redirection of the standard logger, covering the four inputs above, and fix the condition per F2 so the table is green for the right reason. Add one line to internal/config/README.md."
+    }
+  ],
+  "verified_clean": [
+    "Migration ordering guarantee for 006: migrate.go:21-25 globs *.up.sql and sorts lexicographically, so 006_ strictly follows 005_; each version is recorded in schema_migrations and skipped thereafter (migrate.go:32-34). The 'byte-exact comparison is already active' assumption in 006's comment is therefore structurally guaranteed, not incidental.",
+    "006's comparison collation: verified live. users.id carries utf8mb4_nopad_bin after 005; the column's collation has lower coercibility than the string literals, so `id NOT IN ('RoGogDBD','irina2000aleshina')` and the PK match behind ON DUPLICATE KEY both resolve byte-exactly. Probe confirmed a trailing-space row 'RoGogDBD ' is neither demoted-as-canonical nor matched by the upsert.",
+    "006 cannot demote a row it should not, within its intended scope: the UPDATE is guarded on role='admin', and role='admin' is only ever written by 004 and 006 for the two canonical logins — there is no API path that sets role (confirmed by grep across service/repository/handler). The one residual case is an operator who promotes a third admin directly in the database between the 004/005 deploy and the 006 deploy; 006 will silently demote them with no log. Worth knowing, not worth a separate finding given no such operator path is documented.",
+    "006 statement ordering: UPDATE before INSERT is correct — the canonical logins are excluded from the UPDATE by the NOT IN, so no ordering hazard exists in either direction.",
+    "006 applies through migrate.go's single db.Exec: internal/db/db.go:63 sets multiStatements=true on the production DSN, and the CI 'Apply migrations' step pipes files to the mariadb client, which handles multi-statement input natively.",
+    "CI wiring syntax and secret handling: `${{ env.MARIADB_ROOT_PASSWORD }}` inside jobs.<id>.steps[*].env is valid GitHub Actions — the env context IS available in a step's env block (the restriction the file's own comment at test.yml:30-32 documents applies to services.<id>.options, and that restriction is correctly worked around by duplication there). The value resolves to the literal `ci_root`, which is already plaintext on lines 34 and 47 of the same file and belongs to a service container that is torn down with the runner; no production DB_* secret is referenced. No leak. The new variable also makes the test actually run rather than t.Skip, which -v on line 102 will make visible.",
+    "writeAPIDecodeError itself: correct and complete. It logs the raw error at the same format string Task 5 established (access.go's former inline version) and returns the fixed `invalid_request` slug; all five call sites (http.go:99/124/167/221, access.go:149) now route through it, verified by grep — no `err.Error()` reaches writeAPIError anywhere in the package. The extraction is exactly what both audits asked for, and the m9 free-text 503 in handleMarketFeedback is correctly collapsed to the `service_unavailable` slug that classifyDomainError uses.",
+    "The new decode-error test's mutation-catch claim is plausible on inspection and I confirmed it runs green: it asserts `errorCode(...) == \"invalid_request\"`, and the pre-fix body would have been {\"error\":\"invalid json: json: unknown field \\\"bogus_field\\\"\"} — that fails both the code assertion and four of the five leak assertions. It also goes through the real BuildRoutes assembly (usersFixture -> newRouteFixture), so it pins routing as well as the handler.",
+    "The market-feedback coverage gap is correctly identified and honestly documented in the test comment: newRouteFixture passes deepseek=nil (access_test.go:100), so handleMarketFeedback's nil guard answers 503 before decodeJSON runs. Pre-existing, already flagged by Task 12, not introduced here.",
+    "migrate_test.go's use of the unexported migrationsFS is sound, not fragile: the test is in package migrations, and splitMigrationsAt004 reuses the same fs.Glob + sort.Strings pipeline as Run, so the file list stays synchronised with reality automatically as migrations are added. Adding the mysql driver import to a _test.go file does not pull it into the production binary.",
+    "go vet ./... clean; the full new-test path runs green against a live MariaDB 11.4."
+  ],
+  "summary": "The substance of the remediation is right. Migration 006's SQL is correct where it matters most — the ordering guarantee is structural, the byte-exact comparison assumption holds (I verified the collation resolution live, including the trailing-space vector), and the regression test genuinely fails without 006. The four decodeJSON leaks are properly closed through one shared helper, and C3 is a real false positive: crypto/rand.Read on go1.25 cannot return an error in either of its two code paths, and go.mod's `go 1.25.5` anchors that. What the change ships alongside is a broken test teardown that has already leaked six databases onto the developer's MariaDB behind a swallowed error, a startup warning whose guard disagrees with the middleware it warns about (so the likeliest misconfiguration shapes still fail silently), a docker-compose fix that removes the 403 without making the dev stack able to run the flow, an incomplete demotion in 006 that leaves has_access set on a row it strips admin from, and a regression test that pins only the client-facing half of the fix it was written for."
+}

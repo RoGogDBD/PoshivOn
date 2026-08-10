@@ -1,0 +1,146 @@
+{
+  "task": "task-10-11-remediation",
+  "round": 1,
+  "reviewer": "security-auditor",
+  "mode": "code",
+  "status": "changes_required",
+  "review_target": "Point B verification of the lead's direct remediation of Task 10 (C1, C2, C3) and Task 11 (SEC-11-01 critical, SEC-11-05, SEC-11-08). Files read in full, not as a diff: server/migrations/{migrate.go, 001..006*.up.sql, migrate_test.go}, server/internal/handler/{http.go, access.go, auth.go, middleware.go, cors.go, routes.go, http_test.go}, server/internal/config/config.go, server/internal/db/db.go, server/internal/repository/postgres.go (EnsureUser/userAccessModel), server/cmd/main.go, docker-compose.yml, docker-compose.prod.yml, .github/workflows/{test.yml, deploy.yml}, client/nginx.conf, client/vite.config.js, Makefile, README.md.",
+
+  "verification_performed": [
+    "SEC-11-01 reproduced independently against the live mariadb:11.4 (poshivon_db, 11.4.12-MariaDB) in a throwaway database `sec_audit_repro` created with the same default collation as production (utf8mb4_uca1400_ai_ci). Applied 001,002,003 by feeding the real files to the mariadb client; confirmed users.id collation = utf8mb4_uca1400_ai_ci; seeded pre-existing rows 'rogogdbd' and 'normaluser'; applied 004 -> 'rogogdbd' became role=admin and 'RoGogDBD' was never created; applied 005 -> unchanged; simulated the real administrator's first login (EnsureUser upsert, role='user') -> final pre-006 state was {RoGogDBD:user/0, irina2000aleshina:admin/1, normaluser:user/0, rogogdbd:admin/0}. VULNERABILITY REPRODUCED at the 005 boundary exactly as Task 11 described.",
+    "Applied 006_admin_identity_reassert.up.sql to that same database -> {RoGogDBD:admin/1, irina2000aleshina:admin/1, normaluser:user/0, rogogdbd:user/0}. SEC-11-01 closed.",
+    "Idempotency: re-applied 006 twice more -> byte-identical result, no drift.",
+    "Byte-exactness of the demotion WHERE clause: inserted four additional role='admin', has_access=1 rows that differ from a canonical login only by case, accent, or trailing space ('ROGOGDBD', 'RoGogDBD ', 'RóGogDBD', 'irina2000aleshina '). These inserts SUCCEEDED, proving the PK is now byte-exact (nopad_bin). Re-applied 006 -> all four demoted to role='user', and ONLY the two byte-exact logins retained role='admin'. The 'does 006 wrongly demote a legitimate canonical admin' scenario was exercised: 'RoGogDBD' and 'irina2000aleshina' held role=admin through every re-run and were never demoted.",
+    "Collation-coercion check under the PRODUCTION connection collation: internal/db/db.go buildDSN sets collation=utf8mb4_unicode_ci, which differs from both the mariadb CLI default and the Go test DSN. Replayed 006's two statements in a second scratch DB (`sec_coll`) after SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci. No 'Illegal mix of collations' error, and the comparison still resolved byte-exact (column coercibility 2 beats literal coercibility 4): 'rogogdbd' and 'ROGOGDBD ' demoted, 'RoGogDBD' retained. So 006 behaves identically on the real application connection.",
+    "Mutation test of the lead's regression test: copied server/ to a scratch tree, DELETED 006_admin_identity_reassert.up.sql, ran `go test ./migrations/... -run TestAdminSeed` in golang:1.25-alpine -> FAIL with 'colliding row rogogdbd still has role=\"admin\" ... SEC-11-01 not closed'. Restored 006 -> PASS. The test is a genuine regression test, not a tautology.",
+    "Closed a gap the lead's test leaves open: TestAdminSeed_... applies migration files through its own loop (applyMigrationFiles), NOT through migrations.Run, so it does not pin the production code path. I wrote and ran my own test that drives migrations.Run (the exact call main() makes at cmd/main.go:31) against a fresh DB seeded with a colliding row, using the production connection collation. Result: after the first Run the admin set is exactly {RoGogDBD, irina2000aleshina} with has_access=true and 'rogogdbd' is role=user; a second Run is a no-op; schema_migrations contains 006_admin_identity_reassert. The embed glob (//go:embed *.up.sql) and sort.Strings ordering do pick 006 up after 005, and 0001_init.sql stays excluded.",
+    "C1 (a): read originAllowed (middleware.go:222-239) directly. `if len(allowed) > 0 { _, ok := allowed[origin]; return ok }` short-circuits before any r.Host use, so an explicit CORS_ALLOWED_ORIGINS genuinely bypasses the broken same-origin fallback. Allowlist matching is exact-string over a trimmed map (RequireSameOrigin:194-200) - no wildcard, so a value of '*' would NOT open the check up.",
+    "C1 (b): traced the dev default. docker-compose.yml is referenced only by the Makefile and local dev; deploy.yml uploads and uses docker-compose.prod.yml exclusively (`docker compose --env-file $HOME/poshivon/.env -f $HOME/poshivon/docker-compose.prod.yml ...`), and docker-compose.prod.yml uses bare `${CORS_ALLOWED_ORIGINS}` with no default. The hardcoded http://localhost:5173 cannot reach a production config path. Confirmed non-issue.",
+    "C1 (c): client/vite.config.js sets changeOrigin:true on /api, /auth, /health targeting http://127.0.0.1:8080. That path (bare `npm run dev` + a locally-run Go binary) never reads docker-compose.yml, so it is genuinely a separate code path that the compose change could not have covered. It is also already documented: README.md:173 ships CORS_ALLOWED_ORIGINS=http://localhost:5173 in the sample .env, and config.Load reads a .env file (loadEnvFile). The new startup warning fires precisely in that configuration. The lead's non-fix is defensible.",
+    "C3: ran `docker run --rm golang:1.25-alpine go doc crypto/rand Read` -> 'It never returns an error, and always fills b entirely. Read calls io.ReadFull on Reader and crashes the program irrecoverably if an error is returned.' server/go.mod line 3 is `go 1.25.5` and server/Dockerfile line 2 is ARG GO_VERSION=1.25.5. A `go` directive of 1.25.5 makes any toolchain older than 1.25.5 refuse to build the module, so no toolchain with the pre-1.24 fallible behaviour can compile this code. The all-zero-token scenario is unreachable. C3 is correctly assessed as a false positive.",
+    "C2/SEC-11-05: grepped every decodeJSON / json.NewDecoder / json.Unmarshal site in server/. Exactly five request-body decode sites exist (http.go:98,123,166,220 and access.go:148) and all five now call writeAPIDecodeError, which logs the full error at http.go:284 before emitting the fixed slug 'invalid_request'. No site swallows the error. No sixth site was missed. Also checked the two remaining `err.Error()` responses in handler/ (auth.go:243,258, HandleStatus/HandleMe): ResolveSession (auth.go:533-564) can only return one of six package-level sentinel errors - repository errors are collapsed into errSessionNotFound - so those are NOT a leak. middleware.go:108 is guarded by an explicit allowlist.",
+    "Build and test gate: `go build ./...` clean; `go test ./...` all packages ok (cmd, auth, config, handler, repository, service, migrations) with TEST_DB_DSN and TEST_MIGRATION_ADMIN_DSN set.",
+    "Secret scan of the changed/new files: no new hardcoded secrets. docker-compose.yml (root/root, poshivon/poshivon) and .github/workflows/test.yml (ci_root) reuse credentials already reported as SEC-11-13; both are dev/CI-scoped. 006_admin_identity_reassert.up.sql contains administrator LOGINS, not credentials."
+  ],
+
+  "verdicts": {
+    "SEC-11-01": "CLOSED - independently reproduced pre-006 on live MariaDB 11.4, independently verified closed post-006 through both the raw SQL replay and the production migrations.Run path, under the production connection collation, and idempotent across three consecutive applications. The lead's regression test is a real mutation test (fails without 006).",
+    "C1": "SOUND - the allowlist branch provably precedes the r.Host fallback; the dev default cannot leak to prod; the uncovered bare-Vite path is genuinely separate and already documented in README's sample .env. Residual: the SEC-11-08 half of the fix is a log line with no fail-fast (see REM-03).",
+    "C2 / SEC-11-05": "CLOSED - all five decode sites unified on writeAPIDecodeError; every one logs the full parser error and returns the fixed slug. The gratuitous 'deepseek integration is not configured' text is also gone.",
+    "C3": "NON-FIX CORRECT - confirmed by running go doc in the exact toolchain image and by the go.mod 1.25.5 floor."
+  },
+
+  "summary": {
+    "totalFindings": 9,
+    "critical": 0,
+    "major": 1,
+    "minor": 8
+  },
+
+  "findings": [
+    {
+      "id": "REM-03",
+      "severity": "major",
+      "category": "A05:2021 - Security Misconfiguration / A02:2021 - Cryptographic Failures (cookie transport)",
+      "cwe": "CWE-1188 / CWE-614",
+      "title": "The SEC-11-08 remediation is a boot-time log line with no fail-fast, no test, and a warning condition that misses the other broken combination",
+      "description": "config.go:100 warns only when `AllowedOrigins == \"\" && !CookieSecure`. Three things are wrong with that as the sole control.\n\n(1) It does not prevent the deploy. deploy.yml:110-111 passes `${{ secrets.CORS_ALLOWED_ORIGINS }}` and `${{ secrets.COOKIE_SECURE }}`; an unset GitHub secret expands to an empty string and is written verbatim into the production .env (deploy.yml:252-253). config.envBool then returns the false default for COOKIE_SECURE. The resulting production process issues session cookies WITHOUT the Secure attribute on an https origin (session token readable on any plaintext hop or downgrade) and simultaneously compares Origin against `http://<r.Host>` while every browser sends `https://...`, 403-ing every mutating request including login. A log line printed once at container start, into a stream nobody tails during an automated deploy, does not stop or surface either outcome. SEC-11-08's own recommendation asked for a hard failure when APP_STORAGE is a real database; that half was not adopted and nothing replaced it.\n\n(2) The condition misses the mirror case. With `CookieSecure == true` and `AllowedOrigins == \"\"` - the state SEC-11-08 called the likely production state - no warning is emitted at all, yet the r.Host fallback is fully load-bearing. It happens to work only because https on the implicit port 443 makes `https://host` match; behind any proxy terminating on a non-standard port, or any proxy that rewrites Host, it fails the same way, silently and with no diagnostic.\n\n(3) It is untested. config.go was modified but no test in internal/config exercises the new branch, so nothing pins the condition against being narrowed or deleted later.",
+      "location": "server/internal/config/config.go:100-106; .github/workflows/deploy.yml:110-111 and 252-253; docker-compose.prod.yml:16-17; server/internal/handler/middleware.go:230-238",
+      "impact": "First production deploy of this feature can ship non-Secure session cookies (session hijack over any plaintext request that reaches the host) together with a total write outage, with the only signal being a startup log line. Recovery requires someone to correlate a 403 storm with a boot message.",
+      "recommendation": "Make it impossible to ship silently rather than merely noisy:\n```go\nif cfg.AllowedOrigins == \"\" {\n    if cfg.Storage != \"memory\" { // a real database means a real deployment\n        return nil, fmt.Errorf(\"config: CORS_ALLOWED_ORIGINS обязателен при APP_STORAGE=%s\", cfg.Storage)\n    }\n    log.Printf(\"config: CORS_ALLOWED_ORIGINS пуст — RequireSameOrigin сверяется с %s://<r.Host>\", scheme)\n}\nif cfg.Storage != \"memory\" && !cfg.CookieSecure {\n    return nil, errors.New(\"config: COOKIE_SECURE=true обязателен при APP_STORAGE != memory\")\n}\n```\nDrop the `&& !cfg.CookieSecure` conjunct from the warning so the empty-allowlist state is always reported. Add two table cases in internal/config asserting Load fails (or warns) for each combination, and set both values as real GitHub secrets before Wave 12."
+    },
+    {
+      "id": "REM-01",
+      "severity": "minor",
+      "category": "best-practice / A09:2021 - Security Logging and Monitoring (swallowed error)",
+      "cwe": "CWE-390 (detection of error condition without action) / CWE-772 (missing release of resource)",
+      "title": "The new regression test's cleanup never runs - every execution leaks a full database on the target MariaDB, and the failure is silently discarded",
+      "description": "migrate_test.go:54 registers `defer admin.Close()` and migrate_test.go:60-62 registers `t.Cleanup(func(){ _, _ = admin.Exec(\"DROP DATABASE IF EXISTS \" + dbName) })`. Go runs a test's deferred calls when the test function returns and only THEN runs its t.Cleanup functions, so the DROP is always executed against an already-closed *sql.DB and fails with sql.ErrConnDone. The error is discarded by `_, _ =`, so the test still reports PASS.\n\nConfirmed empirically, not by reading: the shared dev MariaDB already held five orphaned `migration_race_*` databases when I started, and my own runs of the test added more (`SHOW DATABASES LIKE 'migration\\_race\\_%'` went from 5 to 7). Each leaked database carries the full schema through 006. In CI the service container is discarded so the leak is invisible; on any long-lived shared MariaDB it accumulates without bound, and because 006 is present in each leaked copy, every one of them contains the two seeded administrator rows.",
+      "location": "server/migrations/migrate_test.go:54 (defer admin.Close) vs migrate_test.go:60-62 (t.Cleanup DROP DATABASE)",
+      "impact": "Unbounded schema growth on any shared database the test is pointed at, plus a cleanup path that can never report its own failure. A test whose teardown silently no-ops is also a test whose isolation guarantees are unverified.",
+      "recommendation": "Close the admin handle inside the cleanup, after the DROP, and stop discarding the error:\n```go\nt.Cleanup(func() {\n    if _, err := admin.Exec(\"DROP DATABASE IF EXISTS \" + dbName); err != nil {\n        t.Errorf(\"drop %s: %v\", dbName, err)\n    }\n    admin.Close()\n})\n```\nand delete the `defer admin.Close()` on line 54. Then drop the seven stray `migration_race_*` databases on poshivon_db."
+    },
+    {
+      "id": "REM-02",
+      "severity": "minor",
+      "category": "A01:2021 - Broken Access Control (incomplete remediation)",
+      "cwe": "CWE-266",
+      "title": "Migration 006 strips role='admin' from colliding rows but leaves their has_access flag, and undoes none of an illegitimate administrator's grants",
+      "description": "006's UPDATE sets only `role = 'user'`. Verified empirically: rows 'ROGOGDBD', 'RoGogDBD ', 'RóGogDBD' and 'irina2000aleshina ' carrying role='admin', has_access=1 came out of 006 as role='user', has_access=1 - demoted from administrator but still holding paid-tier access.\n\nIn the exact SEC-11-01 scenario this does not matter, because 004's `ON DUPLICATE KEY UPDATE role = 'admin'` never touches has_access, so the colliding row's flag stays 0 (my replay confirms this). It matters in any environment where 004+005 were already applied and the illegitimate administrator was live for a while: he could grant has_access=TRUE to arbitrary logins (including backup accounts he controls) and write access_requests rows with decided_by set to his own id. 006 restores administrator identity but performs no audit or rollback of anything the illegitimate administrator did, and there is no API path to enumerate or reverse those grants after the fact.",
+      "location": "server/migrations/006_admin_identity_reassert.up.sql:35-37",
+      "impact": "Residual unauthorised paid-tier access surviving the remediation in any environment where the feature was already live. Bounded, because Task 11 records that production has not yet deployed this feature.",
+      "recommendation": "Either strip the flag in the same statement, if administrator role is the only source of has_access for these rows:\n```sql\nUPDATE users SET role = 'user'\n WHERE role = 'admin'\n   AND id NOT IN ('RoGogDBD','irina2000aleshina');\n```\n-> add `, has_access = FALSE` only if you accept revoking legitimately-granted access from a demoted row; otherwise leave the SQL as is and add an explicit pre-deploy audit query to the runbook:\n```sql\nSELECT u.id, u.has_access, r.decided_by, r.decided_at\n  FROM users u LEFT JOIN access_requests r ON r.user_id = u.id\n WHERE u.has_access = TRUE\n    OR r.decided_by NOT IN ('RoGogDBD','irina2000aleshina');\n```\nand require a human to sign off on the result before the first deploy."
+    },
+    {
+      "id": "REM-04",
+      "severity": "minor",
+      "category": "best-practice (test coverage of a security control)",
+      "cwe": "CWE-1006",
+      "title": "The SEC-11-01 regression test bypasses migrations.Run, so it does not pin the production code path that must apply 006",
+      "description": "TestAdminSeed_SurvivesCollisionUnderLegacyCollation applies migration files through its own helper (applyMigrationFiles, migrate_test.go:158-169) rather than through migrations.Run - the function main() actually calls at cmd/main.go:31. The test therefore proves that the FILES produce the right end state, but not that Run's glob, sort order, or schema_migrations bookkeeping picks 006 up. A future change that renames 006, alters extractVersion, or narrows the embed glob would leave this test green while re-opening SEC-11-01.\n\nI closed the gap manually: a Run-driven test (fresh DB, 001..003 recorded as applied, colliding 'rogogdbd' row seeded, then Run) yields exactly {RoGogDBD:admin/true, irina2000aleshina:admin/true, rogogdbd:user/false}, a second Run is a no-op, and schema_migrations ends with 006_admin_identity_reassert. It passes today - but it lives in my scratch tree, not in the repo.",
+      "location": "server/migrations/migrate_test.go:74-86, 142-169; production path at server/cmd/main.go:31",
+      "impact": "The regression test can stay green while the production migration runner stops applying 006, which is the precise failure mode SEC-11-01 was born from (an ordering assumption nobody tested).",
+      "recommendation": "Replace applyMigrationFiles(t, db, from004) with a real `Run(db)` call: pre-record 001..003 in schema_migrations after applying them, seed the colliding row, then call Run(db) once and assert the admin set; call Run(db) a second time and assert it is a no-op and that schema_migrations contains '006_admin_identity_reassert'."
+    },
+    {
+      "id": "REM-05",
+      "severity": "minor",
+      "category": "A04:2021 - Insecure Design (fragile ordering invariant)",
+      "cwe": "CWE-1059",
+      "title": "Migration ordering is still lexicographic over mixed-width numeric prefixes, the exact class of assumption that produced SEC-11-01",
+      "description": "migrate.go:21-25 orders migrations with sort.Strings over `*.up.sql`. The tree already mixes prefix widths - 0001_init.sql (four digits, PostgreSQL, excluded only by the glob's .up.sql suffix) alongside 001_ through 006_ (three digits). The moment a tenth migration is added as `0010_*.up.sql` it sorts BEFORE `001_`, and a migration written to run last runs first. 006's entire correctness rests on the sentence 'runs after 005 by lexicographic order'; nothing in the code enforces that, and nothing fails loudly if a future filename breaks it.\n\nRelatedly, the two administrator logins are now hardcoded in two migration files (004:27-29 and 006:39-42) plus the regression test. Changing the administrator set requires editing all of them in step, and 006 will silently demote any administrator promoted by direct SQL in an environment where 006 has not yet been recorded.",
+      "location": "server/migrations/migrate.go:21-25 and 87-89; server/migrations/0001_init.sql vs 001_..006_*.up.sql; admin logins duplicated at 004_access_control.up.sql:27-29 and 006_admin_identity_reassert.up.sql:39-42",
+      "impact": "A future migration can be applied out of the order its author assumed, silently re-opening ordering-dependent invariants like the one 006 exists to protect.",
+      "recommendation": "Adopt zero-padded fixed-width prefixes for every new migration (0007_, 0008_, ...) and add a guard in Run that rejects a file whose numeric prefix is not strictly greater than the previous one, so a mis-numbered file fails the boot rather than reordering silently. Consider sourcing the administrator login list from one place (a single .sql include or a build-time constant) instead of three."
+    },
+    {
+      "id": "REM-06",
+      "severity": "minor",
+      "category": "A04:2021 - Insecure Design / DoS",
+      "cwe": "CWE-400 / CWE-770",
+      "title": "decodeJSON reads request bodies without a size limit at all five newly-unified call sites",
+      "description": "decodeJSON (http.go:252-265) wraps r.Body in a json.Decoder with DisallowUnknownFields but never wraps it in http.MaxBytesReader. Every one of the five call sites the remediation just touched - /api/v1/users/settings, /users/chats, /users/chats/{id}/calculate, /users/market-feedback, /admin/users/{login}/access - therefore accepts an arbitrarily large body. An authenticated caller (and, on the admin route, an administrator) can stream gigabytes into a single request; the decoder allocates as it goes. This compounds SEC-11-09 (no rate limiting anywhere), which remains open.",
+      "location": "server/internal/handler/http.go:252-265, consumed at http.go:98,123,166,220 and access.go:148",
+      "impact": "Memory-pressure denial of service from a single authenticated request, with no rate limit in front of it.",
+      "recommendation": "Cap the body inside the shared helper, where all five sites inherit it:\n```go\nfunc decodeJSON(r *http.Request, dst any) error {\n    defer r.Body.Close()\n    limited := http.MaxBytesReader(nil, r.Body, 1<<20) // 1 MiB\n    decoder := json.NewDecoder(limited)\n    decoder.DisallowUnknownFields()\n    ...\n}\n```\nwriteAPIDecodeError already returns a fixed slug, so the MaxBytesError text will not reach the client."
+    },
+    {
+      "id": "REM-07",
+      "severity": "minor",
+      "category": "A09:2021 - Security Logging and Monitoring Failures",
+      "cwe": "CWE-778",
+      "title": "ResolveSession collapses repository failures into errSessionNotFound without logging, so a session-store outage is indistinguishable from a bad cookie",
+      "description": "auth.go:545-548: `session, err := finder.FindByRefreshHash(refreshHash); if err != nil || session == nil { return nil, errSessionNotFound }`. Failing closed is correct, but the repository error is discarded entirely - no log line, no metric. A database outage, a corrupted session table, or a driver error all present to operators as ordinary 401s indistinguishable from expired cookies, and a mass-401 incident gives no signal about its cause. The sibling path in middleware.go:107-112 does log the analogous case ('auth: неизвестная причина отказа проверки сессии'), so the convention exists in the package and this site simply does not follow it.",
+      "location": "server/internal/handler/auth.go:545-548 (reached from HandleStatus:242, HandleMe:257 and the identity middleware)",
+      "impact": "Blind spot during a session-store incident, and no audit signal that would distinguish a credential-stuffing sweep from infrastructure failure. Pre-existing, but auth.go is a file this remediation touched.",
+      "recommendation": "```go\nsession, err := finder.FindByRefreshHash(refreshHash)\nif err != nil {\n    log.Printf(\"auth: сессия не прочитана из хранилища: %v\", err)\n    return nil, errSessionNotFound\n}\nif session == nil {\n    return nil, errSessionNotFound\n}\n```\nKeep the client-visible behaviour identical; only the log gains the distinction."
+    },
+    {
+      "id": "REM-08",
+      "severity": "minor",
+      "category": "best-practice (test coverage)",
+      "cwe": "CWE-1006",
+      "title": "The fourth decode site (market-feedback) and the new config warning are both untested",
+      "description": "Two small coverage holes, both acknowledged or implied by the change itself. (a) TestHandleUsers_DecodeError_NoInternalTextLeak covers three of the four http.go decode sites; the comment at http_test.go correctly explains that handleMarketFeedback returns 503 before reaching decodeJSON because the fixture builds APIHandler with deepseek=nil. In production with DeepSeek configured that branch IS reachable, and it is the one site whose fixed-slug behaviour nothing pins. (b) internal/config was modified to add the SEC-11-08 warning but no test in that package exercises either arm of the new condition.",
+      "location": "server/internal/handler/http_test.go:799-834 (three of four cases); server/internal/handler/http.go:220; server/internal/config/config.go:100-106 with no corresponding test",
+      "impact": "Both controls are correct today by inspection and can regress without any test turning red.",
+      "recommendation": "Give the route fixture an optional non-nil deepseek stub so the market-feedback decode branch can be driven, and add the fourth case to the existing table. Add a config test asserting the warning arm fires for (AllowedOrigins=\"\", CookieSecure=false) - and, once REM-03 is applied, that Load returns an error for a database-backed storage mode with either value missing."
+    },
+    {
+      "id": "REM-09",
+      "severity": "minor",
+      "category": "dependency / carry-forward",
+      "cwe": "n/a",
+      "title": "Twelve Task 10/11 findings outside this remediation's scope remain open, including the reachable x/text advisory",
+      "description": "Recording this so the consolidated report does not read the remediation as closing more than it did. Confirmed still open in the tree as of this review: SEC-11-02 (unbounded Prometheus label cardinality from an anonymous caller), SEC-11-03 (no audit record for grant/revoke when the target has no access_requests row), SEC-11-04 (golang.org/x/text v0.21.0 still pinned at server/go.mod:18, advisory GO-2026-5970), SEC-11-06 (client build-chain advisories), SEC-11-07 (no security headers at either nginx layer - re-read client/nginx.conf, still only proxy_set_header lines, no CSP/X-Frame-Options/HSTS), SEC-11-09 (no rate limiting on any endpoint including the unauthenticated OAuth code exchange), SEC-11-10 through SEC-11-14. None of these were in the remediation's stated scope; none of them regressed.",
+      "location": "server/go.mod:18 (golang.org/x/text v0.21.0); client/nginx.conf (no security headers); handler/metrics.go and routes (label cardinality); see Task 11 report for the full set",
+      "impact": "Varies by finding; see the Task 11 report. The dependency advisory is the only one with a mechanical fix.",
+      "recommendation": "At minimum bump golang.org/x/text before deploy (`go get golang.org/x/text@latest && go mod tidy`) and add the four security headers to client/nginx.conf - both are one-line-class changes. The rest should be scheduled explicitly rather than carried silently."
+    }
+  ],
+
+  "scratch_artifacts": [
+    "Reproduction databases sec_audit_repro and sec_coll were created on poshivon_db and dropped again at the end of the review.",
+    "Seven orphaned migration_race_* databases remain on poshivon_db - not created deliberately by me, they are the symptom described in REM-01."
+  ]
+}

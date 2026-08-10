@@ -146,11 +146,11 @@ func (h *AccessHandler) handleSetAccess(w http.ResponseWriter, r *http.Request) 
 
 	var payload setAccessRequest
 	if err := decodeJSON(r, &payload); err != nil {
-		// Фиксированный слаг вместо err.Error(): текст парсера называет неизвестное поле и
-		// форму тела, то есть рассказывает про внутреннее устройство ровно так же, как
-		// ошибка репозитория, которую убрал Decision 17. Исходная ошибка — в лог.
-		log.Printf("api error: status=%d code=invalid_request err=%v", http.StatusBadRequest, err)
-		writeAPIError(w, http.StatusBadRequest, "invalid_request")
+		// writeAPIDecodeError (http.go) — тот же фиксированный слаг, что и у остальных
+		// decodeJSON-веток в пакете: текст парсера называет неизвестное поле и форму тела,
+		// то есть рассказывает про внутреннее устройство ровно так же, как ошибка
+		// репозитория, которую убрал Decision 17.
+		writeAPIDecodeError(w, err)
 		return
 	}
 	if payload.Granted == nil {

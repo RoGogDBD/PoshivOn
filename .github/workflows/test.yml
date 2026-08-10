@@ -93,4 +93,10 @@ jobs:
           # access_repo_test.go и store_test.go. parseTime=true обязателен: контракт читает
           # TIMESTAMP в time.Time. Хост — 127.0.0.1: порт сервис-контейнера проброшен на раннер.
           TEST_DB_DSN: "poshivon:poshivon@tcp(127.0.0.1:3306)/poshivon_test?parseTime=true&charset=utf8mb4"
+          # Отдельный DSN с правом CREATE/DROP DATABASE — тест на SEC-11-01
+          # (migrations/migrate_test.go) воспроизводит порядок миграций с нуля на
+          # собственной одноразовой базе, не разделяемой с остальным контрактом. root того
+          # же сервис-контейнера годится: он живёт только внутри job'ы и удаляется вместе
+          # с раннером, продовые DB_* секреты сюда не попадают.
+          TEST_MIGRATION_ADMIN_DSN: "root:${{ env.MARIADB_ROOT_PASSWORD }}@tcp(127.0.0.1:3306)/?parseTime=true&charset=utf8mb4&multiStatements=true"
         run: go test ./... -v

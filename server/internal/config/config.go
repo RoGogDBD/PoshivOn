@@ -1,6 +1,8 @@
 package config
 
 import (
+	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -89,6 +91,36 @@ func Load() (*Config, error) {
 		DeepSeekMaxRetries:  envInt("DEEPSEEK_MAX_RETRIES", 3),
 	}
 
+	// Пустой CORS_ALLOWED_ORIGINS переводит RequireSameOrigin на сравнение Origin с
+	// scheme://r.Host (Decision 8), а scheme берётся отсюда же, из COOKIE_SECURE. За https-
+	// прокси на порту 443 (неявном и потому отсутствующем в Origin) это совпадает по
+	// счастливому стечению обстоятельств; за любым прокси, переписывающим Host (dev-nginx —
+	// $host обрезает порт, Vite proxy — changeOrigin), не совпадает вовсе, и любой мутирующий
+	// запрос, включая сам вход, получает 403 без единой подсказки о причине (Task 11 audit,
+	// SEC-11-08/C1). Молчание здесь дороже лишней строки в логе при старте.
+	//
+	// Проверка смотрит не на сырую строку, а на то же самое «есть хоть один непустой
+	// элемент», что и splitCSV в main.go, которая на самом деле строит allowlist: голая
+	// `cfg.AllowedOrigins == ""` пропустила бы значения вроде " " или "," — они непусты как
+	// строка, но splitCSV превращает их в пустой список, и RequireSameOrigin всё равно
+	// падает в тот же сломанный fallback.
+	if !hasNonEmptyCSVEntry(cfg.AllowedOrigins) && !cfg.CookieSecure {
+		problem := "CORS_ALLOWED_ORIGINS пуст и COOKIE_SECURE=false — RequireSameOrigin " +
+			"сравнивает Origin с http://<r.Host> и почти наверняка отклонит запросы через " +
+			"nginx/Vite прокси, включая вход"
+		// APP_STORAGE=memory — единственный доступный здесь сигнал «это точно не прод»: он
+		// заведомо стоит по умолчанию в локальном прогоне и никогда осознанно — в реальном
+		// деплое (там нужна настоящая БД). На нём — предупреждение и запуск: разработчик
+		// сам разберётся с 403 при первом же запросе. На любом другом хранилище это уже не
+		// «не забыл настроить локально», а неверно настроенный прод/стейджинг с реальными
+		// пользователями — там молчаливый провал каждого мутирующего запроса дороже, чем
+		// падение при старте с понятной причиной (Task 11 audit, SEC-11-08/C1).
+		if cfg.Storage != "memory" {
+			return nil, fmt.Errorf("config: %s; задайте оба значения явно (APP_STORAGE=%q)", problem, cfg.Storage)
+		}
+		log.Printf("config: %s; задайте оба значения явно на проде", problem)
+	}
+
 	return cfg, nil
 }
 
@@ -123,6 +155,20 @@ func loadEnvFile(filePath string) {
 			os.Setenv(key, value)
 		}
 	}
+}
+
+// hasNonEmptyCSVEntry повторяет ровно ту часть логики splitCSV (cmd/main.go), от которой
+// зависит предупреждение выше: split по запятой + TrimSpace на каждом элементе + отбрасывание
+// пустых. Раздельная копия, а не общая функция, — main.go принадлежит пакету main и не может
+// быть импортирован отсюда без цикла; здесь достаточно самого правила «есть ли реально
+// непустой Origin», не полного результата разбора.
+func hasNonEmptyCSVEntry(csv string) bool {
+	for _, part := range strings.Split(csv, ",") {
+		if strings.TrimSpace(part) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func envOrDefault(key, fallback string) string {

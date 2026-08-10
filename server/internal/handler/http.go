@@ -96,7 +96,7 @@ func (h *APIHandler) handleUsers(w http.ResponseWriter, r *http.Request) {
 func (h *APIHandler) handleUpsertSettings(w http.ResponseWriter, r *http.Request, userID string) {
 	var req service.UserSettings
 	if err := decodeJSON(r, &req); err != nil {
-		writeAPIError(w, http.StatusBadRequest, err.Error())
+		writeAPIDecodeError(w, err)
 		return
 	}
 
@@ -121,7 +121,7 @@ func (h *APIHandler) handleGetSettings(w http.ResponseWriter, r *http.Request, u
 func (h *APIHandler) handleCreateChat(w http.ResponseWriter, r *http.Request, userID string) {
 	var req service.CreateChatInput
 	if err := decodeJSON(r, &req); err != nil {
-		writeAPIError(w, http.StatusBadRequest, err.Error())
+		writeAPIDecodeError(w, err)
 		return
 	}
 
@@ -164,7 +164,7 @@ func (h *APIHandler) handleRestoreChat(w http.ResponseWriter, r *http.Request, u
 func (h *APIHandler) handleCalculate(w http.ResponseWriter, r *http.Request, userID, chatID string) {
 	var req service.OrderInput
 	if err := decodeJSON(r, &req); err != nil {
-		writeAPIError(w, http.StatusBadRequest, err.Error())
+		writeAPIDecodeError(w, err)
 		return
 	}
 
@@ -210,13 +210,15 @@ func (h *APIHandler) handleListChatCalculations(w http.ResponseWriter, r *http.R
 
 func (h *APIHandler) handleMarketFeedback(w http.ResponseWriter, r *http.Request, userID string) {
 	if h.deepseek == nil {
-		writeAPIError(w, http.StatusServiceUnavailable, "deepseek integration is not configured")
+		// Тот же слаг, что и у остальных 503 в classifyDomainError: свободный текст здесь
+		// раскрывал состав интеграций сервера, а не только «сервис недоступен».
+		writeAPIError(w, http.StatusServiceUnavailable, "service_unavailable")
 		return
 	}
 
 	var req service.MarketFeedbackInput
 	if err := decodeJSON(r, &req); err != nil {
-		writeAPIError(w, http.StatusBadRequest, err.Error())
+		writeAPIDecodeError(w, err)
 		return
 	}
 
@@ -270,6 +272,18 @@ func writeAPIJSON(w http.ResponseWriter, status int, payload any) {
 
 func writeAPIError(w http.ResponseWriter, status int, message string) {
 	writeAPIJSON(w, status, map[string]string{"error": message})
+}
+
+// writeAPIDecodeError отвечает на неудачный decodeJSON фиксированным слагом. err от
+// encoding/json называет неизвестное поле и Go-имена структуры/типа целиком (`invalid json:
+// json: cannot unmarshal string into Go struct field PricingRules.pricing_rules.labor_minute_rate
+// of type int64`) — то же по духу раскрытие внутреннего устройства, которое Decision 17 убрал
+// из writeAPIDomainError, поэтому и путь наружу тот же: фиксированный текст клиенту, исходная
+// ошибка — в лог. Общий helper, а не пять копий одного `log.Printf`+`writeAPIError` рядом с
+// каждым decodeJSON, — чтобы шестой вызывающий не мог снова разойтись с остальными.
+func writeAPIDecodeError(w http.ResponseWriter, err error) {
+	log.Printf("api error: status=%d code=invalid_request err=%v", http.StatusBadRequest, err)
+	writeAPIError(w, http.StatusBadRequest, "invalid_request")
 }
 
 // writeAPIDomainError отображает доменную ошибку на HTTP-ответ. Наружу уходит только

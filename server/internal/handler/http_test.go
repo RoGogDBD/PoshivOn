@@ -153,6 +153,23 @@ func TestWriteAPIDomainError_NilErrorDoesNotPanic(t *testing.T) {
 	}
 }
 
+// TestWriteAPIDecodeError_LogsOriginalError — тот же контракт, что и
+// TestWriteAPIDomainError_LogsOriginalError выше: клиент видит только фиксированный слаг
+// (проверено TestHandleUsers_DecodeError_NoInternalTextLeak), но исходная ошибка обязана
+// остаться в логе — иначе диагностировать причину 400 можно только со слов пользователя.
+func TestWriteAPIDecodeError_LogsOriginalError(t *testing.T) {
+	var buffer bytes.Buffer
+	restore := captureLog(t, &buffer)
+	defer restore()
+
+	decodeErr := fmt.Errorf("invalid json: json: unknown field %q", "bogus_field")
+	writeAPIDecodeError(httptest.NewRecorder(), decodeErr)
+
+	if !strings.Contains(buffer.String(), decodeErr.Error()) {
+		t.Errorf("исходная ошибка не попала в лог: %q", buffer.String())
+	}
+}
+
 // =======================================================================================
 // /api/v1/users/** — владелец берётся из сессии, а не из адреса (Decision 6, US-15/US-16).
 //
@@ -792,6 +809,44 @@ func TestRegisterRoutes_LegacyUserIDSegment_NotFound(t *testing.T) {
 			}
 			// Ни один вариант старой формы не должен ничего изменить у Петрова.
 			fixture.assertUntouched("petrov", "chat-petrov", before, 1)
+		})
+	}
+}
+
+// TestHandleUsers_DecodeError_NoInternalTextLeak — SEC-11-05/C2: settings/chats/calculate
+// декодируют тело через writeAPIDecodeError, а не через writeAPIError(w, 400, err.Error())
+// напрямую, — ответ на неизвестное поле не должен называть ни само поле, ни внутренние
+// Go-типы, только фиксированный слаг. Раньше (до фикса) тело было бы вида
+// {"error":"invalid json: json: unknown field \"bogus_field\""}.
+//
+// market-feedback (четвёртый сайт того же класса, http.go:219) сюда не входит: фикстура
+// строит APIHandler с deepseek=nil (newRouteFixture, access_test.go), и nil-проверка в
+// handleMarketFeedback отвечает 503 раньше, чем запрос доходит до decodeJSON, — тот же
+// пробел, что Task 12 уже отметил для этой ветки в целом.
+func TestHandleUsers_DecodeError_NoInternalTextLeak(t *testing.T) {
+	fixture := usersFixture(t)
+
+	unknownFieldBody := `{"bogus_field": true}`
+
+	cases := []apiRequest{
+		{method: http.MethodPost, path: usersSettingsRoute, body: unknownFieldBody, as: "petrov"},
+		{method: http.MethodPost, path: usersChatsRoute, body: unknownFieldBody, as: "petrov"},
+		{method: http.MethodPost, path: usersCalculateRoute("chat-petrov"), body: unknownFieldBody, as: "petrov"},
+	}
+
+	for _, request := range cases {
+		t.Run(request.method+" "+request.path, func(t *testing.T) {
+			recorder := fixture.do(request)
+
+			requireStatus(t, recorder, http.StatusBadRequest)
+			if got := errorCode(t, recorder); got != "invalid_request" {
+				t.Errorf("код ошибки = %q, ожидался invalid_request", got)
+			}
+			for _, leak := range []string{"bogus_field", "unknown field", "invalid json", "json:", "struct field"} {
+				if strings.Contains(recorder.Body.String(), leak) {
+					t.Errorf("тело ответа содержит внутренний текст %q: %s", leak, recorder.Body.String())
+				}
+			}
 		})
 	}
 }
