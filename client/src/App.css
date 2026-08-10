@@ -857,33 +857,6 @@ h1.hero-title span { color: var(--accent); }
   overflow: hidden;
 }
 
-.panel__brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.panel__brand-mark {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, var(--panel-accent) 0%, #4d82ff 100%);
-  color: #ffffff;
-  font-size: 15px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  flex-shrink: 0;
-}
-
-.panel__brand-name {
-  font-size: 20px;
-  font-weight: 700;
-  color: #ffffff;
-}
-
 .panel__nav {
   display: flex;
   flex-direction: column;
@@ -967,16 +940,74 @@ h1.hero-title span { color: var(--accent); }
   color: #93a2c8;
 }
 
+/* Карточка профиля — самый нижний элемент сайдбара: аватар-инициалы, имя и логин из
+   бывшего заголовка «Здравствуйте, .../Пользователь: ...», теперь в виде компактного
+   чипа, как на референсе. Шеврон — чисто визуальный, без выпадающего меню под ним
+   (тот же принцип «только стиль», что и у пунктов навигации): открывать поверх него
+   что-либо не просили, а держать на кнопке необъяснённый интерактив хуже, чем не
+   держать вовсе. */
+.panel__profile {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 12px;
+}
+
+.panel__profile-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel-accent) 55%, #ffffff 10%);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
+.panel__profile-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.panel__profile-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #ffffff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panel__profile-login {
+  font-size: 12px;
+  color: #93a2c8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panel__profile-chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #6e85b8;
+}
+
 .panel__content {
   height: 100%;
   overflow-y: auto;
   padding: 48px;
   color: var(--panel-text);
-}
-
-.panel__content h1 {
-  margin: 0 0 12px;
-  font-size: 32px;
 }
 
 .panel__header {
@@ -1066,12 +1097,6 @@ h1.hero-title span { color: var(--accent); }
   display: flex;
   align-items: center;
   gap: 12px;
-}
-
-.panel__meta {
-  margin: 0;
-  color: #7b8bb3;
-  font-size: 15px;
 }
 
 .panel__notice {
@@ -1317,12 +1342,6 @@ h1.hero-title span { color: var(--accent); }
   box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.04);
 }
 
-.panel__brand-name {
-  font-size: 22px;
-  font-weight: 800;
-  letter-spacing: -0.03em;
-}
-
 .panel__nav {
   gap: 6px;
 }
@@ -1350,18 +1369,11 @@ h1.hero-title span { color: var(--accent); }
   margin-bottom: 22px;
 }
 
-.panel__content h1 {
-  margin: 0 0 6px;
-  font-size: clamp(32px, 4vw, 42px);
-  letter-spacing: -0.04em;
-}
-
 .panel__eyebrow {
   margin-bottom: 8px;
   color: #6e85b8;
 }
 
-.panel__meta,
 .panel__notice,
 .panel__empty,
 .panel-chat-list__header p,
@@ -1373,7 +1385,6 @@ h1.hero-title span { color: var(--accent); }
   color: #6f7f9d;
 }
 
-.panel--dark .panel__meta,
 .panel--dark .panel__notice,
 .panel--dark .panel__empty,
 .panel--dark .panel-chat-list__header p,
@@ -1921,7 +1932,6 @@ h1.hero-title span { color: var(--accent); }
 .panel-history__head strong,
 .panel-history__head span,
 .panel-history__list,
-.panel__meta,
 .panel__notice,
 .panel__empty {
   overflow-wrap: anywhere;
@@ -2072,18 +2082,17 @@ h1.hero-title span { color: var(--accent); }
   padding-bottom: 24px;
 }
 
+.privacy__back {
+  display: inline-flex;
+  margin-bottom: 24px;
+}
+
 .privacy h1 {
   font-size: clamp(28px, 4vw, 36px);
   font-weight: 800;
   letter-spacing: -0.03em;
   color: var(--ink);
-  margin: 0 0 8px;
-}
-
-.privacy__updated {
-  color: var(--ink-3);
-  font-size: 14px;
-  margin: 0 0 40px;
+  margin: 0 0 32px;
 }
 
 .privacy section {

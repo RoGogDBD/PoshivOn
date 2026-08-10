@@ -56,6 +56,30 @@ const MoonIcon = () => (
   </svg>
 );
 
+const ChevronUpDownIcon = () => (
+  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M8 9l4-4 4 4M8 15l4 4 4-4" />
+  </svg>
+);
+
+// initialsFrom — инициалы для кружка-аватара: первые буквы первых двух слов имени, иначе
+// первая буква логина. У профиля из Яндекса фотографии нет, а без неё лучше буквы, чем
+// пустой круг.
+const initialsFrom = (name, login) => {
+  const source = (name || "").trim();
+  if (source) {
+    const letters = source
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((part) => part[0])
+      .join("");
+    if (letters) {
+      return letters.toUpperCase();
+    }
+  }
+  return (login || "?").slice(0, 1).toUpperCase();
+};
+
 const calculatorModes = [
   {
     value: "masterpiece",
@@ -649,10 +673,6 @@ const Panel = () => {
   return (
     <div className={`page panel panel--${theme}`}>
       <aside className="panel__sidebar">
-        <div className="panel__brand">
-          <span className="panel__brand-mark" aria-hidden="true">P</span>
-          <span className="panel__brand-name">PoshivOn</span>
-        </div>
         <nav className="panel__nav">
           <button
             className={`panel__link ${activeSection === "workspace" ? "panel__link--active" : ""}`}
@@ -694,14 +714,22 @@ const Panel = () => {
             </span>
             {theme === "light" ? "Тёмная тема" : "Светлая тема"}
           </button>
+          <div className="panel__profile">
+            <span className="panel__profile-avatar" aria-hidden="true">
+              {initialsFrom(profile?.name, userID)}
+            </span>
+            <span className="panel__profile-info">
+              <span className="panel__profile-name">{profile?.name || userID}</span>
+              <span className="panel__profile-login">{userID}</span>
+            </span>
+            <span className="panel__profile-chevron"><ChevronUpDownIcon /></span>
+          </div>
         </div>
       </aside>
       <main className="panel__content">
         <div className="panel__header">
           <div>
             <p className="panel__eyebrow">Рабочая панель</p>
-            <h1>{profile?.name ? `Здравствуйте, ${profile.name}` : "Здравствуйте"}</h1>
-            <p className="panel__meta">Пользователь: {userID}</p>
           </div>
           <div className="panel__actions">
             <button className="panel__logout" type="button" onClick={handleLogout}>
