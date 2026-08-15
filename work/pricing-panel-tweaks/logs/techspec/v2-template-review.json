@@ -1,0 +1,30 @@
+{
+  "status": "approved",
+  "findings": [
+    {
+      "severity": "major",
+      "category": "tasks",
+      "issue": "Wave 3 Task 2's 'Files to modify' line-range citation for Изделия is the full ternary-branch span (~845-886 quick mode, ~888-1003 masterpiece mode), which nominally contains Task 4's (Усложнения/Операции) more precisely-cited ranges (~866-883, ~925-945) — both tasks run in the same wave. Reading the actual current source confirms the two tasks' real JSX targets are genuinely disjoint SettingsSection blocks (Изделия: 847-864 / 903-923; Усложнения/Операции: 866-883 / 925-945; masterpiece 888-1003 also spans unrelated sections — Общие правила, Материалы, Срочность, Рынок — that neither task touches), so this is not an actual merge conflict. But the citation looseness reproduces the exact ambiguity pattern (overlapping/imprecise line-range labels for parallel-wave tasks touching the same file) that produced round 1's critical findings, and could mislead an executing agent that scopes strictly by the stated range.",
+      "fix": "Tighten Task 3's Files to modify citation to its own SettingsSection lines only (~847-864 quick mode Изделия, ~903-923 masterpiece mode Изделия) instead of the full ternary-branch range, so Wave 3's three tasks' stated ranges are visibly non-overlapping, matching what the Description already correctly scopes."
+    },
+    {
+      "severity": "major",
+      "category": "structure",
+      "issue": "Decision 7 ends with '→ [PENDING USER APPROVAL — see User-Spec Deviations]' but the corresponding entry in the User-Spec Deviations section for the same item ('Changed: unit tests added') is marked '→ user-approved during tech-spec validation (2026-08-15)'. The document is self-contradictory about whether this decision is approved.",
+      "fix": "Update Decision 7's closing tag to match the resolved status, e.g. '→ user-approved during tech-spec validation (2026-08-15) — see User-Spec Deviations', so a reader/decomposer doesn't have to reconcile two conflicting statuses."
+    },
+    {
+      "severity": "major",
+      "category": "task_quality",
+      "issue": "Wave 2 Task 2's Description is 6 sentences, exceeding the 5-sentence tech-spec task brevity guideline (implementation detail belongs in task files created during decomposition, not in the tech-spec).",
+      "fix": "Split into a shorter scope description plus a one-line note referencing the file-safety rationale already covered by the Wave 2 heading comment, or move some of the enumerated detail (e.g. the full list of six handler names) to a 'Files to modify' annotation instead of prose."
+    },
+    {
+      "severity": "minor",
+      "category": "standards",
+      "issue": "Project Knowledge reference files .claude/skills/project-knowledge/references/architecture.md and patterns.md are both absent, so directory-structure and naming-pattern compliance for the new components (GarmentAddForm, OperationAddForm, DeleteRowButton, etc.) could not be checked against documented project standards.",
+      "fix": "Optional: populate architecture.md/patterns.md in Project Knowledge for future validations; not a blocker for this feature since the tech-spec's new components consistently follow the one existing precedent in-file (DiscountsBlock)."
+    }
+  ],
+  "summary": "Round 2 fixes hold up: both round-1 critical wave-conflict findings are genuinely resolved. Wave 1 now has only Task 1 and Wave 2 only Task 2, removing the adjacent-range parallel-edit issue; Wave 3's Tasks 3/4/5 no longer share the six handlers (all consolidated into Wave 2 Task 2) and, verified directly against current Panel.jsx source, target genuinely disjoint SettingsSection blocks for Изделия vs Усложнения/Операции vs Скидки — no real merge conflict remains. Frontmatter, all required template sections, the Risks table, Agent Verification Plan, and Skill/Reviewer catalog compliance (all 9 tasks: 5 implementation + 3 audit + 1 QA) are all correct; reviewer agents all exist. Wave ordering and dependencies are logical and time-free, task count (9) is well under the split threshold. Zero critical findings, so status is approved. Four non-blocking findings for the author to consider: Task 3's Files-to-modify citation is imprecisely broad and reproduces the round-1 ambiguity pattern in label form only (not actual conflict); Decision 7's approval tag still says PENDING while User-Spec Deviations says already approved (self-contradiction); Task 2's description is one sentence over the 5-sentence brevity guideline; and architecture.md/patterns.md are absent from Project Knowledge so standards compliance couldn't be independently verified."
+}

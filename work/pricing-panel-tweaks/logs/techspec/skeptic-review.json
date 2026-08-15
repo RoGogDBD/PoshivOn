@@ -1,0 +1,56 @@
+{
+  "status": "approved",
+  "summary": "Checked 41 verifiable claims in tech-spec.md against actual code (Panel.jsx, costing.go, panelApi.js, http.go, package.json). 0 critical mirages, 2 minor line-range imprecisions found. Every named component, handler, constant, struct, dependency-absence claim, and default-value claim matches the codebase exactly.",
+  "findings": [
+    {
+      "severity": "minor",
+      "type": "name_mismatch",
+      "claim": "Dependencies section: `handleSaveSettings` / `saveUserSettings` (`Panel.jsx:550-566`, `client/src/utils/panelApi.js:41-46`)",
+      "reality": "`saveUserSettings` function body is at panelApi.js lines 42-46 (line 41 is a blank/comment line, `export const saveUserSettings = async (settings) => {` starts on line 42). Off-by-one line reference; the function content itself is correct.",
+      "source": "tech-spec.md, section Dependencies > Using existing (from project)",
+      "fix": "Update citation to `client/src/utils/panelApi.js:42-46` (cosmetic only, no functional impact)."
+    },
+    {
+      "severity": "minor",
+      "type": "name_mismatch",
+      "claim": "Decision 3: `normalizeSettings` (`server/internal/service/costing.go:659-690`) unconditionally re-merges the 4 default garments and 8 default operations into whatever is saved.",
+      "reality": "`normalizeSettings` actually spans lines 659-710 (closing brace at 710), not 659-690. The specific merge-back-defaults logic being described (garments/operations/batch_discounts defaulting-then-overlay) is correctly located within lines 662-692, but the cited range 659-690 clips off the function's tail (sort.Slice at 694-699 and CustomFigureCoefficient/ChildCoefficient/CalculatorMode normalization at 701-709), which are also part of the same function and arguably relevant context for anyone reading the referenced range end-to-end.",
+      "source": "tech-spec.md, Decision 3 and Risks table",
+      "fix": "Update citation to `costing.go:659-710` (full function) or narrow it to `662-692` (the exact merge-back lines being described). No behavioral claim is wrong — only the line span is slightly off."
+    }
+  ],
+  "stats": {
+    "total_claims_checked": 41,
+    "confirmed": 39,
+    "mirages_found": 0,
+    "verified_claims": [
+      "client/src/pages/Panel.jsx (1524 lines, exists)",
+      "calculatorModes array at Panel.jsx:83-94, value: masterpiece/quick unchanged, label swap only",
+      "DiscountsBlock title 'Скидки по партиям' at Panel.jsx:1258-1282 (exact, incl. row markup 1264-1278)",
+      "Panel.jsx:798 fallback string '?? 'Шедевр''",
+      "SettingsSection, SettingsField, SettingsNumberInput at Panel.jsx:219-238 (exact)",
+      "settingsInputClass at Panel.jsx:213-214, settingsSectionClass at Panel.jsx:207-208",
+      "handleGarmentChange, handleOperationSettingChange, handleDiscountChange at Panel.jsx:479-525, block 479-548 exact",
+      "handleSaveSettings at Panel.jsx:550-566 (exact)",
+      "mapPanelError at Panel.jsx:1489-1494 (exact)",
+      "defaultSettings object at Panel.jsx:96-192 (exact bounds); operations sub-object has only 6 of 8 entries, confirming Decision 6's staleness claim",
+      "Изделия/Усложнения quick-mode block Panel.jsx:845-886, masterpiece-mode block 888-1003 (exact)",
+      "Усложнения quick-mode section Panel.jsx:866-883, Операции masterpiece-mode section 925-945 (exact)",
+      "GarmentConfig, OperationConfig, BatchDiscount Go structs at costing.go:22-54 match tech-spec Data Models section field-for-field including json tags",
+      "DefaultUserSettings() Garments map at costing.go:227-232 (4 entries: Пиджак, Юбка, Рубашка, Платье) matches client defaultSettings.garments exactly",
+      "DefaultUserSettings() Operations map at costing.go:233-242 (8 entries incl. Шлица, Декоративная отстрочка) confirms the 2 client-side missing entries",
+      "validateSettings at costing.go:593-657 (bounds: garment BaseMinutes>0, ComplexityCoeff>0, QuickPrice>=0; operation fields >=0; batch discount MinQty>0/MaxQty>=MinQty/0<=Percent<=100)",
+      "normalizeSettings at costing.go:659-710 confirms unconditional re-merge of default garments/operations/batch_discounts",
+      "DefaultUserSettings() BatchDiscounts has 4 tiers incl. last tier 101-1000000 (costing.go:305-310), matching user-spec's degenerate-range claim",
+      "calculateQuickInChat QuickPrice<=0 rejection at costing.go:712-722 (garment param at 718, check at 720-722)",
+      "calculatorModeMasterpiece/calculatorModeQuick constants at costing.go:193-196",
+      "saveUserSettings POST /api/v1/users/settings at panelApi.js:42-46",
+      "route table in http.go:63-90 confirms no per-item CRUD endpoints for garments/operations/batch_discounts, only whole-object settings POST/GET",
+      "client/package.json dependencies: only react, react-dom; devDependencies: tailwindcss, vite, etc. — no yup/zod/react-hook-form/formik anywhere",
+      "no *.test.* files found anywhere under client/",
+      "grep confirms 'Шедевр'/'По быстрому' occur only in client/src/pages/Panel.jsx (no other source file, no Go code, no migrations)",
+      "GarmentAddForm/OperationAddForm/DeleteRowButton — new components correctly described as not-yet-existing (Wave 1/2 tasks), no false claim of prior existence",
+      "DEFAULT_GARMENT_NAMES/DEFAULT_OPERATION_NAMES — new constants correctly described as not-yet-existing"
+    ]
+  }
+}

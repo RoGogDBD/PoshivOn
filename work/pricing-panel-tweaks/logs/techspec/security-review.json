@@ -1,0 +1,29 @@
+{
+  "status": "changes_required",
+  "summary": {
+    "totalFindings": 2,
+    "critical": 0,
+    "major": 0,
+    "minor": 2
+  },
+  "findings": [
+    {
+      "severity": "minor",
+      "category": "A08: Software and Data Integrity Failures",
+      "title": "Free-text garment/operation names become an LLM prompt-injection surface, now reachable from the UI instead of only raw API",
+      "description": "server/internal/service/deepseek.go:404-406 interpolates settings.Garments/Operations map keys directly into the DeepSeek prompt via strings.Join(sortedKeysFromGarments(...), \", \") with plain fmt.Sprintf-style formatting, no escaping/delimiting against prompt-structure characters. Before this feature, getting a non-default (attacker-chosen) garment/operation name into a user's own settings required crafting a raw POST to /api/v1/users/settings by hand (validateSettings only checks strings.TrimSpace(name) != \"\", costing.go:613-614/635-636 — no character-set or length restriction). This feature adds GarmentAddForm/OperationAddForm, a first-class UI path to the same thing, for any user holding RequireAuth+RequireAccess. The trust boundary does not change (same authenticated-admin actor, same per-user data, same endpoint), but the tech-spec does not mention this as a consideration, and the attack surface becomes materially more discoverable/likely to be exercised (a text field vs. hand-crafting HTTP requests). A crafted name containing prompt-injection text (e.g. an instruction fragment) rides into every DeepSeek market-analysis call for that user's chats.",
+      "impact": "An admin account (possibly a shared/lower-trust admin, or a compromised admin session/token) can attempt to manipulate the DeepSeek market-feedback response for their own chats via prompt injection in a garment/operation name. Since analyzeMarketWithAI output appears to only affect that same user's own market-feedback advice (not other users' data or backend logic), impact is limited to self-directed prompt manipulation — but it is worth an explicit tech-spec note rather than silent inheritance of a pre-existing gap, since this feature is what turns it into a one-click UI action.",
+      "recommendation": "Not a blocker for this feature (pre-existing backend behavior, out of this feature's stated scope, and low-impact given the self-scoped blast radius). Recommend tech-spec add one sentence acknowledging this under a Decision or Risk entry so it's a documented, conscious tradeoff rather than an unstated side effect of adding the new form fields. If addressed at all, do it as a backend follow-up (length cap + character allowlist on garment/operation names in validateSettings), not client-side.",
+      "cwe": "CWE-1426"
+    },
+    {
+      "severity": "minor",
+      "category": "A04: Insecure Design",
+      "title": "No upper bound on number of rows an admin can add per settings save",
+      "description": "The tech-spec's add flow (`setSettings((current) => ({...}))`) and the backend (`validateSettings`, costing.go:593-657) impose no cap on how many entries `Garments`/`Operations` maps or the `BatchDiscounts` slice may contain. A user could script repeated adds (or paste a large batch through the add-form workflow) to grow their own settings object without bound before hitting Save.",
+      "impact": "Unbounded growth of one user's settings JSON increases DB row size and — more concretely, per the prompt-injection finding above — increases the token cost/complexity of every DeepSeek prompt built from `settings.Garments`/`settings.Operations` for that user (costing.go/deepseek.go). Low severity: same-user self-inflicted cost, not a cross-tenant issue, and the actor is already an authenticated admin.",
+      "recommendation": "Optional hardening, not a blocker: consider a soft client-side cap (e.g. warn past ~50 garments/operations) purely as a UX guard; a hard limit, if wanted, belongs in backend `validateSettings` (out of this feature's stated scope) rather than the client, consistent with the tech-spec's own principle that client validation is UX-only.",
+      "cwe": "CWE-770"
+    }
+  ]
+}
