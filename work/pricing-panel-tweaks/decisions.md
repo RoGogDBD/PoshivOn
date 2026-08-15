@@ -55,7 +55,25 @@ No round 2 — no in-scope findings required a fix.
 **Carried forward to Task 2:** `client/package.json` still has no test runner; vitest coverage for Increment 2's new validation logic (tech-spec Decision 7) remains outstanding. Security-auditor also flagged `vite ^5.4.10` high advisories worth folding into Task 2, which already edits that file.
 
 **Verification:**
-- `grep -n "Шедевр\|По быстрому\|Скидки по партиям" client/src/pages/Panel.jsx` → no matches
+- `grep -n "Шедевр\|По быстрому\|Скидки по партиям" client/src/pages/Panel.jsx` → no matches (Task 1)
 - `grep -n '"masterpiece"\|"quick"' client/src/pages/Panel.jsx` → same 7 occurrences as before (lines 85, 90, 98, 414, 1182, 1241, 1421); none added, removed or altered
 - `npx vite build` → passes
 - Verify-user (browser check of mode order and labels) → PENDING, awaiting user
+
+## Task 2: Add/delete foundation — constants, handlers, validation, unit tests (Increment 2)
+
+**Status:** Done
+**Commit:** 6517d72
+**Agent:** main agent
+**Summary:** Built the shared, JSX-free foundation Wave 3 will call: `DEFAULT_GARMENT_NAMES`/`DEFAULT_OPERATION_NAMES`, the two missing `defaultSettings.operations` entries (Decision 6), pure validation helpers whose bounds mirror the backend `validateSettings` and are stricter where needed (`quick_price > 0`), `getDefaultDiscountRange` returning both range ends, six add/delete handlers in the existing `setSettings((current) => ({...}))` style, and a `DeleteRowButton` component. Added `vitest` (Decision 7) with 32 pure-function tests; `vitest` was pinned to `^2.1.9` rather than the latest `4.x` because 4.x installs a second major Vite (v8) alongside the app's Vite 5, while 2.1.9 dedupes onto the existing Vite 5 and needs no config changes.
+**Deviations:** Two small additions beyond the literal step list, both to prevent drift across the three parallel Wave 3 tasks: an `isBlankName` helper (mirrors the backend's `strings.TrimSpace(name) == ""` check, which Tasks 3/4 need for their "reject empty name" criterion) and `defaultSettings` exported so a test can assert it stays in sync with the server defaults — that assertion is the regression guard for the step-2 drift fix. The add-handlers deliberately do NOT trim `name`, per the spec's "does not re-validate, just writes"; the trim obligation is documented at the handler block for Wave 3.
+
+**Reviews:**
+
+*Round 1:*
+- Not run — interactive reviewer spawning was unavailable in this session, so no code-reviewer/security-auditor/test-reviewer JSON reports exist under `logs/working/task-2/`. The executing agent self-reviewed against the code-writing skill instead. **Reviews for this task remain outstanding** and should be run before the feature is finalized.
+
+**Verification:**
+- `cd client && npx vitest run` → 32 passed (1 file)
+- `cd client && npx vite build` → passes, no warnings
+- `grep` of the six handler names + `DeleteRowButton` in `Panel.jsx` → each appears exactly once (definition only, no JSX call-sites yet, as required)
