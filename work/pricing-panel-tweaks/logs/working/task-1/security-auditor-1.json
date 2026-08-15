@@ -1,0 +1,42 @@
+{
+  "status": "changes_required",
+  "summary": {
+    "totalFindings": 3,
+    "critical": 0,
+    "major": 1,
+    "minor": 2
+  },
+  "scope_note": "The Task 1 diff itself is clean — all 3 findings below are pre-existing, repo-level dependency/posture debt in the client build chain that this change neither introduced nor worsened. Nothing in the audited diff requires a code change. Invariants verified mechanically: `git diff --name-only HEAD` returns exactly one file (client/src/pages/Panel.jsx, 8+/8-), no server/ path is modified; grep for '\"masterpiece\"|\"quick\"|quick_price|quick_percent|isQuickCalculator|calculator_mode|normalizeCalculatorMode' returns a byte-identical occurrence set before and after the change (only the array positions of lines 85/90 swapped, both `value` literals intact); `normalizeCalculatorMode` (line 1421) is unchanged and still maps everything not === \"quick\" to \"masterpiece\"; `defaultSettings.pricing_rules.calculator_mode` (line 98) still reads \"masterpiece\"; and `calculatorModes` is consumed only via `.find(mode => mode.value === calculatorMode)` (798) and `.map()` (814) with `key={mode.value}` — no index-based access anywhere in client/src, so the array reorder is provably inert for logic and for the value persisted to pricing_rules.calculator_mode.",
+  "findings": [
+    {
+      "severity": "major",
+      "category": "A06:2021 Vulnerable and Outdated Components",
+      "title": "Direct devDependency vite <=6.4.2 carries 3 high advisories, and the dev-server scripts bind 0.0.0.0, widening the esbuild dev-server exposure",
+      "description": "`npm audit` in client/ reports 6 vulnerabilities (4 high, 1 moderate, 1 low) against the pinned tree. The only *direct* one is `vite ^5.4.10` (range <=6.4.2), with three high advisories: path traversal in optimized-deps `.map` handling (CWE-22/200), `server.fs.deny` bypass on Windows alternate paths (CWE-22/200), and launch-editor NTLMv2 hash disclosure via UNC paths (CWE-73/522). Its transitive `esbuild <=0.24.2` carries GHSA-67mh-4wv8-2f99 (CWE-346): any website the developer visits can send arbitrary requests to the running dev server and read the responses — i.e. read project source off the dev machine. This is amplified by client/package.json, whose `dev` and `preview` scripts both pass `--host 0.0.0.0`, binding the dev server to every interface rather than loopback, so any host on the same network segment can also reach it directly. Production runtime is not affected (only 6 prod deps: the react/react-dom tree); the exposure window is any time a developer runs `npm run dev`/`npm run preview`. Pre-existing — this change does not touch client/package.json.",
+      "location": "package: vite@^5.4.10 (client/package.json devDependencies); esbuild (transitive, node_modules/esbuild); client/package.json scripts.dev / scripts.preview",
+      "impact": "A developer running the dev server can have project source read by any website they browse to (esbuild CORS advisory), and — because of the 0.0.0.0 bind — served to anyone on the local/WSL network without any authentication. Vite's path-traversal advisories additionally allow reading files outside the served root under specific conditions. No production user data is reachable through this path; the blast radius is source disclosure and developer-machine file read.",
+      "recommendation": "Schedule a dedicated dependency-upgrade task (not inside this display-string task): run `npm audit fix --force` in client/, which resolves to vite 8.x — a semver-major bump, so it needs its own verification of `npm run build` and the Tailwind v4 plugin, not a drive-by change. Independently and at near-zero cost, drop the blanket bind: use `\"dev\": \"vite --port 5173\"` (loopback default) and add `--host` only when a device on the LAN genuinely needs access. Note that Task 2 of this feature already plans to edit client/package.json to add vitest — that is the natural place to also land the audit fix.",
+      "cwe": "CWE-1035 (Using Components with Known Vulnerabilities); underlying CWE-346, CWE-22"
+    },
+    {
+      "severity": "minor",
+      "category": "dependency",
+      "title": "Build-chain transitive advisories: postcss, rollup, nanoid, @babel/core",
+      "description": "The remaining audit entries are all build-time transitives with no production runtime reachability: postcss <=8.5.22 (4 highs — XSS via unescaped `</style>` in stringify output, and three sourceMappingURL path-traversal/arbitrary-.map-read variants, CWE-79/CWE-22), rollup 4.0.0-4.58.0 (arbitrary file write via path traversal, CWE-22), nanoid <=3.3.17 (two infinite-loop DoS advisories, CWE-835), @babel/core <=7.29.0 (arbitrary file read via sourceMappingURL comment, CWE-22/200). Exploiting any of these requires attacker-controlled CSS/JS/source-map input into the build, which in this repo is authored content in git, not user input — so real-world exploitability here is low. Reported for completeness of the mandatory A06 check; pre-existing and untouched by this change.",
+      "location": "package: postcss (<=8.5.22), rollup (4.0.0-4.58.0), nanoid (<=3.3.17), @babel/core (<=7.29.0) — all transitive under vite / @vitejs/plugin-react / tailwindcss in client/",
+      "impact": "Arbitrary file read/write on the build machine or CI runner, or a build hang, if attacker-controlled CSS/source-map content ever reaches the build. Not reachable from the deployed application; no production data exposure.",
+      "recommendation": "These resolve together with the vite major upgrade in the previous finding — verify with `npm audit` returning 0 vulnerabilities after `npm audit fix --force` plus a green `npm run build`. Do not attempt to pin these individually; they are all pulled by the vite/tailwind toolchain.",
+      "cwe": "CWE-1035"
+    },
+    {
+      "severity": "minor",
+      "category": "best-practice",
+      "title": "No automated secret scanning — the 'no hardcoded credentials' property is enforced by human review only",
+      "description": "I found no hardcoded secrets anywhere in the audited artifact or its client-side dependency chain (see clean rationale in the final report): grep for `api[_-]?key`, `secret`, `password`, `token =`, `bearer`, `private[_-]key`, `BEGIN * PRIVATE` across client/src returns only a code comment in AuthCallback.jsx about a removed token-in-fragment branch; no .env file is tracked by git; the client only reads config from `import.meta.env` (VITE_API_URL, VITE_YA_CLIENT_ID, VITE_YA_REDIRECT_URI — all non-secret public OAuth values), and CI/deploy inject every real credential from GitHub Actions secrets. However, the repo has no gitleaks/pre-commit configuration and no secret-scanning step in either .github/workflows/test.yml or deploy.yml, so nothing mechanically prevents a future commit from landing a credential in the client bundle — which, for a frontend file, means shipping it to every browser.",
+      "location": "repo root (no .pre-commit-config.yaml, no .gitleaks.toml); .github/workflows/test.yml (no scanning job)",
+      "impact": "A secret accidentally committed to client/src would be compiled into the public JS bundle and served to all visitors, and would only be caught by manual review. Frontend secret leaks are unrecoverable once deployed — rotation is the only remedy.",
+      "recommendation": "Add a gitleaks step to .github/workflows/test.yml (it already runs on `push: branches: ['**']` and `pull_request`, so one job covers every path into main) and/or a pre-commit hook: `- uses: gitleaks/gitleaks-action@v2` with `GITHUB_TOKEN` in env. This is repo-level hygiene, not a blocker for this task.",
+      "cwe": "CWE-798"
+    }
+  ]
+}

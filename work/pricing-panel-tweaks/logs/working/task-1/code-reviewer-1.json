@@ -1,0 +1,42 @@
+{
+  "status": "changes_required",
+  "findings": [
+    {
+      "file": "client/src/pages/Panel.jsx",
+      "line": 83,
+      "severity": "major",
+      "category": "cross-file-consistency",
+      "issue": "The implemented on-screen order (Быстрый first, Продвинутый second) directly contradicts user-spec \"How it should work\" step 2 (user-spec.md:42-43): «видит режимы в новом порядке: сначала «Продвинутый» (бывший «Шедевр»), затем «Быстрый»». The task file resolves this in favour of user-spec's AC line 98-99 («бывший второй режим теперь показывается первым») + tech-spec Decision 1, but it is a 50/50 reading of a self-contradicting approved spec, and the code has already been written to one side of it. After this change the repo contains an approved user-spec whose narrative text describes the opposite of what ships.",
+      "impact": "This is the only user-visible behavior in the whole task and it lands on a live production admin panel. If the user actually meant what step 2 literally says (Продвинутый first — i.e. rename only, no swap), the admin opens /panel and sees the exact inverse of the requested layout, and the change must be reverted and redeployed. Neither reviewers nor CI can catch this: there is no automated check on the client at all (.github/workflows/test.yml runs only Go tests; the client is only compiled during the tag-triggered docker build).",
+      "recommendation": "Do not merge on the assumption that the AC wording wins. Get an explicit one-line confirmation from the user of which mode must be the first card. Then make the spec agree with the code: if Быстрый-first is confirmed, fix user-spec.md:42-43 to say «сначала «Быстрый», затем «Продвинутый»»; if Продвинутый-first is confirmed, revert the array element swap in Panel.jsx:83-94 (keep both label renames) and fix user-spec.md:98-99 + tech-spec Decision 1 + tasks/9.md:30,64 («mode order swapped») accordingly. Leaving the two contradicting statements in an approved spec after shipping guarantees the same argument recurs at Task 9 (pre-deploy QA)."
+    },
+    {
+      "file": "client/src/pages/Panel.jsx",
+      "line": 798,
+      "severity": "minor",
+      "category": "maintainability",
+      "issue": "The fallback `?.label || \"Продвинутый\"` is unreachable dead code that duplicates a display string as a second source of truth. `calculatorMode` (line 413) is produced by `normalizeCalculatorMode` (line 1421), which can only ever return \"quick\" or \"masterpiece\" — both of which are present in `calculatorModes` — so `find(...)` never returns undefined and the `||` branch can never execute. Its only real effect is that a hardcoded copy of a label literal exists outside the array.",
+      "impact": "This duplicate is precisely why the rename needed a second, easy-to-miss edit: a label lives in two unrelated places. The next copy change (and this feature proves copy changes happen) can silently leave a stale string behind in a branch nobody tests, on a live panel. Per the severity table, a hardcoded value duplicated out of its single source of truth is a maintainability defect, not a stylistic preference.",
+      "recommendation": "Drop the fallback entirely — `{calculatorModes.find((mode) => mode.value === calculatorMode)?.label}` is sufficient given `normalizeCalculatorMode`'s total mapping. If a defensive default is still wanted, derive it instead of retyping it: `?? calculatorModes.find((mode) => mode.value === \"masterpiece\")?.label`."
+    },
+    {
+      "file": "client/src/pages/Panel.jsx",
+      "line": 800,
+      "severity": "minor",
+      "category": "maintainability",
+      "issue": "Per-mode description copy exists twice, in two different wordings, selected by two different mechanisms: `calculatorModes[].description` (lines 87, 92, rendered on the mode cards at line 838) and an `isQuickCalculator` ternary in the \"Активный режим\" panel (lines 801-803). The task renamed the labels but left this second copy untouched, so display text for the two modes now lives in three places (array label, array description, ternary).",
+      "impact": "Same drift mechanism as the line-798 duplicate, one level up: a future rename/reword of a mode will update the array and leave the \"Активный режим\" panel describing the mode in stale terms, with nothing failing. Also note the ternary is keyed on `isQuickCalculator` rather than on the array entry, so it is silently coupled to the array's contents without referencing it.",
+      "recommendation": "Render the active entry's own description: hoist `const activeMode = calculatorModes.find((mode) => mode.value === calculatorMode);` and use `activeMode?.description` at line 801-803 (adjusting the array `description` text if the longer wording is preferred), removing the ternary. If the two texts are intentionally different, add a one-line comment saying so, so the next editor knows both must be updated."
+    },
+    {
+      "file": "client/src/pages/Panel.jsx",
+      "line": 1260,
+      "severity": "minor",
+      "category": "readability",
+      "issue": "The discount section is now titled «Скидки за количество», but the fields that actually drive it are still labelled in batch terminology elsewhere on the same page: «Размер партии» (line 1119, the quantity input feeding the discount) and «Партия: {item.quantity}» in the calculation history (lines 1192, 1217). The user-spec only mandated the section-title rename, so this is in-spec, but the panel now mixes two vocabularies for the same quantity concept.",
+      "impact": "An admin reading «Скидки за количество» has to infer that the «Размер партии» field is the quantity the discount tiers are matched against. Low consequence, but it is a terminology inconsistency introduced by this change, not one that pre-existed it.",
+      "recommendation": "Confirm with the user during Verify-user whether «Размер партии» / «Партия:» should follow the same rename to «Количество». If yes, it is a two-line follow-up; if no, no code change — record the decision so the mismatch reads as deliberate."
+    }
+  ],
+  "summary": "The three mechanical edits are correct and I could not find a behavioral defect: `calculatorModes` is consumed only via `.find(...)` (line 798) and `.map(...)` (line 814) — no positional indexing anywhere — and the default/active mode comes from `defaultSettings.pricing_rules.calculator_mode` (line 98) and `normalizeCalculatorMode` (line 1421), so the array reorder cannot change which mode is selected, calculated, or stored. `value: \"masterpiece\"/\"quick\"` and both `description` strings survived the swap correctly paired; `quick_price`/`quick_percent`/`isQuickCalculator`/`itemMode === \"quick\"` are untouched; `grep` finds no remaining «Шедевр»/«По быстрому»/«Скидки по партиям» in any tracked source (the only hits are in the git-ignored `client/dist` build output, which the deploy pipeline rebuilds from source with `dist` in `.dockerignore`); `npm run build` passes and the emitted bundle contains the new strings. All 9 task Acceptance Criteria are met as written. The one thing that should block a merge is not a code defect but the unresolved order contradiction inside the approved user-spec (finding 1): the code has committed to one reading of a spec that says both things, on a live production panel, with zero automated coverage on the client. The remaining three findings are duplicated display-string sources of truth (lines 798, 800-803) and terminology drift (line 1260) — the exact class of defect that made this rename a three-site edit in the first place."
+}
