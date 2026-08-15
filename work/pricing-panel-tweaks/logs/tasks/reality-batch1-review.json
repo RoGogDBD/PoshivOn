@@ -1,0 +1,26 @@
+{
+  "validator": "reality-checker",
+  "batch": [1, 2, 3],
+  "status": "approved",
+  "findings": [
+    {
+      "severity": "major",
+      "category": "hints",
+      "task": 2,
+      "issue": "Task 2's 'What to do' section (steps 4 and 6) contains complete, ready-to-paste implementations rather than hints: the full body of `getDefaultDiscountRange` (`const getDefaultDiscountRange = (existingTiers) => { const lastTier = ...; return { min_qty: minQty, max_qty: minQty }; }`) and the full `DeleteRowButton` component (`const DeleteRowButton = ({ isDeletable, onDelete }) => isDeletable ? (<button ...>Удалить</button>) : null;`) are given as literal code blocks with full logic, not as a description of the pattern to follow. Both were verified to be technically correct against the codebase (no hallucination), but this crosses from 'hint' into 'implementation' per the task-quality checklist.",
+      "fix": "Replace the two full code blocks with a prose description of the required behavior/signature (as is already done correctly for the validation-bound rules in step 3), leaving the exact code to the implementer. The `DEFAULT_GARMENT_NAMES`/`DEFAULT_OPERATION_NAMES` literal arrays in step 1 are more defensible to keep verbatim since they are exact factual data that must byte-match `costing.go:227-242`, not logic."
+    },
+    {
+      "severity": "minor",
+      "category": "feasibility",
+      "task": 3,
+      "issue": "Task 3 cites the masterpiece-mode Изделия row container div as `Panel.jsx:905-920` (used twice: in 'What to do' step 4 and in Implementation hints). The actual row `<div ...>` opens at line 906 (line 905 is the `.map(...)` call above it) and closes at line 920. The end line is correct; the start line is off by one.",
+      "fix": "Change the citation to `906-920` (or describe it as 'inside the .map(...) block starting at line 905') for precision; the quick-mode citation (`850-861`, same task) is already exact and can serve as the reference for how to phrase it."
+    }
+  ],
+  "stats": {
+    "tasks_checked": 3,
+    "claims_verified": 38,
+    "issues_found": 2
+  }
+}

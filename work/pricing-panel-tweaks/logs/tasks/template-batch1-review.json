@@ -1,0 +1,123 @@
+{
+  "validator": "task-validator",
+  "batch": [1, 2, 3, 4, 5],
+  "status": "changes_required",
+  "findings": [
+    {
+      "severity": "critical",
+      "category": "content",
+      "task": 2,
+      "section": "Context Files",
+      "issue": "Context Files section omits decisions.md, which is a mandatory context file per the task template and task-creator rules (alongside user-spec.md and tech-spec.md, both of which ARE present).",
+      "fix": "Add `- [decisions.md](../decisions.md)` to Task 2's Context Files section."
+    },
+    {
+      "severity": "critical",
+      "category": "content",
+      "task": 3,
+      "section": "Context Files",
+      "issue": "Context Files section omits decisions.md, which is a mandatory context file per the task template and task-creator rules (user-spec.md and tech-spec.md ARE present, but decisions.md is missing).",
+      "fix": "Add `- [decisions.md](../decisions.md)` to Task 3's Context Files section."
+    },
+    {
+      "severity": "minor",
+      "category": "content",
+      "task": 2,
+      "section": "Context Files",
+      "issue": "Code/reference files (`client/src/pages/Panel.jsx`, `server/internal/service/costing.go`, `client/vite.config.js`) are listed as plain backtick paths, not markdown links `[name](path)`, contrary to the template rule 'Use markdown links for all paths.' Task 1, Task 4, and Task 5 use proper markdown links for the same kind of code-file reference.",
+      "fix": "Convert each code-file reference to a markdown link, e.g. `[client/src/pages/Panel.jsx](../../../client/src/pages/Panel.jsx)`, matching the style used in Tasks 1, 4, and 5."
+    },
+    {
+      "severity": "minor",
+      "category": "content",
+      "task": 3,
+      "section": "Context Files",
+      "issue": "Code/reference files (`client/src/pages/Panel.jsx`, `server/internal/service/costing.go:616-623`) are listed as plain backtick paths, not markdown links `[name](path)`, contrary to the template rule.",
+      "fix": "Convert each code-file reference to a markdown link, matching the style used in Tasks 1, 4, and 5."
+    },
+    {
+      "severity": "minor",
+      "category": "content",
+      "task": 2,
+      "section": "Context Files",
+      "issue": "Context Files omits project.md/architecture.md with no explanatory note. Tasks 1 and 5 both explicitly state 'No project-knowledge/ documentation exists yet for this project... nothing to link here' (confirmed true — no project-knowledge directory exists anywhere in the repo). Tasks 2, 3, and 4 omit these files silently, which reads as an oversight rather than a deliberate, verified omission.",
+      "fix": "Add the same disclaimer used in Tasks 1 and 5 to Tasks 2, 3, and 4 for consistency, e.g. 'No project-knowledge/ documentation exists yet for this project — nothing to link here.'"
+    },
+    {
+      "severity": "minor",
+      "category": "content",
+      "task": 3,
+      "section": "Context Files",
+      "issue": "Same as Task 2 — project.md/architecture.md omitted without the disclaimer present in Tasks 1 and 5.",
+      "fix": "Add the disclaimer used in Tasks 1 and 5."
+    },
+    {
+      "severity": "minor",
+      "category": "content",
+      "task": 4,
+      "section": "Context Files",
+      "issue": "Same as Task 2 — project.md/architecture.md omitted without the disclaimer present in Tasks 1 and 5.",
+      "fix": "Add the disclaimer used in Tasks 1 and 5."
+    },
+    {
+      "severity": "minor",
+      "category": "structure",
+      "task": 1,
+      "section": "TDD Anchor",
+      "issue": "TDD Anchor section is present (this task has skills:[code-writing]) but contains no test entries in the required `path::test_name` — description format — only prose explaining that no tests apply ('N/A — this task is a pure static-data/string edit...'). Task 5, which has the same skill and a comparable 'no testable logic' situation (pure JSX wiring), deletes the TDD Anchor section entirely per the template rule for tasks with no code-testable logic. The batch is inconsistent on how to handle this case.",
+      "fix": "Delete the TDD Anchor section entirely (moving the rationale, if worth keeping, into Description or Details), matching the approach Task 5 uses, or standardize all such tasks on a short explanatory comment — pick one convention and apply it uniformly across the batch."
+    },
+    {
+      "severity": "minor",
+      "category": "structure",
+      "task": 3,
+      "section": "TDD Anchor",
+      "issue": "TDD Anchor section contains only an HTML comment explaining no unit tests are planned — this is an empty stub (no visible content, no test entries), which the checklist explicitly disallows. Task 5 handles the equivalent situation by deleting the section outright.",
+      "fix": "Delete the TDD Anchor section entirely, matching Task 5's approach for JSX-wiring-only tasks with no pure logic to test."
+    },
+    {
+      "severity": "minor",
+      "category": "structure",
+      "task": 4,
+      "section": "TDD Anchor",
+      "issue": "Same issue as Task 3 — TDD Anchor section contains only an HTML comment (empty stub), no actual test entries.",
+      "fix": "Delete the TDD Anchor section entirely, matching Task 5's approach."
+    },
+    {
+      "severity": "minor",
+      "category": "consistency",
+      "task": 5,
+      "section": "Reviewers",
+      "issue": "Reviewers report paths use a literal round number (`code-reviewer-1.json`, `security-auditor-1.json`, `test-reviewer-1.json`) instead of the `{round}` placeholder. Tasks 1-4 in this same batch, the task.md.template itself, and the equivalent section in the sibling feature work/access-control/tasks/1.md all keep `{round}` literal in the path (it is filled in at actual review time, not at task-creation time — round 1, round 2, etc.). Task 5 is the outlier.",
+      "fix": "Change Task 5's Reviewers paths back to the `{round}` placeholder form, e.g. `work/pricing-panel-tweaks/logs/working/task-5/code-reviewer-{round}.json`, matching Tasks 1-4."
+    },
+    {
+      "severity": "minor",
+      "category": "structure",
+      "task": 2,
+      "section": "Verification Steps",
+      "issue": "Verification Steps includes a '### User' subsection whose only content is 'None for this task — no UI change is visible yet.' The template says to omit this subsection entirely when there is nothing to verify (and Task 2's frontmatter verify:[smoke] does not declare a user-verification type), rather than keep a labeled empty/None subsection.",
+      "fix": "Remove the '### User' subsection from Task 2's Verification Steps."
+    },
+    {
+      "severity": "minor",
+      "category": "structure",
+      "task": 3,
+      "section": "Verification Steps",
+      "issue": "Verification Steps includes a '### Smoke' subsection whose only content is 'None — no MCP/curl-checkable surface for this feature.' Task 3's frontmatter verify:[user] does not declare a smoke-verification type, and the template says to omit the subsection if there are no smoke checks rather than keep a labeled None subsection.",
+      "fix": "Remove the '### Smoke' subsection from Task 3's Verification Steps."
+    },
+    {
+      "severity": "minor",
+      "category": "carry-forward",
+      "task": 5,
+      "section": "Acceptance Criteria",
+      "issue": "user-spec's Инкремент 2 Acceptance Criteria (bullet 3) requires the discount add-form to reject min_qty<=0, max_qty<min_qty, and percent outside [0,100]. This is exercised in Task 5's Verification Steps -> User ('Try max_qty below min_qty and percent outside 0-100 in the add-form — confirm both are rejected') but is never restated as an explicit Acceptance Criteria checklist item in Task 5, unlike the analogous garment-bounds criterion in Task 3 (AC3) and operation-bounds criterion in Task 4 (AC3). The behavior is real and delegated correctly to Task 2's validation helpers, but its absence from Task 5's AC checklist breaks the pattern used by its sibling tasks and weakens traceability back to the user-spec AC.",
+      "fix": "Add an Acceptance Criteria bullet to Task 5 along the lines of: 'Submitting the discount add-form with min_qty<=0, max_qty<min_qty, or percent outside [0,100] is rejected client-side (via Task 2's validation helpers); the tier is not added.'"
+    }
+  ],
+  "stats": {
+    "tasks_checked": 5,
+    "issues_found": 13
+  }
+}

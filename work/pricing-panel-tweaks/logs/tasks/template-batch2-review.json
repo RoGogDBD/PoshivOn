@@ -1,0 +1,67 @@
+{
+  "validator": "task-validator",
+  "batch": [6, 7, 8, 9],
+  "status": "changes_required",
+  "findings": [
+    {
+      "severity": "critical",
+      "category": "consistency",
+      "task": 7,
+      "section": "frontmatter / Verification Steps",
+      "issue": "frontmatter `verify: []` but the task body has a substantive `### Smoke` subsection with real executable checks (`grep -n \"dangerouslySetInnerHTML\" client/src/pages/Panel.jsx`, and a `git diff`/`git log` check on deepseek.go). Per feature-execution's Phase 3 wave-transition step ('If task had Smoke/User verification steps — confirm teammate reported verification results'), the orchestrator is forbidden from reading full task content during execution and relies solely on the frontmatter `verify` field to know whether to expect and confirm verification results. With `verify: []`, the orchestrator will not know to confirm this task's smoke checks were run and reported, even though the task body clearly requires them. Compare Task 2, which has `verify: [smoke]` and a matching `### Smoke` subsection with real content — the established pattern in this feature's own sibling tasks.",
+      "fix": "Set frontmatter `verify: [smoke]` on Task 7 to match the real `### Smoke` content in its Verification Steps section."
+    },
+    {
+      "severity": "critical",
+      "category": "consistency",
+      "task": 9,
+      "section": "frontmatter / Verification Steps",
+      "issue": "frontmatter `verify: []` but the task body has a substantive `### User` subsection ('Ask the user to confirm the manual checklist... report the user's confirmation (or lack of it) verbatim, and treat an unconfirmed checklist as a QA fail') and an Acceptance Criteria item explicitly requiring user confirmation ('User confirms the manual \"How to Verify\" checklist... was walked through'). This user-confirmation step is central to this QA task's entire purpose — the feature is explicitly not deploy-ready without it. Per feature-execution's Phase 3 ('If task had Smoke/User verification steps — confirm teammate reported verification results'), the orchestrator only reads task frontmatter during execution (reading full task content is a forbidden action for the lead), so `verify: []` means the orchestrator has no signal to confirm this critical user-verification step was actually reported before marking the task/wave done. Compare Task 1, which has `verify: [user]` and a matching `### User` subsection.",
+      "fix": "Set frontmatter `verify: [user]` on Task 9 to match the real `### User` content in its Verification Steps section (the `### Smoke` subsection explicitly states 'No agent-executable smoke checks', so `smoke` should not be added)."
+    },
+    {
+      "severity": "minor",
+      "category": "structure",
+      "task": 7,
+      "section": "Post-completion",
+      "issue": "Post-completion checklist still uses the generic, unadapted template wording ('Write a brief report in decisions.md per the template (Summary: 1-3 sentences, reviews with links to JSON, no findings tables or dumps)'). This task has `reviewers: []` and produces no reviewer JSON files at all — its only output artifact is the audit report at `work/pricing-panel-tweaks/logs/working/task-7/security-audit-report.md`. Sibling audit tasks 6 and 8 both correctly adapted this line to reference the audit report path instead of 'reviews with links to JSON' (e.g. Task 6: 'link to work/pricing-panel-tweaks/logs/working/task-6/code-audit-report.md, no findings tables or dumps'). Task 7 is the only one of the three audit tasks that left this section as a copy-paste artifact from the generic template.",
+      "fix": "Reword Task 7's first Post-completion bullet to reference `work/pricing-panel-tweaks/logs/working/task-7/security-audit-report.md` instead of 'reviews with links to JSON', matching the pattern already used in Task 6 and Task 8."
+    },
+    {
+      "severity": "minor",
+      "category": "content",
+      "task": 6,
+      "section": "Context Files",
+      "issue": "The new vitest test file (Task 2's output) is referenced as plain backtick text ('the new vitest test file added by Task 2 (e.g. `client/src/pages/Panel.validation.test.js` — confirm actual name/path...)') rather than a markdown link `[name](path)`, which the template/checklist requires for Context Files entries. Task 7's Context Files section links the same file directly as `[Panel.validation.test.js](../../../client/src/pages/Panel.validation.test.js)`, so there is also an inconsistency across the audit-wave tasks in how this shared reference is presented.",
+      "fix": "Either convert to a markdown link once the exact path is confirmed, or keep as plain text but note explicitly (as already done) that the path is unconfirmed at authoring time — acceptable given the genuine path uncertainty, but flagging for awareness/consistency with Task 7."
+    },
+    {
+      "severity": "minor",
+      "category": "content",
+      "task": 8,
+      "section": "Context Files",
+      "issue": "Same as Task 6: the new vitest test file is referenced as plain text ('new vitest test file created in Task 2 (path to be confirmed on read — tech-spec's working name is `client/src/pages/Panel.validation.test.js`)') instead of a markdown link, per the template's Context Files convention.",
+      "fix": "Same as Task 6 — acceptable given documented path uncertainty, but inconsistent with Task 7's markdown link to the same file."
+    },
+    {
+      "severity": "minor",
+      "category": "content",
+      "task": 9,
+      "section": "Context Files",
+      "issue": "Same pattern: `` `client/src/pages/Panel.validation.test.js` (added by Task 2) — the vitest test file to run `` is plain code-formatted text, not a markdown link, per the template's Context Files convention.",
+      "fix": "Same as Task 6/8 — acceptable given documented path uncertainty, but inconsistent with Task 7's markdown link to the same file."
+    },
+    {
+      "severity": "minor",
+      "category": "structure",
+      "task": 8,
+      "section": "Required Skills",
+      "issue": "Wording deviates from the template and every other task in this feature: 'Before starting, load:' instead of the template's 'Before executing the task, load:' (used verbatim in Tasks 1, 2, 3, 6, 7, 9).",
+      "fix": "Change to 'Before executing the task, load:' for consistency with the template and sibling tasks. Purely stylistic, no functional impact."
+    }
+  ],
+  "stats": {
+    "tasks_checked": 4,
+    "issues_found": 7
+  }
+}

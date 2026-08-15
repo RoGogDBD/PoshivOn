@@ -1,0 +1,19 @@
+{
+  "validator": "reality-checker",
+  "batch": [4, 5, 6],
+  "status": "approved",
+  "findings": [
+    {
+      "severity": "minor",
+      "category": "hallucination",
+      "task": 6,
+      "issue": "Task 6's AC/What-to-do says to cross-check client-side garment bounds against backend validateSettings as 'garment fields > 0' (server/internal/service/costing.go). Actual validateSettings (lines 612-624) requires BaseMinutes > 0 and ComplexityCoeff > 0, but QuickPrice only requires >= 0 (`if garment.QuickPrice < 0`, line 622) — 0 passes validateSettings. The `> 0` requirement for QuickPrice only shows up later, at calculation time, in calculateQuickInChat (costing.go:720: `if garment.QuickPrice <= 0`). The task's blanket 'garment fields > 0' is an oversimplification inherited from tech-spec's Risks table; it happens to describe the correct *client-side* target (since Task 3's form is meant to reject 0 to prevent the calc-time crash) but mischaracterizes what validateSettings itself enforces.",
+      "fix": "When the auditor executing Task 6 checks this bound, note that validateSettings alone only requires QuickPrice >= 0 — the > 0 requirement is driven by calculateQuickInChat's separate runtime check (costing.go:720), not by validateSettings. No task-file text change strictly required since the practical outcome (client rejects 0) is correct and 'equal-or-stricter' per tech-spec AC, but worth a one-line clarification to avoid the auditor citing the wrong source function."
+    }
+  ],
+  "stats": {
+    "tasks_checked": 3,
+    "claims_verified": 46,
+    "issues_found": 1
+  }
+}

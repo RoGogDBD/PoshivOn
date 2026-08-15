@@ -1,0 +1,24 @@
+{
+  "validator": "reality-checker",
+  "batch": [7, 8, 9],
+  "status": "approved",
+  "findings": [],
+  "stats": {
+    "tasks_checked": 3,
+    "claims_verified": 28,
+    "issues_found": 0
+  },
+  "notes": [
+    "Task 7: server/internal/service/deepseek.go:404-406 verified byte-accurate — line 404 is `strings.Join(sortedKeysFromGarments(settings.Garments), \", \")`, lines 405-406 are the analogous Materials/Urgency joins, exactly as described. Task correctly uses the full path with /service/, unlike tech-spec's Risks table row which drops that segment (server/internal/deepseek.go) — the task itself has no error here.",
+    "Task 7: server/internal/service/costing.go line references also verified — DefaultUserSettings at 210, validateSettings at 593, normalizeSettings at 659 (function body runs 659-710, matching tech-spec Decision 3's '659-710' exactly), quick_price<=0 check at 720.",
+    "Task 7: all relative context-file links (../../../server/..., ../../../client/...) resolve correctly from tasks/7.md to real repo paths.",
+    "Task 8: client/src/pages/Panel.validation.test.js is consistently the same path across Task 2 (creates it), Task 7, Task 8, and Task 9 (both consume it) — reasonable Vite/vitest colocation convention (no existing client test files/infra to conflict with; package.json currently has no test tooling, consistent with Task 2 being the task that adds vitest). Task 8 additionally self-hedges correctly ('confirm its actual name and location by inspecting client/package.json/the repo, don't assume the tech-spec's example name is exact'), which is the right posture since Task 2 hasn't executed yet.",
+    "Task 8: costing.go line ranges cross-checked — DefaultUserSettings' Garments/Operations maps are at 227/233 (inside the cited ~227-242 range) and match the exact 4 garment + 8 operation names/values, including 'Шлица' (18/50/7) and 'Декоративная отстрочка' (18/0/5) that Task 2 must add. validateSettings' actual body runs 593-657 vs. the cited '~593-654' — off by ~3 lines (closing braces only), immaterial since the range is explicitly tilde-approximate and covers all substantive bound checks.",
+    "Task 9: user-spec.md Acceptance Criteria has exactly 3 checkboxes under 'Инкремент 1' and exactly 8 under 'Инкремент 2' (11 total) — matches Task 9's '3 Инкремент 1 AC checkboxes' / '8 Инкремент 2 AC checkboxes' claim exactly, both content and count.",
+    "Task 9: tech-spec.md's own Acceptance Criteria section has exactly 8 checkboxes, matching Task 9's '8 AC checkboxes in tech-spec.md' claim and its itemized restatement of all 8 (calculatorModes value unchanged, no new endpoints, default-name lists match, validation bounds, both mode branches, getDefaultDiscountRange both ends, vitest passes, no regressions).",
+    "Task 9: 'npx vitest run' from client/ is consistent with Task 2's planned package.json script and vite.config.js reuse (client/vite.config.js exists); no vitest is present yet in package.json, which is expected/correct since Task 2 (a dependency of the whole chain leading to Task 9) is what adds it.",
+    "Cross-task wave/depends_on graph verified consistent: Tasks 3/4/5 (wave 3) depend on [2]; Tasks 6/7/8 (wave 4, Audit Wave) all depend on [3,4,5]; Task 9 (wave 5) depends on [6,7,8]. No missing or contradictory dependency declarations found for this batch.",
+    "All three skill references (security-auditor, test-master, pre-deploy-qa) resolve to real SKILL.md files under ~/.claude/skills/.",
+    "Panel.jsx line anchors relied on by Tasks 7/8 as reading pointers (calculatorModes 83-94, DiscountsBlock title ~1258, handleGarmentChange 479, handleDiscountChange 518-524) all verified present at those exact lines in current Panel.jsx (1524 lines total) — pre-Task-1-5 state, as expected since none of those tasks have executed yet."
+  ]
+}
