@@ -101,3 +101,26 @@ No round 2 — no in-scope findings required a fix.
 - `git diff -U1` → exactly 5 hunks, all inside the two Изделия blocks and the new component; no line touching Усложнения / Операции / DiscountsBlock
 - `grep` of `GarmentAddForm` / `DeleteRowButton` call sites → exactly 2 each, one per calculator-mode branch
 - Verify-user (browser check of add, cross-mode field integrity, the three `0`-rejections, duplicate "пиджак ", delete visibility, delete + save + reload) → PENDING, awaiting user
+
+## Task 4: Add/delete rows — Усложнения/Операции (Increment 2)
+
+**Status:** Done
+**Commit:** fe3355b
+**Agent:** main agent
+**Summary:** Added `OperationAddForm` (module scope, directly after Task 3's `GarmentAddForm`, continuing the placement convention Task 2 established) and wired it plus `DeleteRowButton` into both operation `SettingsSection` blocks — quick-mode "Усложнения" and masterpiece-mode "Операции". The form always collects all 4 fields (Название, Надбавка %, Доп. минуты, Доп. материал/шт) per Decision 2, validates via Task 2's `isBlankName` / `isDuplicateName` / `validateOperationFields`, shows one inline `<p role="alert">` on failure, and clears itself on success. Task 2's constants/handlers/helpers/`DeleteRowButton`, the Изделия sections and `DiscountsBlock` were not touched.
+**Deviations:** None beyond the two patterns Task 3 already had to establish and this task reuses verbatim: `OperationAddForm` renders a `<div>` with `type="button"` + an Enter-intercepting `onKeyDown` (the settings area is already one `<form onSubmit={handleSaveSettings}>`, so a nested form would be invalid HTML and a bare Enter would save the whole settings object instead of adding a row), and `validateOperationFields` is fed the raw input strings rather than `Number(...)`-coerced values (its `toFiniteNumber` coerces strictly; pre-coercing would turn invalid input into `0`). The `0`-handling differs from Task 3 by design, not by accident: operation bounds are `>= 0` (an operation that is only a percent, or only minutes, is legitimate and matches backend `validateSettings`), whereas garments reject `0`. Empty numeric fields are still rejected — `toFiniteNumber("")` is `NaN`, so the admin must type an explicit `0`, which is exactly the "no field silently defaults" intent of Decision 2.
+
+**Reviews:**
+
+*Round 1:*
+- Not run — independent reviewer spawning was unavailable in this session run, so no code-reviewer/security-auditor/test-reviewer JSON reports exist under `logs/working/task-4/`. The executing agent self-reviewed against the code-writing skill instead. **Reviews for this task remain outstanding**, same as Tasks 2 and 3's, and should be run before the feature is finalized.
+
+**Surfaced, not fixed (out of scope):**
+- The `syncOrderForm` gap Task 3 surfaced has its operations-side twin, and it is slightly sharper here. `syncOrderForm` (`Panel.jsx:1852`) reprojects `orderForm.operation_counts` onto the current operation names, but runs only on the settings-*load* path (`Panel.jsx:714`) — `handleSaveSettings` does not re-sync. Adding an operation is safe (the calculator reads `orderForm.operation_counts[name] || 0`), but if the admin gives a self-added operation a non-zero count in the calculator and then deletes that operation in Настройки, the stale count survives in `orderForm`, passes the `count > 0` filter at `Panel.jsx:1074-1075`, and the server rejects the whole calculation with `unknown operation` (`costing.go:452` and `costing.go:731`) until the page is reloaded. Fixing it means editing Task 2's `handleDeleteOperation`/`handleDeleteGarment` (explicitly out of this task's scope) and it is the same defect for garments, so it needs one feature-level decision rather than a unilateral fix in the last task that happened to touch the area.
+
+**Verification:**
+- `cd client && npx vitest run` → 32 passed (1 file), unchanged from Tasks 2/3 — this task added no pure logic
+- `cd client && npx vite build` → passes, no warnings (vite 5.4.21, 53 modules)
+- `git diff -U2` → exactly 4 hunks: the new component, plus one row edit and one form insertion in each of the two operation blocks; no line touching Изделия / `DiscountsBlock` / Task 2's shared code
+- `grep` of `OperationAddForm` / `DEFAULT_OPERATION_NAMES` call sites → exactly 2 JSX call sites each, one per calculator-mode branch; both read the same `settings.operations` object, so an add or delete is immediately visible after switching modes
+- Verify-user (browser check of add + save + reload in both modes, the three negative-value rejections, delete visibility on defaults vs. added rows) → PENDING, awaiting user
