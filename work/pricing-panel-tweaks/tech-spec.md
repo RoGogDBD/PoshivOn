@@ -39,6 +39,18 @@ used everywhere in calculation and storage — is never touched.
   new network calls, no new endpoints. Persistence rides the existing single
   `handleSaveSettings` → `POST /api/v1/users/settings` submit flow, exactly
   like every other field in this form already works.
+- The new discount tier's default range is fully computed, both ends: `min_qty
+  = last tier's max_qty + 1` **and** `max_qty = that same suggested min_qty`
+  (matching user-spec's AC exactly) — a form that only pre-fills `min_qty` and
+  leaves `max_qty` blank/zero would reintroduce the exact "invalid new row
+  blocks the whole save" problem user-spec spent 3 revision rounds closing.
+
+A small, targeted unit-test carve-out is added for the new pure validation
+logic (name-dedup check, numeric bound checks, default-name lists, discount
+default-range computation) — this project's client has no test infrastructure
+today, but adding `vitest` is near-zero marginal cost here (it reuses the
+existing Vite config) and directly guards the exact bug class user-spec's
+round-1 review found and fixed. See Testing Strategy and Decision 7.
 
 Because Изделия and Усложнения/Операции are each rendered twice in the JSX
 (once per calculator mode, with different field subsets per row — pre-existing
@@ -62,9 +74,9 @@ way (`DiscountsBlock`, called at both mode branches today).
   (Название, Надбавка %, Доп. минуты, Доп. материал/шт). Rendered once inside
   each of the two existing Усложнения/Операции blocks.
 - **Discount add-form (inline in `DiscountsBlock`)** — мин./макс. количество,
-  процент; defaults мин. = last tier's макс. + 1. `DiscountsBlock` is already
-  a single shared component called from both mode branches, so no extraction
-  is needed here.
+  процент; pre-filled via `getDefaultDiscountRange`. `DiscountsBlock` is
+  already a single shared component called from both mode branches, so no
+  extraction is needed here.
 - **`DeleteRowButton` (new small component)** — renders "Удалить" or nothing,
   based on an `isDeletable` boolean the caller computes (name-not-in-defaults
   for garments/operations; `batch_discounts.length > 1` for discounts).
@@ -75,7 +87,10 @@ way (`DiscountsBlock`, called at both mode branches today).
   `handleDeleteDiscount`) — added alongside the existing
   `handleGarmentChange`/`handleOperationSettingChange`/`handleDiscountChange`
   block (`Panel.jsx:479-548`), following their exact `setSettings((current) =>
-  ({...}))` immutable-update style.
+  ({...}))` immutable-update style. **All six handlers are written together in
+  one task** (see Task 2) to avoid three parallel tasks editing the same
+  contiguous line range — Wave 2 tasks only add JSX call-sites that invoke
+  these already-defined handlers, not the handlers themselves.
 - **`DEFAULT_GARMENT_NAMES` / `DEFAULT_OPERATION_NAMES` (new constants)** — the
   4 + 8 hardcoded default names, used only to compute delete-button
   visibility. Defined separately from the existing `defaultSettings` object
@@ -85,6 +100,10 @@ way (`DiscountsBlock`, called at both mode branches today).
   (trimmed, case-insensitive against existing `Object.keys(...)`) and numeric
   bound checks (`> 0` / `>= 0` / range, per field) for the add-forms. No
   validation library exists in this project; these are plain functions.
+- **`getDefaultDiscountRange(existingTiers)` (new helper)** — computes both
+  ends of the suggested new tier: `min_qty = last tier's max_qty + 1`,
+  `max_qty = that same min_qty` (not left blank/zero). Used to pre-fill the
+  discount add-form.
 
 ### How it works
 
@@ -148,7 +167,7 @@ not one of the 4/8 hardcoded default names. Default rows never get a delete
 control. Discount tiers can be deleted freely except the last remaining one.
 **Rationale:** [TECHNICAL, driven by a backend constraint discovered during
 user-spec adequacy validation] `normalizeSettings`
-(`server/internal/service/costing.go:659-690`) unconditionally re-merges the
+(`server/internal/service/costing.go:659-710`) unconditionally re-merges the
 4 default garments and 8 default operations into whatever is saved — a
 default-named row cannot be removed frontend-only, it silently reappears
 after save. An empty `batch_discounts` array is likewise replaced by 4
@@ -213,6 +232,29 @@ in place.
 add the separate name list — rejected as needless technical debt given the
 fix is trivial and was already found.
 
+### Decision 7: Targeted unit tests for the new validation logic, despite no test infra
+**Decision:** Add `vitest` as a devDependency and write one small test file
+covering the new pure functions only: name-dedup check, per-field numeric
+bound checks, `DEFAULT_GARMENT_NAMES`/`DEFAULT_OPERATION_NAMES` exact-match
+assertions, and `getDefaultDiscountRange`. No component/DOM testing, no
+`@testing-library/react`, no broader test-infra buildout.
+**Rationale:** Revises user-spec's original "no unit tests" Testing decision
+— surfaced during tech-spec validation (test-reviewer) and confirmed with the
+user. The original decision was made against a binary framing (stand up full
+test infra vs. nothing); this is a narrower middle option that wasn't
+previously on the table: `vitest` reuses this Vite project's existing config
+with near-zero marginal setup cost, and the functions being tested are the
+tech-spec's own top-named risk (`Risks` table row 3) — the exact bug class
+(`quick_price = 0` reaching production) that took a full round of user-spec
+revision to catch by inspection alone. A handful of pure-function assertions
+converts an authorship-time-only human check into a permanent regression
+guard, for a cost proportionate to the risk. → [PENDING USER APPROVAL — see
+User-Spec Deviations]
+**Alternatives considered:** No unit tests at all (user-spec's original
+decision) — superseded per above; full component-level testing with
+`@testing-library/react` — rejected as disproportionate, the risk lives in
+plain validation logic, not in rendering behavior.
+
 ## Data Models
 
 No DB schema changes. Existing shapes reused as-is (all already defined
@@ -245,14 +287,15 @@ removing one (where allowed — see Decision 3). `BatchDiscounts` is a plain
 ## Dependencies
 
 ### New packages
-None — no validation library is introduced; validation logic is written as
-plain local functions, matching this project's existing convention (no
-yup/zod/react-hook-form anywhere in `client/package.json`).
+- `vitest` (devDependency only) — targeted unit tests for the new pure
+  validation functions (Decision 7). Reuses the project's existing Vite
+  config; no `@testing-library/react` or other component-testing tooling is
+  added.
 
 ### Using existing (from project)
 - `SettingsSection`, `SettingsField`, `SettingsNumberInput` (`Panel.jsx:219-238`) — reused for new form fields, matching existing visual/structural conventions.
 - `settingsInputClass`, `settingsSectionClass` (`Panel.jsx:213-214` and nearby) — reused Tailwind class strings for the new text input and button styling.
-- `handleSaveSettings` / `saveUserSettings` (`Panel.jsx:550-566`, `client/src/utils/panelApi.js:41-46`) — existing whole-object save path, unchanged, reused as-is for add/delete persistence.
+- `handleSaveSettings` / `saveUserSettings` (`Panel.jsx:550-566`, `client/src/utils/panelApi.js:42-46`) — existing whole-object save path, unchanged, reused as-is for add/delete persistence.
 - `mapPanelError` (`Panel.jsx:1489-1494`) — existing error-to-message mapping, reused unchanged for any save-time failure after an add/delete.
 
 ## Testing Strategy
@@ -260,12 +303,24 @@ yup/zod/react-hook-form anywhere in `client/package.json`).
 **Feature size:** M
 
 ### Unit tests
-None. Per user-spec's explicit, validated decision: `client/` has zero test
-infrastructure (no vitest/jest, no `@testing-library`, no `test` script, no
-`*.test.*` file anywhere) and standing it up is consciously out of scope for
-this feature. All new logic (add/delete handlers, validation helpers) is
-plain client-only code covered by manual verification instead (see Agent
-Verification Plan / task Verify-user fields below).
+Targeted, not comprehensive (Decision 7): one new test file covering only
+the new pure validation logic —
+- name-dedup check: exact match, case-insensitive match, whitespace-padded
+  match all correctly flagged as duplicates; distinct names pass.
+- numeric bound checks: each field's boundary (`0` and just-below/above)
+  for garment (`quick_price`, `base_minutes`, `complexity_coeff`, all `> 0`),
+  operation (all fields `>= 0`), and discount (`min_qty > 0`,
+  `max_qty >= min_qty`, `0 <= percent <= 100`).
+- `DEFAULT_GARMENT_NAMES` (4 entries) and `DEFAULT_OPERATION_NAMES` (8
+  entries) exactly match the hardcoded list mirrored from
+  `server/internal/service/costing.go:227-242` — a direct regression guard
+  for the exact drift already found once in `defaultSettings.operations`.
+- `getDefaultDiscountRange`: returns `min_qty = max_qty last tier + 1`,
+  `max_qty = that same min_qty`.
+
+No React component/DOM tests — `GarmentAddForm`/`OperationAddForm`/
+`DeleteRowButton` rendering and wiring are covered by manual verification
+only (see task `Verify-user` fields), not by this test file.
 
 ### Integration tests
 None — no new backend endpoints, no schema change, no cross-service
@@ -276,8 +331,8 @@ interaction introduced. Existing backend validation (`validateSettings`,
 ### E2E tests
 None — this is a frontend-only settings-panel change on top of an already
 end-to-end-working save flow; manual verification against the live/dev panel
-(per user-spec "How to Verify") is proportionate for size M without new
-architecture.
+(per user-spec "How to Verify", extended per-task below) is proportionate for
+size M without new architecture.
 
 ## Agent Verification Plan
 
@@ -301,9 +356,12 @@ feature.
 |------|-----------|
 | Delete button implemented against the stale `defaultSettings` constant (only 6 of 8 default operations) instead of the correct 4+8 name list, leaving "Шлица"/"Декоративная отстрочка" with a silently-broken delete button | Task explicitly defines `DEFAULT_GARMENT_NAMES`/`DEFAULT_OPERATION_NAMES` as new constants cross-checked against `server/internal/service/costing.go:227-242`, not derived from `defaultSettings`; Decision 6 also fixes `defaultSettings.operations` itself |
 | Изделия/Усложнения add-form or delete-button implemented in only one of the two mode-branch render sites, working in one calculator mode but not the other | Decision 5 + task file-scoping explicitly call out both insertion points (quick-mode and masterpiece-mode branches) for each new component |
-| Client-side validation drifts from backend `validateSettings` bounds (e.g. allows `quick_price = 0`), reintroducing the round-1 silent-price-break bug | Task Description and AC directly enumerate the exact bounds (`> 0` / `>= 0` / range) matching `costing.go`; code-reviewer + security-auditor review each add-form task |
+| Client-side validation drifts from backend `validateSettings` bounds (e.g. allows `quick_price = 0`), reintroducing the round-1 silent-price-break bug | Task Description and AC directly enumerate the exact bounds (`> 0` / `>= 0` / range) matching `costing.go`; code-reviewer + security-auditor review each add-form task; **also** covered by permanent regression-guarding unit tests (Decision 7), not just one-time authorship review |
 | A bad new discount tier (or any invalid new row) blocks saving the *entire* settings object, including unrelated edits made in the same session | Client-side pre-submit validation on the add-form prevents ever submitting an out-of-bounds row; existing `mapPanelError` surfaces any backend-side rejection unchanged, no silent failure |
 | Live production panel — a regression in this file could break the pricing panel for all current users | Small, additive, well-scoped changes to one file; existing edit/save behavior for all other fields is left untouched; manual verification checklist (user-spec) run before considering the feature done |
+| Deleting a middle discount tier leaves a "hole" — quantities in the gap silently get 0% discount instead of an error | Accepted per user-spec Constraints (no continuity check is in scope); documented here so it reads as a conscious decision, not an overlooked bug, for future readers |
+| Deleting a garment/operation referenced by a previously-saved chat calculation may cause its recalculation to fail | Accepted per user-spec Constraints (out of scope to prevent); existing saved calculations are unaffected, only re-calculation of an order referencing the deleted item is impacted |
+| Garment/operation names typed via the new add-forms flow unescaped into an AI market-feedback prompt (`server/internal/deepseek.go:404-406`) — pre-existing backend behavior (names were never content-restricted), but this feature makes it reachable via a discoverable UI action instead of only a hand-crafted API call | No code change — backend trust boundary is unchanged and blast radius is self-scoped (affects only the same user's own AI feedback); noted here per security review so it's a documented, conscious acceptance rather than an unreviewed gap |
 
 ## User-Spec Deviations
 
@@ -314,6 +372,15 @@ list for the delete check and explicitly says not to derive that list from
 (Decision 6), since the drift was discovered as a direct byproduct of this
 feature's own code research and the fix is a one-line-per-entry, zero-risk
 addition to a pre-load fallback object. → [PENDING USER APPROVAL]
+
+**Changed: unit tests added (user-spec said "none")** — user-spec's Testing
+section explicitly stated no unit tests, validated twice during user-spec
+review against a "stand up full test infra vs. nothing" framing. Tech-spec
+Decision 7 adds a narrow `vitest` carve-out (2-3 pure functions only, no
+component testing) after this was raised during tech-spec validation and
+confirmed directly with the user as a distinct, cheaper middle option not
+previously on the table. → **user-approved during tech-spec validation
+(2026-08-15)**
 
 ## Acceptance Criteria
 
@@ -326,6 +393,8 @@ this feature's behavior):
 - [ ] `DEFAULT_GARMENT_NAMES` (4 entries) and `DEFAULT_OPERATION_NAMES` (8 entries) exactly match `DefaultUserSettings()` in `server/internal/service/costing.go:227-242`.
 - [ ] Client-side validation bounds for the add-forms are equal to or stricter than backend `validateSettings` bounds (`costing.go`) for every field.
 - [ ] `GarmentAddForm`/`OperationAddForm`/`DeleteRowButton` render correctly in both calculator mode branches (quick and masterpiece) — no duplicate/divergent behavior between the two call sites.
+- [ ] `getDefaultDiscountRange` pre-fills both `min_qty` and `max_qty` (not just `min_qty`) — a freshly-opened discount add-form must never default to an invalid/blank range.
+- [ ] `npx vitest run` passes for the new validation-logic test file (Decision 7).
 - [ ] No regressions in existing settings fields (materials, urgency, market bands, existing garment/operation/discount edit inputs) — manual smoke check per user-spec "How to Verify".
 
 ## Implementation Tasks
@@ -348,38 +417,41 @@ this feature's behavior):
 - **Files to modify:** `client/src/pages/Panel.jsx` (lines ~83-94 `calculatorModes`, ~798 fallback string, ~1260 `DiscountsBlock` title)
 - **Files to read:** none beyond the file being modified
 
-#### Task 2: Add-row/delete-row foundation — constants, validation helpers, shared components
-- **Description:** Add `DEFAULT_GARMENT_NAMES` (4 entries) and `DEFAULT_OPERATION_NAMES` (8 entries) constants matching the server's `DefaultUserSettings()` exactly; fix the 2 missing entries in the existing `defaultSettings.operations` object; write the name-dedup (trimmed, case-insensitive) and numeric-bound validation helper functions shared by all three add-forms; create the `DeleteRowButton` component (renders nothing when not deletable). This is shared foundation for Wave 2's three section tasks — no UI wiring yet.
+### Wave 2 (depends on Wave 1 — sequenced, not parallel, purely to keep Task 2's edits at `Panel.jsx:96-192`/`479-548` from landing in the same diff pass as Task 1's adjacent `83-94`/`798` edits; there is no logical dependency between them)
+
+#### Task 2: Add/delete foundation — constants, handlers, validation, unit tests
+- **Description:** Add `DEFAULT_GARMENT_NAMES` (4 entries) and `DEFAULT_OPERATION_NAMES` (8 entries) constants matching the server's `DefaultUserSettings()` exactly, and fix the 2 missing entries in the existing `defaultSettings.operations` object. Write the name-dedup (trimmed, case-insensitive) and per-field numeric-bound validation helpers, plus `getDefaultDiscountRange` (computes both `min_qty` and `max_qty` for a new tier). Write all six new handlers (`handleAddGarment`, `handleDeleteGarment`, `handleAddOperation`, `handleDeleteOperation`, `handleAddDiscount`, `handleDeleteDiscount`) in the existing handlers block. Create the `DeleteRowButton` component. Add `vitest` and one test file covering the new validation helpers, name-list constants, and `getDefaultDiscountRange`. This is the complete foundation for Wave 3 — all shared logic and all six handlers live here so Wave 3's three tasks only add JSX call-sites, not shared code, avoiding parallel edits to the same lines.
 - **Skill:** code-writing
 - **Reviewers:** code-reviewer, security-auditor, test-reviewer
-- **Files to modify:** `client/src/pages/Panel.jsx` (new constants/helpers/component near existing `defaultSettings` and shared-component definitions)
+- **Verify-smoke:** `npx vitest run` (new test file passes)
+- **Files to modify:** `client/src/pages/Panel.jsx` (new constants/helpers/handlers/component near `defaultSettings` at ~96-192 and the existing handlers block at ~479-548), `client/package.json` (add `vitest` devDependency), new test file (e.g. `client/src/pages/Panel.validation.test.js`)
 - **Files to read:** `server/internal/service/costing.go` (lines 227-242, 593-654 — exact default names and validation bounds to mirror)
 
-### Wave 2 (depends on Wave 1 Task 2)
+### Wave 3 (depends on Wave 2)
 
 #### Task 3: Add/delete rows — Изделия (Increment 2)
-- **Description:** Build `GarmentAddForm` (Название, Мин. цена/шт, База/мин, Коэфф. сложности — all fields always, client-validated: name required+non-duplicate, all numeric fields > 0) and wire `handleAddGarment`/`handleDeleteGarment`. Render the add-form once inside each of the two existing Изделия `SettingsSection` blocks (quick and masterpiece mode); render `DeleteRowButton` in each existing per-row block, gated on the row's name not being in `DEFAULT_GARMENT_NAMES`.
+- **Description:** Build `GarmentAddForm` (Название, Мин. цена/шт, База/мин, Коэфф. сложности — all fields always) using Task 2's validation helpers and calling Task 2's `handleAddGarment`. Render the add-form once inside each of the two existing Изделия `SettingsSection` blocks (quick and masterpiece mode); render `DeleteRowButton` (calling `handleDeleteGarment`) in each existing per-row block, gated on the row's name not being in `DEFAULT_GARMENT_NAMES`.
 - **Skill:** code-writing
 - **Reviewers:** code-reviewer, security-auditor, test-reviewer
-- **Verify-user:** on the panel, add a new item via "Добавить" in Изделия, save, reload, confirm it persists and prices correctly in both calculator modes; confirm no delete button on the 4 default items and a working one on the new item — per user-spec "How to Verify → Инкремент 2".
-- **Files to modify:** `client/src/pages/Panel.jsx` (Изделия blocks, quick mode ~845-886, masterpiece mode ~888-1003; new handlers near ~479-548)
-- **Files to read:** `client/src/pages/Panel.jsx` (Task 2's new constants/helpers/`DeleteRowButton`)
+- **Verify-user:** on the panel, add a new item via "Добавить" in Изделия, save, reload, confirm it persists and prices correctly in both calculator modes; try entering `0` in each of Мин. цена/шт, База/мин, Коэфф. сложности and confirm each is rejected; confirm no delete button on the 4 default items and a working one on the new item — per user-spec "How to Verify → Инкремент 2".
+- **Files to modify:** `client/src/pages/Panel.jsx` (Изделия blocks only: quick mode ~845-886, masterpiece mode ~888-1003)
+- **Files to read:** `client/src/pages/Panel.jsx` (Task 2's constants/helpers/handlers/`DeleteRowButton`)
 
 #### Task 4: Add/delete rows — Усложнения/Операции (Increment 2)
-- **Description:** Build `OperationAddForm` (Название, Надбавка %, Доп. минуты, Доп. материал/шт — all fields always, client-validated: name required+non-duplicate, numeric fields >= 0) and wire `handleAddOperation`/`handleDeleteOperation`. Render the add-form once inside each of the two existing Усложнения/Операции `SettingsSection` blocks; render `DeleteRowButton` in each existing per-row block, gated on the row's name not being in `DEFAULT_OPERATION_NAMES`.
+- **Description:** Build `OperationAddForm` (Название, Надбавка %, Доп. минуты, Доп. материал/шт — all fields always) using Task 2's validation helpers and calling Task 2's `handleAddOperation`. Render the add-form once inside each of the two existing Усложнения/Операции `SettingsSection` blocks; render `DeleteRowButton` (calling `handleDeleteOperation`) in each existing per-row block, gated on the row's name not being in `DEFAULT_OPERATION_NAMES`.
 - **Skill:** code-writing
 - **Reviewers:** code-reviewer, security-auditor, test-reviewer
-- **Verify-user:** same as Task 3, applied to Усложнения — per user-spec "How to Verify → Инкремент 2".
-- **Files to modify:** `client/src/pages/Panel.jsx` (Усложнения/Операции blocks, quick mode ~866-883, masterpiece mode ~925-945; new handlers near ~479-548)
-- **Files to read:** `client/src/pages/Panel.jsx` (Task 2's new constants/helpers/`DeleteRowButton`)
+- **Verify-user:** on the panel, add a new item via "Добавить" in Усложнения, save, reload, confirm it persists in both calculator modes; try entering a negative value in each of Надбавка %, Доп. минуты, Доп. материал/шт and confirm each is rejected; confirm no delete button on the 8 default items and a working one on the new item — per user-spec "How to Verify → Инкремент 2".
+- **Files to modify:** `client/src/pages/Panel.jsx` (Усложнения/Операции blocks only: quick mode ~866-883, masterpiece mode ~925-945)
+- **Files to read:** `client/src/pages/Panel.jsx` (Task 2's constants/helpers/handlers/`DeleteRowButton`)
 
 #### Task 5: Add/delete rows — Скидки за количество (Increment 2)
-- **Description:** Add an inline add-form to `DiscountsBlock` (мин./макс. количество, процент — client-validated: min_qty > 0, max_qty >= min_qty, 0 <= percent <= 100; default min_qty pre-filled as last tier's max_qty + 1) and wire `handleAddDiscount`/`handleDeleteDiscount`. Render `DeleteRowButton` per existing discount row, disabled when it's the last remaining tier (`batch_discounts.length > 1` gate).
+- **Description:** Add an inline add-form to `DiscountsBlock` (мин./макс. количество, процент), pre-filled via Task 2's `getDefaultDiscountRange` and calling Task 2's `handleAddDiscount`. Render `DeleteRowButton` (calling `handleDeleteDiscount`) per existing discount row, disabled when it's the last remaining tier (`batch_discounts.length > 1` gate).
 - **Skill:** code-writing
 - **Reviewers:** code-reviewer, security-auditor, test-reviewer
-- **Verify-user:** add a discount tier with the suggested default range, save, reload, confirm it persists; confirm the delete button is disabled on the last remaining tier — per user-spec "How to Verify → Инкремент 2".
-- **Files to modify:** `client/src/pages/Panel.jsx` (`DiscountsBlock`, ~1258-1282; new handlers near ~479-548)
-- **Files to read:** `client/src/pages/Panel.jsx` (Task 2's new constants/helpers/`DeleteRowButton`)
+- **Verify-user:** add a discount tier with the suggested default range, save, reload, confirm it persists; add two more tiers, delete the *middle* one, save, reload, confirm exactly that tier is gone and the others are unchanged; try `max_qty` below `min_qty` and `percent` outside 0-100, confirm both rejected; confirm the delete button is disabled on the last remaining tier — per user-spec "How to Verify → Инкремент 2".
+- **Files to modify:** `client/src/pages/Panel.jsx` (`DiscountsBlock` only, ~1258-1282)
+- **Files to read:** `client/src/pages/Panel.jsx` (Task 2's constants/helpers/handlers/`DeleteRowButton`)
 
 ### Audit Wave
 
@@ -397,7 +469,7 @@ this feature's behavior):
 - **Reviewers:** none
 
 #### Task N: Test Audit
-- **Description:** Full-feature test quality audit. Read all files modified in this feature (`client/src/pages/Panel.jsx`). Given the feature has no automated tests by design (see Testing Strategy), verify this is genuinely appropriate for the code's actual risk profile and that the manual verification checklist (user-spec "How to Verify") adequately covers the new logic (validation bounds, dedup, delete-scope gating). Write audit report.
+- **Description:** Full-feature test quality audit. Read all files modified in this feature (`client/src/pages/Panel.jsx`, the new `vitest` test file). Verify the targeted unit tests (Decision 7) actually cover every documented validation bound and default-name list, that no assertion is trivial/tautological, and that the deliberately-untested surface (component rendering/wiring) is genuinely adequately covered by the manual verification checklist (user-spec "How to Verify", extended per Wave 3 `Verify-user` fields). Write audit report.
 - **Skill:** test-master
 - **Reviewers:** none
 
@@ -409,6 +481,6 @@ this feature's behavior):
      out any MCP/live-environment check (no agent-accessible authenticated session). -->
 
 #### Task N: Pre-deploy QA
-- **Description:** Acceptance testing: verify all acceptance criteria from user-spec (both increments) and this tech-spec are met. No automated test suite to run for this feature (by design); confirm the manual verification checklist in user-spec "How to Verify" has been walked through and reflects the actual implemented behavior.
+- **Description:** Acceptance testing: run `npx vitest run` and verify all acceptance criteria from user-spec (both increments) and this tech-spec are met. Confirm the manual verification checklist in user-spec "How to Verify" (extended per Wave 3 `Verify-user` fields) has been walked through and reflects the actual implemented behavior.
 - **Skill:** pre-deploy-qa
 - **Reviewers:** none
