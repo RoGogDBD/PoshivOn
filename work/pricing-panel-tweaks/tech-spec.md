@@ -1,6 +1,6 @@
 ---
 created: 2026-08-15
-status: draft
+status: approved
 branch: dev
 size: M
 ---
@@ -371,7 +371,8 @@ list for the delete check and explicitly says not to derive that list from
 `defaultSettings`. Tech-spec additionally corrects `defaultSettings` itself
 (Decision 6), since the drift was discovered as a direct byproduct of this
 feature's own code research and the fix is a one-line-per-entry, zero-risk
-addition to a pre-load fallback object. → [PENDING USER APPROVAL]
+addition to a pre-load fallback object. → **user-approved
+(2026-08-15)**
 
 **Changed: unit tests added (user-spec said "none")** — user-spec's Testing
 section explicitly stated no unit tests, validated twice during user-spec
