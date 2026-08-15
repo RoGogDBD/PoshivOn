@@ -248,8 +248,8 @@ tech-spec's own top-named risk (`Risks` table row 3) — the exact bug class
 (`quick_price = 0` reaching production) that took a full round of user-spec
 revision to catch by inspection alone. A handful of pure-function assertions
 converts an authorship-time-only human check into a permanent regression
-guard, for a cost proportionate to the risk. → [PENDING USER APPROVAL — see
-User-Spec Deviations]
+guard, for a cost proportionate to the risk. → user-approved during tech-spec
+validation (2026-08-15) — see User-Spec Deviations
 **Alternatives considered:** No unit tests at all (user-spec's original
 decision) — superseded per above; full component-level testing with
 `@testing-library/react` — rejected as disproportionate, the risk lives in
@@ -420,7 +420,7 @@ this feature's behavior):
 ### Wave 2 (depends on Wave 1 — sequenced, not parallel, purely to keep Task 2's edits at `Panel.jsx:96-192`/`479-548` from landing in the same diff pass as Task 1's adjacent `83-94`/`798` edits; there is no logical dependency between them)
 
 #### Task 2: Add/delete foundation — constants, handlers, validation, unit tests
-- **Description:** Add `DEFAULT_GARMENT_NAMES` (4 entries) and `DEFAULT_OPERATION_NAMES` (8 entries) constants matching the server's `DefaultUserSettings()` exactly, and fix the 2 missing entries in the existing `defaultSettings.operations` object. Write the name-dedup (trimmed, case-insensitive) and per-field numeric-bound validation helpers, plus `getDefaultDiscountRange` (computes both `min_qty` and `max_qty` for a new tier). Write all six new handlers (`handleAddGarment`, `handleDeleteGarment`, `handleAddOperation`, `handleDeleteOperation`, `handleAddDiscount`, `handleDeleteDiscount`) in the existing handlers block. Create the `DeleteRowButton` component. Add `vitest` and one test file covering the new validation helpers, name-list constants, and `getDefaultDiscountRange`. This is the complete foundation for Wave 3 — all shared logic and all six handlers live here so Wave 3's three tasks only add JSX call-sites, not shared code, avoiding parallel edits to the same lines.
+- **Description:** Add the default-name constants, validation helpers (name-dedup, numeric bounds, `getDefaultDiscountRange`), all six new handlers, and the `DeleteRowButton` component — the complete shared foundation for Wave 3. Also fix the 2 missing entries in `defaultSettings.operations` and add `vitest` with one test file covering the new validation logic. Concentrating all shared logic and handlers here means Wave 3's three tasks only add JSX call-sites, not shared code, which is what avoids parallel edits to the same lines.
 - **Skill:** code-writing
 - **Reviewers:** code-reviewer, security-auditor, test-reviewer
 - **Verify-smoke:** `npx vitest run` (new test file passes)
@@ -434,7 +434,7 @@ this feature's behavior):
 - **Skill:** code-writing
 - **Reviewers:** code-reviewer, security-auditor, test-reviewer
 - **Verify-user:** on the panel, add a new item via "Добавить" in Изделия, save, reload, confirm it persists and prices correctly in both calculator modes; try entering `0` in each of Мин. цена/шт, База/мин, Коэфф. сложности and confirm each is rejected; confirm no delete button on the 4 default items and a working one on the new item — per user-spec "How to Verify → Инкремент 2".
-- **Files to modify:** `client/src/pages/Panel.jsx` (Изделия blocks only: quick mode ~845-886, masterpiece mode ~888-1003)
+- **Files to modify:** `client/src/pages/Panel.jsx` (Изделия `SettingsSection` only, within the larger quick/masterpiece branches: quick mode ~847-864, masterpiece mode ~903-923 — not the Усложнения/Операции sub-ranges within the same branches, those belong to Task 4)
 - **Files to read:** `client/src/pages/Panel.jsx` (Task 2's constants/helpers/handlers/`DeleteRowButton`)
 
 #### Task 4: Add/delete rows — Усложнения/Операции (Increment 2)
