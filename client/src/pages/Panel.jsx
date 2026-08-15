@@ -93,7 +93,25 @@ const calculatorModes = [
   },
 ];
 
-const defaultSettings = {
+// DEFAULT_GARMENT_NAMES / DEFAULT_OPERATION_NAMES — имена изделий и операций из серверного
+// DefaultUserSettings() (server/internal/service/costing.go:227-242). Нужны только для одного:
+// решить, можно ли удалять строку (дефолтные удалять нельзя). Список задан отдельно, а не выведен
+// из defaultSettings ниже, именно потому что defaultSettings уже один раз разъехался с сервером
+// (в operations не хватало двух записей) — отдельный явный список ловит такой дрейф тестом.
+export const DEFAULT_GARMENT_NAMES = ["Пиджак", "Юбка", "Рубашка", "Платье"];
+
+export const DEFAULT_OPERATION_NAMES = [
+  "Карман накладной",
+  "Карман прорезной",
+  "Подклад",
+  "Потайная молния",
+  "Воротник",
+  "Манжеты",
+  "Шлица",
+  "Декоративная отстрочка",
+];
+
+export const defaultSettings = {
   pricing_rules: {
     calculator_mode: "masterpiece",
     labor_minute_rate: 18,
@@ -122,6 +140,8 @@ const defaultSettings = {
     "Потайная молния": { additional_minutes: 12, additional_material_per_unit: 120, quick_percent: 6 },
     Воротник: { additional_minutes: 20, additional_material_per_unit: 90, quick_percent: 10 },
     Манжеты: { additional_minutes: 15, additional_material_per_unit: 70, quick_percent: 8 },
+    Шлица: { additional_minutes: 18, additional_material_per_unit: 50, quick_percent: 7 },
+    "Декоративная отстрочка": { additional_minutes: 18, additional_material_per_unit: 0, quick_percent: 5 },
   },
   materials: {
     Хлопок: {
@@ -191,6 +211,111 @@ const defaultSettings = {
   },
 };
 
+// --- Валидация форм добавления строк (Изделия / Усложнения / Скидки) --------------------
+//
+// Библиотеки валидации в проекте нет, поэтому это обычные чистые функции. Границы зеркалят
+// серверный validateSettings (server/internal/service/costing.go:593-657) и там, где нужно,
+// строже него: quick_price сервер при сохранении пускает от 0, но быстрый расчёт
+// (costing.go:720-721) на quick_price <= 0 падает — значит клиент не должен давать создать
+// такое изделие вообще.
+//
+// Отдельно от привычного в этом файле `Number(value) || 0`: тот паттерн молча превращает
+// пустую строку и мусор в 0, а 0 — как раз одно из значений, которые здесь надо отклонять.
+
+// toFiniteNumber — строгое приведение значения из input к числу: пустая строка, пробелы,
+// null/undefined и нечисловой текст дают NaN, а не 0.
+const toFiniteNumber = (value) => {
+  if (typeof value === "number") {
+    return value;
+  }
+  if (typeof value === "string" && value.trim() !== "") {
+    return Number(value);
+  }
+  return NaN;
+};
+
+const isPositiveNumber = (value) => {
+  const parsed = toFiniteNumber(value);
+  return Number.isFinite(parsed) && parsed > 0;
+};
+
+const isNonNegativeNumber = (value) => {
+  const parsed = toFiniteNumber(value);
+  return Number.isFinite(parsed) && parsed >= 0;
+};
+
+// isBlankName — зеркало серверной проверки strings.TrimSpace(name) == "".
+export const isBlankName = (name) => String(name ?? "").trim() === "";
+
+// isDuplicateName — есть ли уже такой ключ в settings.garments / settings.operations.
+// Сравнение по trim + lowerCase с обеих сторон: «пиджак», « Пиджак » и «Пиджак» — одно и то же.
+export const isDuplicateName = (name, existingEntries) => {
+  const candidate = String(name ?? "").trim().toLowerCase();
+  if (candidate === "") {
+    return false;
+  }
+  return Object.keys(existingEntries || {}).some((key) => key.trim().toLowerCase() === candidate);
+};
+
+// Валидаторы возвращают { valid, errors }, где errors — карта «поле → сообщение».
+// Проверяются все поля сразу, чтобы форма могла подсветить каждое, а не только первое.
+const buildValidationResult = (errors) => ({ valid: Object.keys(errors).length === 0, errors });
+
+export const validateGarmentFields = (fields = {}) => {
+  const errors = {};
+  if (!isPositiveNumber(fields.base_minutes)) {
+    errors.base_minutes = "База/мин должна быть больше 0";
+  }
+  if (!isPositiveNumber(fields.complexity_coeff)) {
+    errors.complexity_coeff = "Коэффициент сложности должен быть больше 0";
+  }
+  if (!isPositiveNumber(fields.quick_price)) {
+    errors.quick_price = "Мин. цена / шт должна быть больше 0";
+  }
+  return buildValidationResult(errors);
+};
+
+export const validateOperationFields = (fields = {}) => {
+  const errors = {};
+  if (!isNonNegativeNumber(fields.additional_minutes)) {
+    errors.additional_minutes = "Доп. минуты не могут быть меньше 0";
+  }
+  if (!isNonNegativeNumber(fields.additional_material_per_unit)) {
+    errors.additional_material_per_unit = "Доп. материал / шт не может быть меньше 0";
+  }
+  if (!isNonNegativeNumber(fields.quick_percent)) {
+    errors.quick_percent = "Надбавка, % не может быть меньше 0";
+  }
+  return buildValidationResult(errors);
+};
+
+export const validateDiscountFields = (fields = {}) => {
+  const errors = {};
+  if (!isPositiveNumber(fields.min_qty)) {
+    errors.min_qty = "«От» должно быть больше 0";
+  }
+  if (!isPositiveNumber(fields.max_qty)) {
+    errors.max_qty = "«До» должно быть больше 0";
+  } else if (isPositiveNumber(fields.min_qty) && toFiniteNumber(fields.max_qty) < toFiniteNumber(fields.min_qty)) {
+    errors.max_qty = "«До» не может быть меньше «От»";
+  }
+  const percent = toFiniteNumber(fields.percent);
+  if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
+    errors.percent = "Скидка должна быть от 0 до 100 %";
+  }
+  return buildValidationResult(errors);
+};
+
+// getDefaultDiscountRange — подсказка для формы добавления скидки: следующий диапазон
+// начинается сразу за последним существующим. Возвращает оба конца: пустое или нулевое
+// max_qty сделало бы всю форму настроек несохраняемой (сервер требует max_qty >= min_qty).
+export const getDefaultDiscountRange = (existingTiers) => {
+  const tiers = Array.isArray(existingTiers) ? existingTiers : [];
+  const lastMaxQty = toFiniteNumber(tiers[tiers.length - 1]?.max_qty);
+  const nextMinQty = Number.isFinite(lastMaxQty) && lastMaxQty >= 0 ? Math.floor(lastMaxQty) + 1 : 1;
+  return { min_qty: nextMinQty, max_qty: nextMinQty };
+};
+
 const createDefaultOrderForm = (settings = defaultSettings) => ({
   garment_type: Object.keys(settings.garments)[0] || "",
   material_type: Object.keys(settings.materials)[0] || "",
@@ -236,6 +361,27 @@ const SettingsField = ({ label, children, className = "" }) => (
 );
 
 const SettingsNumberInput = (props) => <input className={settingsInputClass} type="number" {...props} />;
+
+// DeleteRowButton — кнопка удаления строки настроек. Показывается только когда isDeletable:
+// дефолтные изделия/операции и последний диапазон скидок удалять нельзя, и решает это
+// вызывающая сторона. type="button" обязателен — кнопка живёт внутри формы настроек,
+// иначе клик отправил бы handleSaveSettings. Своего цвета «опасного действия» в теме нет
+// (--settings-danger в index.css отсутствует), поэтому стиль приглушённый, на токенах инпута.
+const DeleteRowButton = ({ isDeletable, onDelete }) => {
+  if (!isDeletable) {
+    return null;
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onDelete}
+      className="h-11 rounded-2xl border px-4 text-sm font-medium text-[color:var(--settings-muted)] transition [border-color:var(--settings-input-border)] [background:var(--settings-input-bg)] hover:text-[color:var(--settings-text)] hover:[border-color:var(--settings-accent)] focus:outline-none focus:ring-4 focus:ring-[color:var(--settings-focus)]"
+    >
+      Удалить
+    </button>
+  );
+};
 
 // hasPanelAccess — клиентское зеркало серверного правила has_access || role == admin
 // (Decision 10). Держится в одном месте: настоящую авторизацию всё равно делает сервер,
@@ -499,6 +645,60 @@ const Panel = () => {
           [key]: Number(value) || 0,
         },
       },
+    }));
+  };
+
+  // Добавление и удаление строк настроек. Валидацию делают формы добавления (Wave 3) через
+  // isBlankName / isDuplicateName / validateGarmentFields / validateOperationFields /
+  // validateDiscountFields — сюда значения приходят уже проверенными, обработчик только пишет
+  // в состояние. Контракт для вызывающей стороны: name передавать уже обрезанным (name.trim()),
+  // иначе ключом изделия/операции станет строка с пробелами по краям. Сохранение на сервер
+  // по-прежнему делает общая кнопка «Сохранить изменения».
+  const handleAddGarment = (name, fields) => {
+    setSettings((current) => ({
+      ...current,
+      garments: {
+        ...current.garments,
+        [name]: fields,
+      },
+    }));
+  };
+
+  const handleDeleteGarment = (name) => {
+    setSettings((current) => ({
+      ...current,
+      garments: Object.fromEntries(Object.entries(current.garments).filter(([key]) => key !== name)),
+    }));
+  };
+
+  const handleAddOperation = (name, fields) => {
+    setSettings((current) => ({
+      ...current,
+      operations: {
+        ...current.operations,
+        [name]: fields,
+      },
+    }));
+  };
+
+  const handleDeleteOperation = (name) => {
+    setSettings((current) => ({
+      ...current,
+      operations: Object.fromEntries(Object.entries(current.operations).filter(([key]) => key !== name)),
+    }));
+  };
+
+  const handleAddDiscount = (fields) => {
+    setSettings((current) => ({
+      ...current,
+      batch_discounts: [...current.batch_discounts, fields],
+    }));
+  };
+
+  const handleDeleteDiscount = (index) => {
+    setSettings((current) => ({
+      ...current,
+      batch_discounts: current.batch_discounts.filter((_, itemIndex) => itemIndex !== index),
     }));
   };
 
