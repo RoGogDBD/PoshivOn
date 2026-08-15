@@ -1,0 +1,54 @@
+{
+  "task": "Task 2: Add/delete foundation — constants, handlers, validation, unit tests",
+  "feature": "pricing-panel-tweaks",
+  "commit_reviewed": "6517d72",
+  "reviewer": "code-reviewer",
+  "round": 1,
+  "verdict": "pass",
+  "summary": "All six handlers correctly follow the existing setSettings immutable-update pattern. All four validation helpers and getDefaultDiscountRange implement the exact bounds/behavior specified in the task, and match server-side validateSettings (costing.go) equal-or-stricter as required (quick_price > 0 client-side vs backend's >= 0, correctly justified by the quick-mode calculation's stricter runtime check). DEFAULT_GARMENT_NAMES/DEFAULT_OPERATION_NAMES exactly match DefaultUserSettings() (verified against server/internal/service/costing.go:227-242). defaultSettings.operations now has all 8 entries with correct values. DeleteRowButton is a small, reasonably implemented component (type=\"button\" correctly set to avoid triggering form submit, uses existing input-border tokens since no danger color token exists, gated on isDeletable). No JSX call-sites were added (correctly out of scope per task step 9 — verified via grep, none of the 6 handlers or DeleteRowButton are referenced in the render tree). vitest added as devDependency only, no @testing-library/react. npx vitest run passes: 32/32 tests, no trivial/tautological assertions. No unrelated files touched beyond the expected scope.",
+  "findings": [
+    {
+      "id": 1,
+      "severity": "minor",
+      "dimension": "readability",
+      "location": "client/src/pages/Panel.jsx:294-301 (validateDiscountFields)",
+      "description": "isPositiveNumber(fields.min_qty) is computed twice — once in the first `if` block (line 294) and again inside the `else if` condition on line 299 — instead of storing the boolean once. Purely a micro-redundancy on a cheap pure function; has no correctness or measurable performance impact.",
+      "recommendation": "Optional: hoist `const minQtyValid = isPositiveNumber(fields.min_qty);` once and reuse it in both branches for slightly tighter code. Not worth blocking on."
+    },
+    {
+      "id": 2,
+      "severity": "minor",
+      "dimension": "readability",
+      "location": "client/src/pages/Panel.jsx:264-270, 356-361 vs error messages",
+      "description": "Error-message wording for base_minutes uses \"База/мин\" (slash) while the existing edit-row UI label for the same field elsewhere in the file uses \"База, мин\" (comma) (Panel.jsx:1114). Cosmetic inconsistency only — these add-form validation messages aren't wired to any UI yet (that's Wave 3), so it's cheap to align now or fix when Wave 3 builds GarmentAddForm.",
+      "recommendation": "When Wave 3 wires the add-form, make sure the field label and its validation-error text use the same punctuation/wording so the two don't visually clash on screen."
+    },
+    {
+      "id": 3,
+      "severity": "minor",
+      "dimension": "readability / DRY",
+      "location": "client/src/pages/Panel.jsx:370-384 (DeleteRowButton)",
+      "description": "DeleteRowButton's className string duplicates most of settingsInputClass's border/background/focus-ring tokens by hand rather than composing off the shared constant (adds hover states and a different text color, drops w-full and placeholder styling, which is legitimate given it's a button not an input — but the shared border/background/focus-ring tokens are copy-pasted rather than referenced).",
+      "recommendation": "Non-blocking. If a second button ever needs this same muted/outline treatment, consider extracting a small shared base class (e.g. `settingsButtonMutedClass`) rather than a third copy-paste."
+    }
+  ],
+  "verified_checks": [
+    "6 new handlers (handleAddGarment, handleDeleteGarment, handleAddOperation, handleDeleteOperation, handleAddDiscount, handleDeleteDiscount) all use setSettings((current) => ({...current, ...})) immutable spread, matching handleGarmentChange/handleOperationSettingChange/handleDiscountChange style exactly",
+    "handleAddGarment/handleAddOperation do not re-validate, only write — per task step 5 contract",
+    "handleDeleteGarment/handleDeleteOperation use Object.fromEntries(Object.entries(...).filter(...)) as specified",
+    "handleAddDiscount appends via [...current.batch_discounts, fields]; handleDeleteDiscount filters by index — matches spec exactly",
+    "DEFAULT_GARMENT_NAMES (4) and DEFAULT_OPERATION_NAMES (8) verified byte-for-byte against server/internal/service/costing.go:227-242 (DefaultUserSettings) via direct source read",
+    "defaultSettings.operations now includes Шлица (18/50/7) and Декоративная отстрочка (18/0/5), matching server exactly",
+    "validateGarmentFields: base_minutes>0, complexity_coeff>0, quick_price>0 — cross-checked against costing.go validateSettings (base_minutes<=0/complexity_coeff<=0 reject) and calculateQuickInChat's `garment.QuickPrice <= 0` guard (costing.go ~712) justifying the client's stricter-than-save-time quick_price>0 rule",
+    "validateOperationFields: additional_minutes>=0, additional_material_per_unit>=0, quick_percent>=0 — matches costing.go's `< 0` rejections exactly",
+    "validateDiscountFields: min_qty>0, max_qty>=min_qty, 0<=percent<=100 — matches costing.go's tier.MinQty<=0 / tier.MaxQty<tier.MinQty / tier.Percent<0||>100 exactly",
+    "toFiniteNumber/isPositiveNumber/isNonNegativeNumber correctly reject '', whitespace, non-numeric strings, null, undefined, NaN, Infinity as invalid rather than coercing to 0 (explicitly avoids the existing Number(value)||0 pattern per task step 3)",
+    "getDefaultDiscountRange returns both min_qty and max_qty (never leaves max_qty blank/zero); empty/undefined/malformed tiers fall back to {min_qty:1,max_qty:1}",
+    "isDuplicateName does trim+toLowerCase comparison on both candidate and existing keys, matching user-spec's case-insensitive/trim-insensitive dedup requirement",
+    "No JSX call-sites for the 6 handlers or DeleteRowButton exist anywhere in the file (grep-verified) — Wave 3 scope correctly untouched",
+    "vitest added as devDependency only with a 'test': 'vitest run' script; no @testing-library/react or jsdom added",
+    "npx vitest run (client/) passes: 32/32 tests, 1 file, no failures",
+    "Only expected files changed in commit 6517d72: client/package.json, client/package-lock.json, client/src/pages/Panel.jsx, new client/src/pages/Panel.validation.test.js, and tasks/2.md status flip to done",
+    "No --settings-danger token exists in client/src/index.css, confirming the DeleteRowButton comment's claim and justifying its muted/outline style choice instead of inventing a new color token"
+  ]
+}
