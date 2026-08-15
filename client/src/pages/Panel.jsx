@@ -383,6 +383,117 @@ const DeleteRowButton = ({ isDeletable, onDelete }) => {
   );
 };
 
+const emptyGarmentDraft = { name: "", quick_price: "", base_minutes: "", complexity_coeff: "" };
+
+// GarmentAddForm — форма добавления изделия. Собирает все четыре поля всегда, независимо от
+// активного режима калькулятора (Decision 2): изделие, добавленное в быстром режиме без
+// base_minutes, сохранилось бы с нулём и уронило бы расчёт в продвинутом режиме — и наоборот.
+//
+// Это НЕ <form>: вся секция настроек уже обёрнута в <form onSubmit={handleSaveSettings}>,
+// а вложенные формы HTML запрещает. Поэтому кнопка type="button" + onClick, а Enter внутри
+// полей перехватывается вручную — иначе он отправил бы внешнюю форму и сохранил настройки
+// вместо добавления строки.
+const GarmentAddForm = ({ settings, onAddGarment }) => {
+  const [draft, setDraft] = useState(emptyGarmentDraft);
+  const [error, setError] = useState("");
+
+  const updateField = (key) => (event) => {
+    const { value } = event.target;
+    setDraft((current) => ({ ...current, [key]: value }));
+  };
+
+  const handleAdd = () => {
+    const name = draft.name.trim();
+    if (isBlankName(name)) {
+      setError("Введите название изделия");
+      return;
+    }
+    if (isDuplicateName(name, settings.garments)) {
+      setError("Такое название уже есть");
+      return;
+    }
+
+    // Валидатору отдаются сырые строки из input: он сам приводит их к числу строго
+    // (пустая строка и мусор дают NaN, а не 0). Приводить через Number() заранее нельзя —
+    // это подменило бы невалидный ввод нулём ещё до проверки.
+    const { valid, errors } = validateGarmentFields({
+      base_minutes: draft.base_minutes,
+      complexity_coeff: draft.complexity_coeff,
+      quick_price: draft.quick_price,
+    });
+    if (!valid) {
+      setError(Object.values(errors).join(". "));
+      return;
+    }
+
+    // Обработчик добавления имя не обрезает — обрезаем здесь, иначе ключом изделия
+    // станет строка с пробелами по краям.
+    onAddGarment(name, {
+      base_minutes: Number(draft.base_minutes),
+      complexity_coeff: Number(draft.complexity_coeff),
+      quick_price: Number(draft.quick_price),
+    });
+    setDraft(emptyGarmentDraft);
+    setError("");
+  };
+
+  const handleKeyDown = (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      handleAdd();
+    }
+  };
+
+  return (
+    <div
+      className="mt-4 grid gap-4 rounded-[24px] border border-dashed p-4 [background:color-mix(in_oklab,var(--settings-card-bg)_90%,transparent)] [border-color:var(--settings-card-border)]"
+      onKeyDown={handleKeyDown}
+    >
+      <div>
+        <strong className="text-base font-semibold tracking-[-0.02em] text-[color:var(--settings-text)]">Новое изделие</strong>
+        <p className="mt-1 text-sm text-[color:var(--settings-muted)]">Значения заполняются сразу для обоих режимов расчёта.</p>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <SettingsField label="Название">
+          <input
+            className={settingsInputClass}
+            type="text"
+            value={draft.name}
+            onChange={updateField("name")}
+            placeholder="Например, Пальто"
+          />
+        </SettingsField>
+        <SettingsField label="Мин. цена / шт">
+          <SettingsNumberInput min="0" value={draft.quick_price} onChange={updateField("quick_price")} placeholder="7000" />
+        </SettingsField>
+        <SettingsField label="База, мин">
+          <SettingsNumberInput min="0" value={draft.base_minutes} onChange={updateField("base_minutes")} placeholder="260" />
+        </SettingsField>
+        <SettingsField label="Коэфф. сложности">
+          <SettingsNumberInput step="0.01" min="0" value={draft.complexity_coeff} onChange={updateField("complexity_coeff")} placeholder="1.6" />
+        </SettingsField>
+      </div>
+      {error ? (
+        <p
+          role="alert"
+          className="rounded-2xl border px-4 py-2 text-sm font-medium text-[color:var(--settings-text)] [background:var(--settings-accent-soft)] [border-color:var(--settings-accent)]"
+        >
+          {error}
+        </p>
+      ) : null}
+      <div>
+        <button
+          type="button"
+          onClick={handleAdd}
+          className="h-11 rounded-2xl border px-5 text-sm font-semibold text-[color:var(--settings-text)] transition [background:var(--settings-input-bg)] [border-color:var(--settings-accent)] hover:[background:var(--settings-accent-soft)] focus:outline-none focus:ring-4 focus:ring-[color:var(--settings-focus)]"
+        >
+          Добавить
+        </button>
+      </div>
+    </div>
+  );
+};
+
 // hasPanelAccess — клиентское зеркало серверного правила has_access || role == admin
 // (Decision 10). Держится в одном месте: настоящую авторизацию всё равно делает сервер,
 // здесь условие нужно только чтобы выбрать экран.
@@ -1052,7 +1163,10 @@ const Panel = () => {
                           key={name}
                         >
                           <div>
-                            <strong className="text-base font-semibold tracking-[-0.02em] text-[color:var(--settings-text)]">{name}</strong>
+                            <div className="flex items-center justify-between gap-3">
+                              <strong className="text-base font-semibold tracking-[-0.02em] text-[color:var(--settings-text)]">{name}</strong>
+                              <DeleteRowButton isDeletable={!DEFAULT_GARMENT_NAMES.includes(name)} onDelete={() => handleDeleteGarment(name)} />
+                            </div>
                             <p className="mt-1 text-sm text-[color:var(--settings-muted)]">Фиксированная минимальная цена на единицу изделия.</p>
                           </div>
                           <SettingsField label="Мин. цена / шт">
@@ -1061,6 +1175,7 @@ const Panel = () => {
                         </div>
                       ))}
                     </div>
+                    <GarmentAddForm settings={settings} onAddGarment={handleAddGarment} />
                   </SettingsSection>
 
                   <SettingsSection title="Усложнения" description="Процентные надбавки, которые добавляются к базовой цене в быстром режиме.">
@@ -1108,7 +1223,10 @@ const Panel = () => {
                           key={name}
                         >
                           <div>
-                            <strong className="text-base font-semibold tracking-[-0.02em] text-[color:var(--settings-text)]">{name}</strong>
+                            <div className="flex items-center justify-between gap-3">
+                              <strong className="text-base font-semibold tracking-[-0.02em] text-[color:var(--settings-text)]">{name}</strong>
+                              <DeleteRowButton isDeletable={!DEFAULT_GARMENT_NAMES.includes(name)} onDelete={() => handleDeleteGarment(name)} />
+                            </div>
                             <p className="mt-1 text-sm text-[color:var(--settings-muted)]">Параметры расчёта для этого типа изделия.</p>
                           </div>
                           <SettingsField label="База, мин">
@@ -1120,6 +1238,7 @@ const Panel = () => {
                         </div>
                       ))}
                     </div>
+                    <GarmentAddForm settings={settings} onAddGarment={handleAddGarment} />
                   </SettingsSection>
 
                   <SettingsSection title="Операции" description="Дополнительные минуты и материалы, увеличивающие стоимость единицы.">
