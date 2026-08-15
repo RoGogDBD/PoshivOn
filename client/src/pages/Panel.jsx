@@ -494,6 +494,121 @@ const GarmentAddForm = ({ settings, onAddGarment }) => {
   );
 };
 
+const emptyOperationDraft = { name: "", quick_percent: "", additional_minutes: "", additional_material_per_unit: "" };
+
+// OperationAddForm — форма добавления усложнения/операции. Как и GarmentAddForm, собирает все
+// четыре поля всегда, независимо от активного режима калькулятора (Decision 2): операция,
+// добавленная в быстром режиме без additional_minutes, сохранилась бы с нулём и тихо выпала бы
+// из расчёта в продвинутом режиме — и наоборот с quick_percent.
+//
+// Границы полей у операций слабее, чем у изделий: все три числа допускают 0 (>= 0, зеркало
+// серверного validateSettings, costing.go:634-644) — операция «только проценты» или
+// «только минуты» это нормальный случай, в отличие от изделия с нулевой базой.
+//
+// Это НЕ <form> — секция настроек уже обёрнута в <form onSubmit={handleSaveSettings}>,
+// вложенные формы HTML запрещает. Отсюда type="button" + onClick и ручной перехват Enter:
+// иначе Enter отправил бы внешнюю форму и сохранил настройки вместо добавления строки.
+const OperationAddForm = ({ settings, onAddOperation }) => {
+  const [draft, setDraft] = useState(emptyOperationDraft);
+  const [error, setError] = useState("");
+
+  const updateField = (key) => (event) => {
+    const { value } = event.target;
+    setDraft((current) => ({ ...current, [key]: value }));
+  };
+
+  const handleAdd = () => {
+    const name = draft.name.trim();
+    if (isBlankName(name)) {
+      setError("Введите название операции");
+      return;
+    }
+    if (isDuplicateName(name, settings.operations)) {
+      setError("Такое название уже есть");
+      return;
+    }
+
+    // Валидатору отдаются сырые строки из input: он сам приводит их к числу строго
+    // (пустая строка и мусор дают NaN, а не 0). Приводить через Number() заранее нельзя —
+    // это подменило бы невалидный ввод нулём ещё до проверки, а 0 здесь валиден.
+    const { valid, errors } = validateOperationFields({
+      additional_material_per_unit: draft.additional_material_per_unit,
+      additional_minutes: draft.additional_minutes,
+      quick_percent: draft.quick_percent,
+    });
+    if (!valid) {
+      setError(Object.values(errors).join(". "));
+      return;
+    }
+
+    // Обработчик добавления имя не обрезает — обрезаем здесь, иначе ключом операции
+    // станет строка с пробелами по краям.
+    onAddOperation(name, {
+      additional_material_per_unit: Number(draft.additional_material_per_unit),
+      additional_minutes: Number(draft.additional_minutes),
+      quick_percent: Number(draft.quick_percent),
+    });
+    setDraft(emptyOperationDraft);
+    setError("");
+  };
+
+  const handleKeyDown = (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      handleAdd();
+    }
+  };
+
+  return (
+    <div
+      className="mt-4 grid gap-4 rounded-[24px] border border-dashed p-4 [background:color-mix(in_oklab,var(--settings-card-bg)_90%,transparent)] [border-color:var(--settings-card-border)]"
+      onKeyDown={handleKeyDown}
+    >
+      <div>
+        <strong className="text-base font-semibold tracking-[-0.02em] text-[color:var(--settings-text)]">Новая операция</strong>
+        <p className="mt-1 text-sm text-[color:var(--settings-muted)]">Значения заполняются сразу для обоих режимов расчёта.</p>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <SettingsField label="Название">
+          <input
+            className={settingsInputClass}
+            type="text"
+            value={draft.name}
+            onChange={updateField("name")}
+            placeholder="Например, Косая бейка"
+          />
+        </SettingsField>
+        <SettingsField label="Надбавка, %">
+          <SettingsNumberInput step="0.01" min="0" value={draft.quick_percent} onChange={updateField("quick_percent")} placeholder="8" />
+        </SettingsField>
+        <SettingsField label="Доп. минуты">
+          <SettingsNumberInput min="0" value={draft.additional_minutes} onChange={updateField("additional_minutes")} placeholder="15" />
+        </SettingsField>
+        <SettingsField label="Доп. материал / шт">
+          <SettingsNumberInput min="0" value={draft.additional_material_per_unit} onChange={updateField("additional_material_per_unit")} placeholder="80" />
+        </SettingsField>
+      </div>
+      {error ? (
+        <p
+          role="alert"
+          className="rounded-2xl border px-4 py-2 text-sm font-medium text-[color:var(--settings-text)] [background:var(--settings-accent-soft)] [border-color:var(--settings-accent)]"
+        >
+          {error}
+        </p>
+      ) : null}
+      <div>
+        <button
+          type="button"
+          onClick={handleAdd}
+          className="h-11 rounded-2xl border px-5 text-sm font-semibold text-[color:var(--settings-text)] transition [background:var(--settings-input-bg)] [border-color:var(--settings-accent)] hover:[background:var(--settings-accent-soft)] focus:outline-none focus:ring-4 focus:ring-[color:var(--settings-focus)]"
+        >
+          Добавить
+        </button>
+      </div>
+    </div>
+  );
+};
+
 // hasPanelAccess — клиентское зеркало серверного правила has_access || role == admin
 // (Decision 10). Держится в одном месте: настоящую авторизацию всё равно делает сервер,
 // здесь условие нужно только чтобы выбрать экран.
@@ -1186,7 +1301,10 @@ const Panel = () => {
                           key={name}
                         >
                           <div>
-                            <strong className="text-base font-semibold tracking-[-0.02em] text-[color:var(--settings-text)]">{name}</strong>
+                            <div className="flex items-center justify-between gap-3">
+                              <strong className="text-base font-semibold tracking-[-0.02em] text-[color:var(--settings-text)]">{name}</strong>
+                              <DeleteRowButton isDeletable={!DEFAULT_OPERATION_NAMES.includes(name)} onDelete={() => handleDeleteOperation(name)} />
+                            </div>
                             <p className="mt-1 text-sm text-[color:var(--settings-muted)]">Добавка к цене за дополнительную сложность.</p>
                           </div>
                           <SettingsField label="Надбавка, %">
@@ -1195,6 +1313,7 @@ const Panel = () => {
                         </div>
                       ))}
                     </div>
+                    <OperationAddForm settings={settings} onAddOperation={handleAddOperation} />
                   </SettingsSection>
 
                   <DiscountsBlock settings={settings} handleDiscountChange={handleDiscountChange} />
@@ -1249,7 +1368,10 @@ const Panel = () => {
                           key={name}
                         >
                           <div>
-                            <strong className="text-base font-semibold tracking-[-0.02em] text-[color:var(--settings-text)]">{name}</strong>
+                            <div className="flex items-center justify-between gap-3">
+                              <strong className="text-base font-semibold tracking-[-0.02em] text-[color:var(--settings-text)]">{name}</strong>
+                              <DeleteRowButton isDeletable={!DEFAULT_OPERATION_NAMES.includes(name)} onDelete={() => handleDeleteOperation(name)} />
+                            </div>
                             <p className="mt-1 text-sm text-[color:var(--settings-muted)]">Норма времени и материалов на одну дополнительную операцию.</p>
                           </div>
                           <SettingsField label="Минуты">
@@ -1261,6 +1383,7 @@ const Panel = () => {
                         </div>
                       ))}
                     </div>
+                    <OperationAddForm settings={settings} onAddOperation={handleAddOperation} />
                   </SettingsSection>
 
                   <SettingsSection title="Материалы" description="Токены затрат по тканям и комплектующим с разбиением по каждой категории.">
