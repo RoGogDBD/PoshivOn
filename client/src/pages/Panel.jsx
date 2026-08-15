@@ -82,14 +82,14 @@ const initialsFrom = (name, login) => {
 
 const calculatorModes = [
   {
-    value: "masterpiece",
-    label: "Шедевр",
-    description: "Полная калькуляция по минутам, материалам, срочности и рынку.",
+    value: "quick",
+    label: "Быстрый",
+    description: "Простой расчет: изделие, усложнения и скидка от количества.",
   },
   {
-    value: "quick",
-    label: "По быстрому",
-    description: "Простой расчет: изделие, усложнения и скидка от количества.",
+    value: "masterpiece",
+    label: "Продвинутый",
+    description: "Полная калькуляция по минутам, материалам, срочности и рынку.",
   },
 ];
 
@@ -795,7 +795,7 @@ const Panel = () => {
               <div className={`${settingsInsetClass} grid min-w-[220px] gap-2 self-start lg:max-w-[260px]`}>
                 <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--settings-subtle)]">Активный режим</span>
                 <strong className="text-xl font-semibold tracking-[-0.03em] text-[color:var(--settings-text)]">
-                  {calculatorModes.find((mode) => mode.value === calculatorMode)?.label || "Шедевр"}
+                  {calculatorModes.find((mode) => mode.value === calculatorMode)?.label || "Продвинутый"}
                 </strong>
                 <p className="text-sm leading-6 text-[color:var(--settings-muted)]">
                   {isQuickCalculator
@@ -1257,7 +1257,7 @@ const Panel = () => {
 
 const DiscountsBlock = ({ settings, handleDiscountChange }) => (
   <SettingsSection
-    title="Скидки по партиям"
+    title="Скидки за количество"
     description="Диапазоны количества и процент скидки для автоматического уменьшения цены на крупные заказы."
   >
     <div className="grid gap-4">
