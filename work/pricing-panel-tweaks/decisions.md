@@ -77,3 +77,27 @@ No round 2 — no in-scope findings required a fix.
 - `cd client && npx vitest run` → 32 passed (1 file)
 - `cd client && npx vite build` → passes, no warnings
 - `grep` of the six handler names + `DeleteRowButton` in `Panel.jsx` → each appears exactly once (definition only, no JSX call-sites yet, as required)
+
+## Task 3: Add/delete rows — Изделия (Increment 2)
+
+**Status:** Done
+**Commit:** c0a11bc
+**Agent:** main agent
+**Summary:** Added `GarmentAddForm` (module scope, directly after Task 2's `DeleteRowButton`, matching the convention Task 2 established) and wired it plus `DeleteRowButton` into both Изделия `SettingsSection` blocks. The form always collects all 4 fields per Decision 2, validates via Task 2's `isBlankName` / `isDuplicateName` / `validateGarmentFields`, shows one inline `<p role="alert">` on failure, and clears itself on success. Handlers, constants, validation, `DeleteRowButton`, and the Усложнения/Операции/Скидки sections were not touched.
+**Deviations:** Two implementation choices not spelled out in the task, both forced by the surrounding code rather than chosen freely. (1) `GarmentAddForm` renders a `<div>`, not a `<form>`: the whole settings area is already inside `<form onSubmit={handleSaveSettings}>` (`Panel.jsx:1008`) and nested forms are invalid HTML — so the button is `type="button"` and an `onKeyDown` handler intercepts Enter, which would otherwise trigger an implicit submit and save the entire settings object instead of adding a row. (2) `validateGarmentFields` is fed the raw input strings rather than `Number(...)`-coerced values: its `toFiniteNumber` already coerces strictly, whereas pre-coercing would turn invalid input into `0` before the check — exactly the value the task must reject. Conversion to `Number` happens only after validation passes, so the handler still receives numbers, not strings. Delete controls sit in a flex header next to each row's name, inside the existing first grid cell, so the row's grid template is unchanged and default rows (which render `null`) look exactly as before.
+
+**Reviews:**
+
+*Round 1:*
+- Not run — independent reviewer spawning was unavailable in this session run, so no code-reviewer/security-auditor/test-reviewer JSON reports exist under `logs/working/task-3/`. The executing agent self-reviewed against the code-writing skill instead. **Reviews for this task remain outstanding**, same as Task 2's, and should be run before the feature is finalized.
+
+**Surfaced, not fixed (out of scope):**
+- `syncOrderForm` (`Panel.jsx:1729`) is only called on the settings-*load* path (`Panel.jsx:599`), not after a local `setSettings`. If the admin selects a self-added garment in the calculator and then deletes it in Настройки, `orderForm.garment_type` keeps pointing at the removed name until the page reloads, and a calculation in that state fails server-side instead of silently falling back. Fixing it means editing Task 2's `handleDeleteGarment` (explicitly out of this task's scope) and Task 4 has the identical situation with `operation_counts`, so it needs a feature-level decision, not a unilateral fix here. Narrow in practice: the default selection is "Пиджак", so the user must have deliberately selected the custom garment first.
+- Task 2's entry above states `vitest` was pinned to `^2.1.9`; `client/package.json` actually carries `^3.2.6` (3.2.7 installed). Tests and build both pass on Vite 5.4.21, so nothing is broken — the claim in the log is just stale.
+
+**Verification:**
+- `cd client && npx vitest run` → 32 passed (1 file), unchanged from Task 2 — this task added no pure logic
+- `cd client && npx vite build` → passes, no warnings (vite 5.4.21, 53 modules)
+- `git diff -U1` → exactly 5 hunks, all inside the two Изделия blocks and the new component; no line touching Усложнения / Операции / DiscountsBlock
+- `grep` of `GarmentAddForm` / `DeleteRowButton` call sites → exactly 2 each, one per calculator-mode branch
+- Verify-user (browser check of add, cross-mode field integrity, the three `0`-rejections, duplicate "пиджак ", delete visibility, delete + save + reload) → PENDING, awaiting user
