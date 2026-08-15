@@ -1,0 +1,491 @@
+# Interview Plan for Feature Planning
+#
+# Tracks progress of adaptive discovery interview for a new feature/bug/refactoring.
+# Updated after EACH user response with scoring, values, and remaining gaps.
+#
+# Scoring: 0-100% (how well we understand this aspect)
+# Status: pending → partial → complete
+# Required: true = must reach threshold, false = cover if relevant
+
+# ============================================================================
+# Interview Metadata (Session Recovery)
+# ============================================================================
+interview_metadata:
+  started: "2026-08-15 00:00:00"  # Timestamp (YYYY-MM-DD HH:MM:SS)
+  last_updated: "2026-08-15 00:00:00"
+  status: "in_progress"  # not_started | in_progress | completed
+  can_resume: true
+  current_question_num: 4
+  feature_size: "S"  # S | M | L
+
+# ============================================================================
+# Conversation History (for session recovery)
+# ============================================================================
+# Preserves complete Q&A. Update after EVERY user response.
+#
+conversation_history:
+  - question_num: 1
+    timestamp: "2026-08-15 00:00:00"
+    topic: "initial_task_description"
+    agent_question: |
+      (User-initiated) Describe what you want to do.
+    user_answer: |
+      Новое тех задание: Поменять местами тарифные планы. И изменить названия
+      «Шедевр» = «Продвинутый», «По быстрому» = «Быстрый». Добавить 3 кнопки
+      «Добавить»: к Изделиям, Усложнениям и Скидкам по партиям (screenshot attached
+      of poshivon.ru/panel showing Изделия and Усложнения sections). Изменить
+      надпись «Скидка по партиям» = «Скидка за количество».
+    summary: "Initial free-form task description with screenshot of panel."
+  - question_num: 2
+    timestamp: "2026-08-15 00:00:00"
+    topic: "add_button_behavior, plan_naming_as_key, constraints, success_criteria"
+    agent_question: |
+      1. What should the "Добавить" button do in each block (Products/Complications/Batch discounts)?
+      2. Are "Шедевр"/"По быстрому" just display labels or are they used as keys/ids in code or DB?
+      3. Is this urgent/critical and are there risks (e.g. live prod panel, don't break existing saved prices)?
+      4. How do we know the task is done (acceptance criteria)?
+    user_answer: |
+      1. Opens a form to add a new row.
+      2. Don't know, need to check in code.
+      3. This is a live prod panel, important not to break existing data.
+      4. Visually on the panel: order, names, buttons and label match the spec.
+    summary: "Add button opens a row-add form; plan-name-as-key status unknown (needs code research); live prod panel, must preserve existing data; acceptance is visual/functional check on the panel."
+  - question_num: 3
+    timestamp: "2026-08-15 00:00:00"
+    topic: "post-code-research clarifications: label text, hidden defaults, dedupe guard, per-user scope"
+    agent_question: |
+      1. Exact new label text: "Скидки по партиям" is plural in code — rename to "Скидки за количество" (plural, recommended) or singular "Скидка за количество" as literally written in the task?
+      2. Quick-mode garment add form only collects Название+Мин.цена, but backend requires base_minutes>0/complexity_coeff>0 unconditionally — supply hidden defaults, or show all fields always?
+      3. Garments/operations are a name-keyed map with no backend dedupe check — add client-side duplicate-name guard?
+      4. Settings are per-user (not one global site-wide list) — is that expected?
+    user_answer: |
+      1. "Скидки за количество" (plural, recommended).
+      2. Supply hidden defaults (recommended).
+      3. Yes, block duplicates client-side (recommended).
+      4. Yes, that's intended.
+    summary: "All 4 items resolved with recommended options."
+  - question_num: 4
+    timestamp: "2026-08-15 00:00:00"
+    topic: "Add button placement across the two calculator modes"
+    agent_question: |
+      Изделия/Усложнения render as separate JSX blocks per calculator mode
+      (Быстрый vs Продвинутый), each with different visible fields, but backed
+      by the same settings.garments/operations data. User asked for 3 "Добавить"
+      buttons — where exactly should they live: one per block regardless of
+      active mode (3 buttons total), or a separate button rendered in each
+      mode's version of Изделия/Усложнения (more than 3 on screen depending on mode)?
+    user_answer: |
+      One button per block, visible in whichever mode is active (recommended) —
+      3 buttons total, matching the original ask literally.
+    summary: "Resolved: exactly 3 Добавить buttons total, not duplicated per mode."
+# Format:
+# - question_num: 1
+#   timestamp: "2025-11-12 15:20:33"
+#   topic: "user_problem"
+#   agent_question: |
+#     [Full question text]
+#   user_answer: |
+#     [Full answer text]
+#   summary: "Brief summary"
+
+# ============================================================================
+# Phase 1: High-Level Feature Understanding
+# ============================================================================
+# Interview Cycle 1 scope
+phase1_feature_overview:
+
+  feature_name:
+    score: 100
+    status: "complete"
+    value: "pricing-panel-tweaks"
+    gaps: ""
+    required: true
+
+  feature_description:
+    score: 88
+    status: "complete"
+    value: |
+      On poshivon.ru/panel (settings page for pricing calculation):
+      1. Swap the display order of the two pricing plans ("Шедевр" and "По быстрому").
+      2. Rename "Шедевр" -> "Продвинутый", "По быстрому" -> "Быстрый".
+      3. Add 3 "Добавить" (Add) buttons: one each for Изделия (Products), Усложнения (Complications), and Скидки по партиям (Batch/quantity discounts) sections.
+         Each button opens a form to add a new row to that section; the new row must
+         persist (survive page reload) — implies backend/storage write, to be confirmed
+         in code research.
+      4. Rename label "Скидка по партиям" -> "Скидка за количество".
+    gaps: ""
+    required: true
+
+  work_type:
+    score: 90
+    status: "partial"
+    value: "feature (small UI/admin-panel enhancement: rename, reorder, add-item capability)"
+    gaps: ""
+    required: true
+
+  user_problem:
+    score: 88
+    status: "complete"
+    value: |
+      Admin pricing panel (poshivon.ru/panel) has outdated/confusing plan naming
+      ("Шедевр"/"По быстрому") and wrong display order — admin wants clearer plan
+      names ("Продвинутый"/"Быстрый") in the intended order. Admin also currently
+      has no way to add new items (products, complications, batch-discount tiers)
+      from the UI — rows are limited to whatever is hardcoded/seeded, so admin
+      needs inline "Add" capability to extend these lists as pricing needs evolve.
+    gaps: ""
+    required: true
+
+  target_users:
+    score: 70
+    status: "partial"
+    value: "Site admin(s) using the internal pricing panel at poshivon.ru/panel to configure pricing calculator inputs."
+    gaps: ""
+    required: false
+
+  success_criteria:
+    score: 85
+    status: "complete"
+    value: |
+      Acceptance is visual/functional check on poshivon.ru/panel:
+      - Plan order swapped (previously-second plan now shown first).
+      - Plan names renamed: "Шедевр" -> "Продвинутый", "По быстрому" -> "Быстрый".
+      - "Добавить" button present and functional in Изделия, Усложнения, Скидки по партиям blocks — opens a form to add a new row, which then persists (survives page reload).
+      - Label "Скидка по партиям" -> "Скидка за количество".
+    gaps: ""
+    required: true
+
+  constraints:
+    score: 85
+    status: "complete"
+    value: |
+      This is a LIVE PRODUCTION admin panel. Must not break or lose existing saved
+      pricing data (products, complications, batch discounts, existing plan values).
+      Renaming plan labels must not corrupt data if "Шедевр"/"По быстрому" turn out
+      to be used as identifiers/keys elsewhere (pricing calc logic, stored orders) —
+      to be confirmed in code research.
+    gaps: ""
+    required: true
+
+  testing_strategy:
+    score: 85
+    status: "complete"
+    value: |
+      Feature size S (small, localized UI/admin-panel change). No automated
+      integration/E2E tests planned — manual verification on poshivon.ru/panel
+      (visual check of order/names/buttons/label, and functional check that
+      "Добавить" persists a new row after reload). Backend logic touched (if any)
+      for add-row persistence should still get basic coverage per existing project
+      conventions, confirmed during code research.
+    gaps: ""
+    required: true
+
+# ============================================================================
+# Phase 2: User Experience & Scenarios
+# ============================================================================
+# Interview Cycle 2 scope (together with Phase 3)
+phase2_user_experience:
+
+  user_stories:
+    score: 88
+    status: "complete"
+    value: |
+      1. Admin opens poshivon.ru/panel -> Настройки -> sees "Продвинутый" plan
+         listed first, "Быстрый" plan second (swapped from current order).
+      2. Admin clicks "Добавить" in Изделия -> fills a small form (Название,
+         Мин. цена / шт, in quick mode) -> submits the row into local list ->
+         clicks the existing "Сохранить изменения" button -> row persists after
+         reload. Backend receives sane hidden defaults for base_minutes/
+         complexity_coeff so the whole-settings save doesn't fail validation.
+      3. Same flow for Усложнения (Название + Надбавка %) and Скидки по партиям
+         (min_qty/max_qty/percent) — "Добавить" adds to local state, existing
+         Save button persists everything.
+      4. Client blocks adding a garment/operation whose name already exists in
+         the current map (case-sensitive exact match on trimmed name), showing
+         an inline error instead of silently letting a later Save overwrite the
+         existing entry.
+    gaps: ""
+    required: true
+
+  acceptance_criteria:
+    score: 90
+    status: "complete"
+    value: |
+      - Plan order on /panel is swapped vs. current (previously-second plan now
+        first) in the mode picker.
+      - Plan labels read "Продвинутый" and "Быстрый" (internal values
+        "masterpiece"/"quick" unchanged everywhere — code, DB, calculations).
+      - Exactly 3 "Добавить" buttons total: one for Изделия, one for
+        Усложнения/Операции, one for Скидки по партиям — each visible
+        regardless of which calculator mode (Быстрый/Продвинутый) is active,
+        since both modes render the same underlying settings.garments/
+        operations/batch_discounts. Not duplicated per mode.
+      - Adding a row via any of the 3 forms, then clicking "Сохранить изменения",
+        results in the row being present after a page reload.
+      - Adding a garment via the quick-mode form does not trigger a save error
+        (hidden defaults satisfy base_minutes>0 / complexity_coeff>0).
+      - Adding a garment/operation with a name that already exists is blocked
+        client-side with a visible error, not silently merged.
+      - Label "Скидки по партиям" reads "Скидки за количество" everywhere it
+        appears (single shared component, both modes).
+    gaps: ""
+    required: true
+
+  edge_cases:
+    score: 85
+    status: "complete"
+    value: |
+      - Duplicate garment/operation name on add -> blocked client-side (see
+        Potential Problems #2 in code-research.md).
+      - batch_discounts add-row: no name/id, but must satisfy MinQty>0,
+        MaxQty>=MinQty, 0<=Percent<=100 (costing.go:640-649) — form should
+        prefill a sensible next-tier default (e.g. min_qty = last tier's
+        max_qty + 1) to avoid a blocked save.
+      - A row added in quick mode is also visible in masterpiece mode (and vice
+        versa) since both share settings.garments/operations — non-edited
+        fields show as blank/zero/default in the other mode. Expected, not a bug.
+      - User adds a row then reloads WITHOUT clicking Save — row is lost (no
+        autosave anywhere in this panel, consistent with existing behavior for
+        all other fields).
+    gaps: ""
+    required: true
+
+  error_scenarios:
+    score: 85
+    status: "complete"
+    value: |
+      - Backend validation rejects the whole settings save (400) if any garment
+        has base_minutes<=0 or complexity_coeff<=0, or a batch discount violates
+        its range constraints — mitigated by always supplying valid hidden
+        defaults for fields the current mode doesn't show, and validating
+        obvious constraints client-side before allowing Save.
+      - A bad new row must not silently block saving unrelated edits made in the
+        same session without a clear error message to the admin (existing
+        behavior for the whole-object POST — surface the backend error, don't
+        swallow it).
+    gaps: ""
+    required: true
+
+  verification_strategy:
+    score: 85
+    status: "complete"
+    value: |
+      Manual verification by user on poshivon.ru/panel (or local dev build):
+      visually confirm plan order/names/label, and functionally add one row in
+      each of the 3 sections, Save, reload, confirm persistence. No MCP/agent
+      live-environment check needed — this is a straightforward internal
+      admin-panel UI change with no external integration.
+    gaps: ""
+    required: true
+
+  ui_ux_requirements:
+    score: 70
+    status: "partial"
+    value: |
+      "Добавить" opens an inline/modal form (exact placement/style deferred to
+      tech-spec — should match existing panel visual style, e.g. SettingsField/
+      SettingsSection patterns already used in Panel.jsx). No other new UI
+      surfaces requested beyond the 4 items in the task.
+    gaps: "Exact form placement (inline row vs modal) left as a tech-spec/implementation decision, not further specified by user"
+    required: false
+
+  risks:
+    score: 88
+    status: "complete"
+    value: |
+      - Live prod admin panel — must not break existing saved data. Mitigated:
+        plan rename touches only display `label`, never the `value` key used in
+        code/DB (confirmed in code-research.md §2); no schema/migration changes
+        needed at all (per-field JSON columns already support arbitrary map
+        keys and array growth).
+      - Hidden backend validation constraints (base_minutes/complexity_coeff>0)
+        could silently break "add" persistence if not handled — mitigated by
+        explicit hidden-defaults decision above.
+      - No duplicate-name protection on backend — mitigated by client-side guard.
+    gaps: ""
+    required: true
+
+  technical_decisions:
+    score: 80
+    status: "complete"
+    value: |
+      - Rename plan labels by editing only the `label` field of `calculatorModes`
+        entries in Panel.jsx (leave `value` untouched); swap array order for
+        the reorder requirement.
+      - No new backend endpoints — "Добавить" mutates local React state only;
+        persistence rides the existing single whole-object
+        POST /api/v1/users/settings via the existing Save button (no new
+        network/autosave pattern introduced).
+      - Garment add form supplies hidden non-zero defaults for
+        base_minutes/complexity_coeff (e.g. 1) so quick-mode-only input still
+        passes backend validation.
+      - Client-side duplicate-name check for garments/operations before adding.
+      - Per-user settings model is intentional/existing — out of scope to change.
+    gaps: ""
+    required: false
+
+  deploy_approach:
+    score: 60
+    status: "partial"
+    value: "Frontend-only change (no new backend endpoints, no migrations) — deploys via existing CI/CD for the client app, same as any other panel UI change. No manual setup steps."
+    gaps: ""
+    required: false
+
+  manual_user_actions:
+    score: 90
+    status: "complete"
+    value: "None — no external services, API keys, or manual setup required."
+    gaps: ""
+    required: false
+
+# ============================================================================
+# Phase 3: Integration & Technical Context
+# ============================================================================
+# Interview Cycle 2 scope (together with Phase 2)
+phase3_integration:
+
+  integration_points:
+    score: 88
+    status: "complete"
+    value: |
+      Single file `client/src/pages/Panel.jsx` (React, no router lib) — plan
+      picker (`calculatorModes` array, lines 83-94), Изделия/Усложнения/
+      Операции rendering (lines 847-945), shared `DiscountsBlock` component
+      (lines 1258-1282). Persistence via existing
+      `POST /api/v1/users/settings` -> `service.CostingService.SaveUserSettings`
+      -> `validateSettings` (`server/internal/service/costing.go`) ->
+      `repo.UpsertSettings` (`server/internal/repository/postgres.go`). No new
+      routes/endpoints.
+    gaps: ""
+    required: true
+
+  dependencies:
+    score: 85
+    status: "complete"
+    value: |
+      Depends on existing `handleGarmentChange`/`handleOperationSettingChange`/
+      `handleDiscountChange` state-mutation patterns and `handleSaveSettings`
+      submit flow (Panel.jsx:479-566) as the model to extend with new
+      add-a-key/push-to-array helpers. Depends on existing
+      `validateSettings` backend constraints (costing.go:593-651) which the
+      add-row forms must satisfy.
+    gaps: ""
+    required: false
+
+  technical_constraints:
+    score: 85
+    status: "complete"
+    value: |
+      Backend requires base_minutes>0 and complexity_coeff>0 for every garment
+      regardless of calculator mode (costing.go:613,616) — quick-mode add form
+      must supply hidden defaults. No duplicate-name check exists server-side
+      for garments/operations (map keyed by name) — must be enforced
+      client-side. batch_discounts range validation (MinQty>0, MaxQty>=MinQty,
+      0<=Percent<=100) must be satisfied by add-row defaults.
+    gaps: ""
+    required: false
+
+  data_requirements:
+    score: 85
+    status: "complete"
+    value: |
+      No new data storage needed — garments/operations/batch_discounts already
+      persist as JSON columns on the existing per-user `user_settings` table
+      (schema in `server/migrations/002_costing_schema.up.sql`,
+      `003_pricing_and_chat_delete.up.sql`). Adding a row is just adding a key
+      to an existing JSON map / pushing to an existing JSON array within the
+      same whole-object save — no migration required.
+    gaps: ""
+    required: false
+
+  migration_needs:
+    score: 90
+    status: "complete"
+    value: "None. No schema change, no data migration — plan rename only touches a display-only `label` string, and add-row uses existing flexible JSON columns."
+    required: false
+
+# ============================================================================
+# Phase 4: Completion
+# ============================================================================
+phase4_completion:
+  userspec_file: ""  # work/{feature}/user-spec.md
+  status: "pending"  # pending | created | approved
+
+# ============================================================================
+# Decision Rules
+# ============================================================================
+decision_rules:
+
+  required_threshold: 85
+  optional_threshold: 50
+
+  # Stop criteria (BOTH must be true to exit a cycle)
+  stop_criteria:
+    - "All required items in current cycle scope score >= 85%"
+    - "Structural: every required item has non-empty value, no TBD, gaps empty or conscious limitations"
+
+  priority_order:
+    - "Required items with score < 85% (lowest score first)"
+    - "Optional items mentioned by user in context"
+    - "Other optional items if user seems knowledgeable"
+
+  question_strategy:
+    - "3-4 questions per batch about different gaps"
+    - "Run as many batches as needed — batch size is NOT cycle limit"
+    - "Propose solutions based on PK, not just ask questions"
+    - "Challenge with substance: counterexamples, code references, unexplored scenarios"
+    - "After each response: update scores, values, gaps, conversation_history, save"
+
+# ============================================================================
+# Interview Progress
+# ============================================================================
+progress:
+  current_phase: "phase1_feature_overview"
+  questions_asked: 0
+  last_question: ""
+  total_required_score: 0
+  total_optional_score: 0
+  completion_estimate: "0%"
+  user_detail_level: "unknown"  # brief | moderate | detailed
+
+# ============================================================================
+# Notes
+# ============================================================================
+notes: |
+  Free-form notes:
+  - Important insights
+  - Areas of uncertainty
+  - Pivot points
+  - Scope changes
+
+# ============================================================================
+# USAGE INSTRUCTIONS
+# ============================================================================
+#
+# 1. INIT: Created by init-feature-folder.sh at work/{feature}/logs/userspec/interview.yml
+#    Set metadata.started, metadata.status: in_progress
+#
+# 2. INITIAL SCORING: After user's free-form description, score ALL items
+#    Detailed 80-95%, brief 50-70%, vague 20-40%, not mentioned 0%
+#
+# 3. INTERVIEW LOOP (save after EVERY response):
+#    a) Find required items with score < 85% in current cycle scope
+#    b) Ask 3-4 questions about different gaps
+#    c) Propose solutions based on PK
+#    d) User answers
+#    e) Update: conversation_history, scores, values, gaps, metadata
+#    f) Save immediately
+#    g) Check stop criteria (score >= 85% AND structural: value filled, no TBD, gaps resolved)
+#    h) Not done → repeat. Done → next cycle.
+#
+# 4. CYCLES:
+#    Cycle 1: phase1_feature_overview items
+#    Cycle 2: phase2_user_experience + phase3_integration items
+#    Cycle 3: ALL items still below threshold (cleanup pass)
+#
+# 5. RESUME: If metadata.status is "in_progress"
+#    Load, show conversation summary, resume from current state
+#
+# 6. COMPLETION: After user approves user-spec.md
+#    Set phase4_completion.status: approved
+#    Set metadata.status: completed
