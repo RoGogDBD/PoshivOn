@@ -557,19 +557,22 @@ const GarmentAddForm = ({ settings, onAddGarment, isQuickMode = false }) => {
 
 const emptyOperationDraft = { name: "", quick_percent: "", additional_minutes: "", additional_material_per_unit: "" };
 
-// OperationAddForm — форма добавления усложнения/операции. Как и GarmentAddForm, собирает все
-// четыре поля всегда, независимо от активного режима калькулятора (Decision 2): операция,
-// добавленная в быстром режиме без additional_minutes, сохранилась бы с нулём и тихо выпала бы
-// из расчёта в продвинутом режиме — и наоборот с quick_percent.
-//
-// Границы полей у операций слабее, чем у изделий: все три числа допускают 0 (>= 0, зеркало
-// серверного validateSettings, costing.go:634-644) — операция «только проценты» или
-// «только минуты» это нормальный случай, в отличие от изделия с нулевой базой.
+// Скрытые значения для полей, которые форма не показывает в быстром режиме (isQuickMode).
+// В отличие от HIDDEN_GARMENT_DEFAULTS это не фиктивная подстановка: у операций
+// additional_minutes/additional_material_per_unit допускают 0 по-настоящему (>= 0, зеркало
+// серверного validateSettings, costing.go:634-644) — «операция только с процентной надбавкой»
+// такой же нормальный случай, как и явно заполненная. Риска абсурдной цены в продвинутом
+// режиме здесь нет, в отличие от base_minutes/complexity_coeff у изделий.
+const HIDDEN_OPERATION_DEFAULTS = { additional_minutes: 0, additional_material_per_unit: 0 };
+
+// OperationAddForm — форма добавления усложнения/операции. В продвинутом режиме показывает все
+// четыре поля сразу (Decision 2). В быстром режиме (isQuickMode) — только Название и Надбавка, %;
+// Доп. минуты и Доп. материал/шт подставляются скрытыми дефолтами (см. комментарий выше).
 //
 // Это НЕ <form> — секция настроек уже обёрнута в <form onSubmit={handleSaveSettings}>,
 // вложенные формы HTML запрещает. Отсюда type="button" + onClick и ручной перехват Enter:
 // иначе Enter отправил бы внешнюю форму и сохранил настройки вместо добавления строки.
-const OperationAddForm = ({ settings, onAddOperation }) => {
+const OperationAddForm = ({ settings, onAddOperation, isQuickMode = false }) => {
   const [draft, setDraft] = useState(emptyOperationDraft);
   const [error, setError] = useState("");
 
@@ -591,10 +594,11 @@ const OperationAddForm = ({ settings, onAddOperation }) => {
 
     // Валидатору отдаются сырые строки из input: он сам приводит их к числу строго
     // (пустая строка и мусор дают NaN, а не 0). Приводить через Number() заранее нельзя —
-    // это подменило бы невалидный ввод нулём ещё до проверки, а 0 здесь валиден.
+    // это подменило бы невалидный ввод нулём ещё до проверки, а 0 здесь валиден. Поля, скрытые
+    // в быстром режиме, валидируются по своим скрытым дефолтам — они всегда корректны (0 >= 0).
     const { valid, errors } = validateOperationFields({
-      additional_material_per_unit: draft.additional_material_per_unit,
-      additional_minutes: draft.additional_minutes,
+      additional_material_per_unit: isQuickMode ? HIDDEN_OPERATION_DEFAULTS.additional_material_per_unit : draft.additional_material_per_unit,
+      additional_minutes: isQuickMode ? HIDDEN_OPERATION_DEFAULTS.additional_minutes : draft.additional_minutes,
       quick_percent: draft.quick_percent,
     });
     if (!valid) {
@@ -605,8 +609,8 @@ const OperationAddForm = ({ settings, onAddOperation }) => {
     // Обработчик добавления имя не обрезает — обрезаем здесь, иначе ключом операции
     // станет строка с пробелами по краям.
     onAddOperation(name, {
-      additional_material_per_unit: Number(draft.additional_material_per_unit),
-      additional_minutes: Number(draft.additional_minutes),
+      additional_material_per_unit: isQuickMode ? HIDDEN_OPERATION_DEFAULTS.additional_material_per_unit : Number(draft.additional_material_per_unit),
+      additional_minutes: isQuickMode ? HIDDEN_OPERATION_DEFAULTS.additional_minutes : Number(draft.additional_minutes),
       quick_percent: Number(draft.quick_percent),
     });
     setDraft(emptyOperationDraft);
@@ -627,9 +631,13 @@ const OperationAddForm = ({ settings, onAddOperation }) => {
     >
       <div>
         <strong className="text-base font-semibold tracking-[-0.02em] text-[color:var(--settings-text)]">Новая операция</strong>
-        <p className="mt-1 text-sm text-[color:var(--settings-muted)]">Значения заполняются сразу для обоих режимов расчёта.</p>
+        <p className="mt-1 text-sm text-[color:var(--settings-muted)]">
+          {isQuickMode
+            ? "Доп. минуты и доп. материал подставляются нулём — поправьте их в продвинутом режиме при необходимости."
+            : "Значения заполняются сразу для обоих режимов расчёта."}
+        </p>
       </div>
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className={`grid gap-4 md:grid-cols-2 ${isQuickMode ? "" : "xl:grid-cols-4"}`}>
         <SettingsField label="Название">
           <input
             className={settingsInputClass}
@@ -642,12 +650,16 @@ const OperationAddForm = ({ settings, onAddOperation }) => {
         <SettingsField label="Надбавка, %">
           <SettingsNumberInput step="0.01" min="0" value={draft.quick_percent} onChange={updateField("quick_percent")} placeholder="8" />
         </SettingsField>
-        <SettingsField label="Доп. минуты">
-          <SettingsNumberInput step="1" min="0" value={draft.additional_minutes} onChange={updateField("additional_minutes")} placeholder="15" />
-        </SettingsField>
-        <SettingsField label="Доп. материал / шт">
-          <SettingsNumberInput step="1" min="0" value={draft.additional_material_per_unit} onChange={updateField("additional_material_per_unit")} placeholder="80" />
-        </SettingsField>
+        {isQuickMode ? null : (
+          <>
+            <SettingsField label="Доп. минуты">
+              <SettingsNumberInput step="1" min="0" value={draft.additional_minutes} onChange={updateField("additional_minutes")} placeholder="15" />
+            </SettingsField>
+            <SettingsField label="Доп. материал / шт">
+              <SettingsNumberInput step="1" min="0" value={draft.additional_material_per_unit} onChange={updateField("additional_material_per_unit")} placeholder="80" />
+            </SettingsField>
+          </>
+        )}
       </div>
       {error ? (
         <p
@@ -1369,7 +1381,7 @@ const Panel = () => {
                         </div>
                       ))}
                     </div>
-                    <OperationAddForm settings={settings} onAddOperation={handleAddOperation} />
+                    <OperationAddForm settings={settings} onAddOperation={handleAddOperation} isQuickMode />
                   </SettingsSection>
 
                   <DiscountsBlock
