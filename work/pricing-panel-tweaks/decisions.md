@@ -351,3 +351,19 @@ None — small, well-understood follow-up to the previous hotfix, self-reviewed.
 - `cd client && npx vitest run` → 41 passed, no regression
 - `cd client && npx vite build` → passes, 53 modules
 - Read `CalculationAIFeedback`'s helpers (`formatMarketPosition`, `marketStatusLabel`, `buildAIVerdict`) — all have safe switch defaults, confirmed no crash risk from quick-mode items lacking `market_status`/`market_segment`
+
+## Post-deploy follow-up: simplify quick-tariff operation add-form
+
+**Status:** Done
+**Commit:** 6a53b0f
+**Agent:** main agent
+**Summary:** Same treatment as the earlier `GarmentAddForm` change, applied to `OperationAddForm`: hides "Доп. минуты"/"Доп. материал / шт" when adding from Быстрый mode, substituting hidden defaults of `0` for both. Lower-risk than the garment case — these two fields genuinely allow `0` (`>= 0` bound in `validateOperationFields`/backend), so the hidden value is real and valid, not a fabricated placeholder like garments' `base_minutes: 1`/`complexity_coeff: 1`. Продвинутый-mode call site unchanged.
+**Deviations:** None — user explicitly requested this, consistent with the earlier garment decision.
+
+**Reviews:**
+
+None — small, well-scoped, mirrors an already-reviewed-in-principle pattern.
+
+**Verification:**
+- `cd client && npx vitest run` → 41 passed, no regression
+- `cd client && npx vite build` → passes, 53 modules
