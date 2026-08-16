@@ -367,3 +367,20 @@ None — small, well-scoped, mirrors an already-reviewed-in-principle pattern.
 **Verification:**
 - `cd client && npx vitest run` → 41 passed, no regression
 - `cd client && npx vite build` → passes, 53 modules
+
+## Post-deploy follow-up: Save button as a cookie-banner-style notification
+
+**Status:** Done
+**Commit:** 77e7736
+**Agent:** main agent
+**Summary:** Replaced the static "Сохранить изменения" button (always present at the bottom of the settings form) with a fixed-position banner that only appears when there are unsaved changes, a save is in progress, or the outcome of the last save is still being shown — matching the user's request for a cookie-consent-banner-style presentation. Added `lastSavedSettings` state (synced on load and on successful save) to derive `isSettingsDirty` via `JSON.stringify` comparison. Success messages auto-hide after 3s; error messages (and the retry button) persist since the settings remain dirty on failure.
+**Deviations:** None.
+
+**Reviews:**
+
+None — self-reviewed, small well-scoped UI change.
+
+**Verification:**
+- `cd client && npx vitest run` → 41 passed, no regression
+- `cd client && npx vite build` → passes, 53 modules
+- Confirmed `fade-rise` animation utility already exists in `index.css`; no other `fixed`/`z-50` elements to conflict with
