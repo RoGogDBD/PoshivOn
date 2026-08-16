@@ -9,7 +9,7 @@ feature_dir: work/pricing-panel-tweaks
 execution_plan: work/pricing-panel-tweaks/logs/execution-plan.md
 team_name: pricing-panel-tweaks
 
-last_completed_wave: 2
+last_completed_wave: 3
 total_waves: 5
 
 # Format: task_number: status (planned | in_progress | done)
@@ -21,12 +21,12 @@ total_waves: 5
 tasks:
   1: done
   2: done
-  3: planned
-  4: planned
-  5: planned
+  3: done
+  4: done
+  5: done
   6: planned
   7: planned
   8: planned
   9: planned
 
-next_wave: 3
+next_wave: 4
