@@ -1711,6 +1711,7 @@ const Panel = () => {
                                 <li>До скидки: {formatMoney(item.price_before_discount_per_unit)} ₽ за единицу</li>
                                 <li>Скидка: {item.discount_percent}% ({formatMoney(item.discount_amount)} ₽)</li>
                               </ul>
+                              <CalculationAIFeedback calculation={item} feedback={item.ai_feedback} />
                             </>
                           ) : (
                             <>
@@ -1746,7 +1747,7 @@ const Panel = () => {
                                 <li>Скидка: {item.discount_percent}% ({formatMoney(item.discount_amount)} ₽)</li>
                                 <li>Минуты: база {item.base_minutes_per_unit}, операции {item.operation_minutes_per_unit}, примерки {item.fitting_minutes_per_unit}, итог {item.adjusted_minutes_per_unit}</li>
                               </ul>
-                              {itemMode === "quick" ? null : <CalculationAIFeedback calculation={item} feedback={item.ai_feedback} />}
+                              <CalculationAIFeedback calculation={item} feedback={item.ai_feedback} />
                             </>
                           )}
                         </article>
