@@ -1,0 +1,65 @@
+{
+  "task": "Task 5: Add/delete rows — Скидки за количество (Increment 2)",
+  "commit": "9d05d6a",
+  "reviewer": "code-reviewer",
+  "round": 1,
+  "verdict": "approve",
+  "summary": "Task 5's diff (client/src/pages/Panel.jsx only) is well-scoped, correct, and confirmed working: npx vitest run passes (32/32) and npx vite build succeeds. The self-reported DeleteRowButton extension is genuinely additive/backward-compatible (verified against all 4 garment/operation call sites), the delete gate math is exactly settings.batch_discounts.length === 1, getDefaultDiscountRange pre-fills both min_qty and max_qty, and the render-time resync pattern is a correct, convergent instance of React's documented 'adjust state during render' idiom — no infinite-loop risk. One explicit AC bullet ('no changes to DeleteRowButton') was knowingly violated; the deviation is technically sound and transparently documented in decisions.md, so it is flagged as a minor/process finding rather than a code defect.",
+  "verified_claims": [
+    {
+      "claim": "1. DeleteRowButton extension is backward-compatible with Tasks 3/4 call sites",
+      "result": "confirmed",
+      "evidence": "grep for DeleteRowButton usages shows 4 garment/operation call sites (Panel.jsx:1291, 1314, 1360, 1386), each passing only isDeletable/onDelete. New props default to disabled=false, disabledHint=\"\", so for these call sites: disabled={false} is a no-op HTML attribute, title/aria-label both evaluate to undefined (React omits undefined attrs). Rendered markup and behavior at these 4 sites is unchanged."
+    },
+    {
+      "claim": "2. Discount disabled gate is exactly length === 1, wired to handleDeleteDiscount(index)",
+      "result": "confirmed",
+      "evidence": "DiscountsBlock computes `canDeleteRow = settings.batch_discounts.length > 1;` and passes `disabled={!canDeleteRow}` to every row's DeleteRowButton, with `onDelete={() => handleDeleteDiscount(index)}`. !canDeleteRow is true iff length <= 1, and since the UI itself prevents the array reaching 0, this is effectively exactly length === 1 in practice, matching the AC bullet precisely. Not <=1 by accident, not >1 miswired — verified by reading the surrounding SettingsSection/.map block directly."
+    },
+    {
+      "claim": "3. Add-form pre-fills both min_qty and max_qty via getDefaultDiscountRange",
+      "result": "confirmed",
+      "evidence": "getDefaultDiscountRange (Panel.jsx:312-317, Task 2, unmodified) returns { min_qty: nextMinQty, max_qty: nextMinQty } — never a blank/zero max_qty. DiscountAddForm's initial useState and the handleAdd() post-submit refill both use the full object from this helper for both draft.min_qty and draft.max_qty. No regression of the historical 'max_qty left blank' bug."
+    },
+    {
+      "claim": "4. Render-time state adjustment for resync is loop-safe",
+      "result": "confirmed",
+      "evidence": "`if (suggestedMinQty !== defaultRange.min_qty) { setSuggestedMinQty(defaultRange.min_qty); setDraft(...) }` matches React's documented pattern for resetting state when a derived value changes (a tracked 'previous' value compared against the freshly-derived one, both updated together). getDefaultDiscountRange always returns a finite number (verified: falls back to 1 when tiers is empty/last tier's max_qty is non-finite), so the comparison converges to equality after exactly one extra render — no infinite loop. Verified this is also why the self-found bug (blank fields after add when defaultRange happened to equal the pre-add value) was possible under a naive useEffect-only design, and why the final code sidesteps it by computing the post-add refill synchronously from the just-added row rather than depending on the resync branch for the common case."
+    },
+    {
+      "claim": "5. No changes to Task 2's handlers/constants beyond the additive DeleteRowButton extension, and no changes to Изделия/Усложнения sections",
+      "result": "confirmed",
+      "evidence": "Full diff (198 lines, single file) reviewed end-to-end via `git show 9d05d6a -- client/`. Hunks are: (a) DeleteRowButton signature/JSX — additive only; (b) two DiscountsBlock call sites gaining handleAddDiscount/handleDeleteDiscount props (necessary, since those handlers live in the parent Panel component and DiscountsBlock is a module-scope sibling — documented in decisions.md as a forced, not chosen, deviation from 'call sites need no changes'); (c) DiscountsBlock body + new DiscountAddForm definition. handleAddGarment/handleDeleteGarment/handleAddOperation/handleDeleteOperation/handleAddDiscount/handleDeleteDiscount (Panel.jsx:891-937) and the Изделия/Усложнения JSX blocks are untouched by this diff."
+    }
+  ],
+  "findings": [
+    {
+      "id": "TASK5-1",
+      "severity": "minor",
+      "dimension": "process/spec-compliance",
+      "title": "Explicit AC bullet ('no changes to Task 2's DeleteRowButton') was knowingly violated",
+      "description": "Task 5's own AC states: 'No changes made to Task 2's shared handlers/constants/DeleteRowButton'. The implementation extends DeleteRowButton with optional disabled/disabledHint props to satisfy the 'disabled, not hidden, for the last tier' requirement. The extension is technically well-executed (additive, verified backward-compatible, follows existing disabled: Tailwind conventions, includes title/aria-label for a11y) and the alternative — duplicating a second, locally-styled delete button inside DiscountsBlock to avoid touching Task 2's file at all — was considered and rejected in decisions.md as needless markup duplication that would have to be kept visually identical to the original. That tradeoff is defensible from a DRY/maintainability standpoint, but it is a genuine, not merely nominal, deviation from an unambiguous AC line, and the AC's wording suggests the task author anticipated and wanted the duplication path instead. Not a code defect — flagged so the deviation gets explicit sign-off (it is already documented in decisions.md) rather than being waved through on the strength of the self-report alone.",
+      "recommendation": "No code change required. Confirm this deviation is acceptable to the team lead/user given it's already surfaced in decisions.md; if a future task needs a third distinct DeleteRowButton state, prefer extending further over the alternative duplication path, since the extension approach has now been established as the project's convention here."
+    },
+    {
+      "id": "TASK5-2",
+      "severity": "minor",
+      "dimension": "code readability",
+      "title": "Dead placeholder attributes on the always-controlled add-form inputs",
+      "description": "DiscountAddForm's min_qty/max_qty inputs set `placeholder={String(defaultRange.min_qty)}` / `placeholder={String(defaultRange.max_qty)}`, but `value={draft.min_qty}` / `value={draft.max_qty}` are always non-empty strings (pre-filled on mount and after every add) — the placeholder can never actually be shown to the user under normal operation. Harmless (defensive-looking, not incorrect), just slightly misleading to a future reader who might assume the field can go blank.",
+      "recommendation": "Optional cleanup: drop the placeholder props on min_qty/max_qty (keep it on percent, which is genuinely blank-able), or add a short comment noting they're defensive-only."
+    }
+  ],
+  "counts": {
+    "critical": 0,
+    "major": 0,
+    "minor": 2
+  },
+  "checks_run": [
+    "npx vitest run (client) — 32/32 passed",
+    "npx vite build (client) — succeeded, no compile errors",
+    "grep-based cross-file verification of all DeleteRowButton call sites",
+    "full diff read (git show 9d05d6a -- client/)",
+    "decisions.md Task 5 entry cross-checked against actual diff"
+  ]
+}
