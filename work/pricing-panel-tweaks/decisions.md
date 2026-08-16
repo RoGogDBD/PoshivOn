@@ -301,3 +301,21 @@ None — QA task; the QA pass is itself the verification for this feature (`revi
 - Client vs backend bounds cross-checked field-by-field (`Panel.jsx:279-341` vs `costing.go:593-657`) → every bound equal or stricter, none looser
 - Call-site census by grep → `GarmentAddForm` ×2, `OperationAddForm` ×2, `DiscountsBlock` ×2, `DeleteRowButton` ×5, one per mode branch as specified
 - Verify-user (the §3 browser checklist) → PENDING, awaiting user
+
+## Post-deploy follow-up: quick-tariff add-form simplification, default mode, header removal
+
+**Status:** Done
+**Commit:** 289b257 (client), and one backend commit immediately before it
+**Agent:** main agent
+**Summary:** Three user-requested changes after the feature was already deployed (tag `0.2.1.17`): (1) `GarmentAddForm` now hides "База, мин"/"Коэфф. сложности" when adding from Быстрый mode, substituting hidden defaults (`base_minutes: 1, complexity_coeff: 1`) — a deliberate reversal of Decision 2's "always show all fields" design for the quick-mode call site only (Продвинутый-mode call site unchanged, still shows all 4 fields); (2) default `calculator_mode` changed from `masterpiece` to `quick` on both client (`defaultSettings`) and backend (`DefaultUserSettings()`), closing the mismatch Task 1's security-auditor flagged (mode-picker showed Быстрый first but new users still defaulted to masterpiece); (3) removed the "Настройка модели / Модель расчёта" header block and "Активный режим" status card above the settings form.
+**Deviations:** Point (1) is a conscious, user-approved reintroduction of the hidden-default risk Decision 2 was built to avoid — documented inline in the code comment above `HIDDEN_GARMENT_DEFAULTS`. A garment added from Быстрый mode will compute a technically-valid but fabricated price if later used in Продвинутый mode, until an admin corrects База/Коэфф. manually.
+
+**Reviews:**
+
+None — implemented directly by the main agent (small, well-scoped follow-up), not routed through the task/reviewer pipeline. Self-reviewed only.
+
+**Verification:**
+- `cd client && npx vitest run` → 41 passed, no regression
+- `cd client && npx vite build` → passes, 53 modules
+- `go build ./...` and `go vet ./...` (via `golang:1.25.5-alpine` Docker image, matching `server/Dockerfile`'s `GO_VERSION`) → clean
+- `go test ./...` → **initially failed** (`TestCostingService_CalculateInChat_RespectsMinimumMarginFloor`, implicitly relied on the old default mode) — fixed by explicitly setting `CalculatorMode = calculatorModeMasterpiece` in that test (it exercises masterpiece-only margin-floor logic); full suite green after the fix
