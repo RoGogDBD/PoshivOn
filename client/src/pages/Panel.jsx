@@ -1555,13 +1555,13 @@ const Panel = () => {
               {isSettingsDirty || isSavingSettings || settingsNotice
                 ? createPortal(
                     <div className="fixed inset-x-0 bottom-0 z-50 flex justify-center px-4 pb-4 motion-safe:animate-fade-rise sm:px-6">
-                      <div className="flex w-full max-w-2xl flex-col gap-3 rounded-[24px] border p-4 shadow-[0_24px_60px_var(--settings-card-shadow)] backdrop-blur-xl [background:color-mix(in_oklab,var(--settings-shell-bg)_94%,transparent)] [border-color:var(--settings-shell-border)] sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-                        <p className="text-sm leading-6 text-[color:var(--settings-text)]">
+                      <div className="flex w-full max-w-2xl flex-col gap-3 rounded-[24px] border p-4 shadow-[0_24px_60px_rgba(2,6,23,0.45)] [background:rgba(15,23,42,0.96)] [border-color:rgba(148,163,184,0.28)] sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                        <p className="text-sm leading-6 text-[#e2e8f0]">
                           {settingsNotice || (isSavingSettings ? "Сохраняем изменения..." : "Есть несохранённые изменения.")}
                         </p>
                         {isSettingsDirty || isSavingSettings ? (
                           <button
-                            className="inline-flex min-h-12 items-center justify-center rounded-2xl border px-5 text-sm font-semibold text-white motion-safe:transition-all motion-safe:duration-200 motion-safe:ease-[var(--ease-soft-spring)] motion-safe:hover:-translate-y-0.5 motion-safe:hover:opacity-95 motion-safe:active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-60 [background:var(--settings-accent)] [border-color:color-mix(in_oklab,var(--settings-accent)_90%,black)] shadow-[0_16px_30px_var(--settings-card-shadow)]"
+                            className="inline-flex min-h-12 shrink-0 items-center justify-center rounded-2xl border px-5 text-sm font-semibold text-[#0f172a] motion-safe:transition-all motion-safe:duration-200 motion-safe:ease-[var(--ease-soft-spring)] motion-safe:hover:-translate-y-0.5 motion-safe:hover:opacity-90 motion-safe:active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-60 [background:#e2e8f0] [border-color:rgba(15,23,42,0.12)] shadow-[0_16px_30px_rgba(2,6,23,0.35)]"
                             type="submit"
                             form="settings-form"
                             disabled={isSavingSettings}
