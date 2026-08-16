@@ -210,7 +210,7 @@ func NewCostingService(
 func DefaultUserSettings() UserSettings {
 	return UserSettings{
 		PricingRules: PricingRules{
-			CalculatorMode:            calculatorModeMasterpiece,
+			CalculatorMode:            calculatorModeQuick,
 			LaborMinuteRate:           18,
 			PayrollTaxesPercent:       30,
 			OverheadPercent:           18,

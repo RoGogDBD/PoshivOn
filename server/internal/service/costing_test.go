@@ -169,6 +169,7 @@ func TestCostingService_CalculateInChat_RespectsMinimumMarginFloor(t *testing.T)
 	t.Parallel()
 
 	settings := DefaultUserSettings()
+	settings.PricingRules.CalculatorMode = calculatorModeMasterpiece
 	settings.PricingRules.MarginPercent = 5
 	settings.PricingRules.MinMarginPercent = 20
 	settings.BatchDiscounts = []BatchDiscount{{MinQty: 1, MaxQty: 100, Percent: 50}}
