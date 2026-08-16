@@ -417,3 +417,21 @@ None — self-reviewed, well-understood CSS bug.
 **Verification:**
 - `cd client && npx vitest run` → 41 passed, no regression
 - `cd client && npx vite build` → passes, 53 modules
+
+## Post-deploy hotfix: save-button text barely visible — root cause was a CSS cascade layer bug
+
+**Status:** Done
+**Commit:** 27338fc
+**Agent:** main agent
+**Summary:** User reported the save-banner button's text was barely visible despite the button using a light background (`#e2e8f0`) with dark text (`#0f172a`) — objectively high contrast on paper. Root cause: `App.css` declares a global `button { background: none; color: inherit; border: 0 }` reset **outside any `@layer`**, while Tailwind (via `@import "tailwindcss"` in `index.css`) wraps all its generated utility classes in `@layer theme, base, components, utilities`. Per the CSS Cascade Layers spec, **unlayered rules always win over layered rules, regardless of selector specificity** — so App.css's plain-element `button` selector was silently overriding every Tailwind `text-[...]`/`[background:...]`/`[border-color:...]` arbitrary-value class applied to any `<button>` with no matching custom class. Confirmed by inspecting the compiled CSS: both the correct utility rule (`.text-\[\#0f172a\]{color:#0f172a}`) and the reset rule existed, but per-spec layer priority meant the reset won unconditionally. Attempted to verify live in a headless browser via Playwright but the sandbox lacks the required system libraries (`libnspr4.so` etc.) and root/sudo access to install them — proceeded on the code-level evidence and documented CSS spec behavior instead.
+**Deviations:** Proactively fixed the same latent bug in 4 other buttons built earlier this session (`DeleteRowButton`, and the 3 identical "Добавить" buttons in `GarmentAddForm`/`OperationAddForm`/`DiscountAddForm`) that had the identical vulnerable pattern (Tailwind-only styling, no matching custom class) but hadn't been reported yet — not explicitly requested, but the same root cause makes them equally likely to be broken. Traded away each button's `hover:` color/background transition, since inline styles (the fix) always beat Tailwind's `hover:` utility regardless of hover state, and adding JS-tracked hover state to restore it wasn't judged worth the complexity for a cosmetic detail.
+
+**Reviews:**
+
+None — self-reviewed. Root cause reasoning documented above should be treated as high-confidence but not visually browser-verified in this environment.
+
+**Verification:**
+- `cd client && npx vitest run` → 41 passed, no regression
+- `cd client && npx vite build` → passes, 53 modules
+- Inspected compiled `dist/assets/*.css` directly to confirm both the App.css reset rule and the Tailwind utility rules exist with the expected values, consistent with the cascade-layer explanation
+- Could not visually confirm in a real browser (Playwright chromium download succeeded but launch failed on missing shared libraries; no sudo/root available in this sandbox to install them)
