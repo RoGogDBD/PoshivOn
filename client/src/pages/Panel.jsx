@@ -363,11 +363,16 @@ const SettingsField = ({ label, children, className = "" }) => (
 const SettingsNumberInput = (props) => <input className={settingsInputClass} type="number" {...props} />;
 
 // DeleteRowButton — кнопка удаления строки настроек. Показывается только когда isDeletable:
-// дефолтные изделия/операции и последний диапазон скидок удалять нельзя, и решает это
-// вызывающая сторона. type="button" обязателен — кнопка живёт внутри формы настроек,
+// дефолтные изделия/операции удалять нельзя, и решает это вызывающая сторона.
+// type="button" обязателен — кнопка живёт внутри формы настроек,
 // иначе клик отправил бы handleSaveSettings. Своего цвета «опасного действия» в теме нет
 // (--settings-danger в index.css отсутствует), поэтому стиль приглушённый, на токенах инпута.
-const DeleteRowButton = ({ isDeletable, onDelete }) => {
+//
+// disabled — отдельный от isDeletable случай: кнопка видна, но неактивна. Нужен для последнего
+// диапазона скидок (Task 5): удалить его нельзя, но админ должен видеть почему, а не искать
+// пропавший элемент управления. disabledHint уходит в title/aria-label, чтобы причина читалась
+// и мышью, и скринридером.
+const DeleteRowButton = ({ isDeletable, onDelete, disabled = false, disabledHint = "" }) => {
   if (!isDeletable) {
     return null;
   }
@@ -376,7 +381,10 @@ const DeleteRowButton = ({ isDeletable, onDelete }) => {
     <button
       type="button"
       onClick={onDelete}
-      className="h-11 rounded-2xl border px-4 text-sm font-medium text-[color:var(--settings-muted)] transition [border-color:var(--settings-input-border)] [background:var(--settings-input-bg)] hover:text-[color:var(--settings-text)] hover:[border-color:var(--settings-accent)] focus:outline-none focus:ring-4 focus:ring-[color:var(--settings-focus)]"
+      disabled={disabled}
+      title={disabled && disabledHint ? disabledHint : undefined}
+      aria-label={disabled && disabledHint ? `Удалить — ${disabledHint}` : undefined}
+      className="h-11 rounded-2xl border px-4 text-sm font-medium text-[color:var(--settings-muted)] transition [border-color:var(--settings-input-border)] [background:var(--settings-input-bg)] hover:text-[color:var(--settings-text)] hover:[border-color:var(--settings-accent)] focus:outline-none focus:ring-4 focus:ring-[color:var(--settings-focus)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:text-[color:var(--settings-muted)] disabled:hover:[border-color:var(--settings-input-border)]"
     >
       Удалить
     </button>
@@ -1316,7 +1324,12 @@ const Panel = () => {
                     <OperationAddForm settings={settings} onAddOperation={handleAddOperation} />
                   </SettingsSection>
 
-                  <DiscountsBlock settings={settings} handleDiscountChange={handleDiscountChange} />
+                  <DiscountsBlock
+                    settings={settings}
+                    handleDiscountChange={handleDiscountChange}
+                    handleAddDiscount={handleAddDiscount}
+                    handleDeleteDiscount={handleDeleteDiscount}
+                  />
                 </>
               ) : (
                 <>
@@ -1405,7 +1418,12 @@ const Panel = () => {
                     </div>
                   </SettingsSection>
 
-                  <DiscountsBlock settings={settings} handleDiscountChange={handleDiscountChange} />
+                  <DiscountsBlock
+                    settings={settings}
+                    handleDiscountChange={handleDiscountChange}
+                    handleAddDiscount={handleAddDiscount}
+                    handleDeleteDiscount={handleDeleteDiscount}
+                  />
 
                   <SettingsSection title="Срочность" description="Процентная надбавка к цене в зависимости от срока выполнения.">
                     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -1697,31 +1715,153 @@ const Panel = () => {
   );
 };
 
-const DiscountsBlock = ({ settings, handleDiscountChange }) => (
-  <SettingsSection
-    title="Скидки за количество"
-    description="Диапазоны количества и процент скидки для автоматического уменьшения цены на крупные заказы."
-  >
-    <div className="grid gap-4">
-      {settings.batch_discounts.map((discount, index) => (
-        <div
-          className="grid gap-4 rounded-[24px] border p-4 [background:color-mix(in_oklab,var(--settings-card-bg)_90%,transparent)] [border-color:var(--settings-card-border)] md:grid-cols-3"
-          key={`${discount.min_qty}-${discount.max_qty}-${index}`}
+// DiscountAddForm — форма добавления диапазона скидки. Оба конца диапазона предзаполнены
+// getDefaultDiscountRange: пустое или нулевое «До» не прошло бы серверную валидацию
+// (max_qty >= min_qty) и заблокировало бы сохранение всех остальных правок разом — настройки
+// уходят на сервер одним POST целого объекта.
+//
+// Это НЕ <form> — секция настроек уже обёрнута в <form onSubmit={handleSaveSettings}>,
+// вложенные формы HTML запрещает. Отсюда type="button" + onClick и ручной перехват Enter:
+// иначе Enter отправил бы внешнюю форму и сохранил настройки вместо добавления строки.
+const DiscountAddForm = ({ settings, onAddDiscount }) => {
+  const defaultRange = getDefaultDiscountRange(settings.batch_discounts);
+  const [draft, setDraft] = useState({ min_qty: String(defaultRange.min_qty), max_qty: String(defaultRange.max_qty), percent: "" });
+  const [suggestedMinQty, setSuggestedMinQty] = useState(defaultRange.min_qty);
+  const [error, setError] = useState("");
+
+  // Список диапазонов изменился (добавили, удалили или поправили «До» последней строки) —
+  // подсказка пересчитывается, чтобы форма всегда предлагала продолжить с конца последнего
+  // диапазона. Правка состояния прямо в рендере — штатный приём React для сброса стейта по
+  // изменившемуся пропу: дешевле useEffect (без лишнего коммита) и без мигания старым значением.
+  // Уже введённый процент не трогаем — он от диапазона не зависит.
+  if (suggestedMinQty !== defaultRange.min_qty) {
+    setSuggestedMinQty(defaultRange.min_qty);
+    setDraft((current) => ({ ...current, min_qty: String(defaultRange.min_qty), max_qty: String(defaultRange.max_qty) }));
+  }
+
+  const updateField = (key) => (event) => {
+    const { value } = event.target;
+    setDraft((current) => ({ ...current, [key]: value }));
+  };
+
+  const handleAdd = () => {
+    // Валидатору отдаются сырые строки из input: он сам приводит их к числу строго
+    // (пустая строка и мусор дают NaN, а не 0). Приводить через Number() заранее нельзя —
+    // это подменило бы невалидный ввод нулём ещё до проверки.
+    const { valid, errors } = validateDiscountFields(draft);
+    if (!valid) {
+      setError(Object.values(errors).join(". "));
+      return;
+    }
+
+    // Обработчик добавления числа не приводит — пишет в состояние как есть, поэтому
+    // Number() здесь обязателен, иначе в batch_discounts уедут строки.
+    const added = {
+      min_qty: Number(draft.min_qty),
+      max_qty: Number(draft.max_qty),
+      percent: Number(draft.percent),
+    };
+    onAddDiscount(added);
+
+    // Форма сразу предлагает следующий диапазон, а не очищается: пустые поля — это как раз
+    // тот невалидный ввод, из-за которого ломается сохранение всех настроек. Подсказку считаем
+    // от только что добавленной строки (handleAddDiscount дописывает её в конец списка), и тем
+    // же значением обновляем suggestedMinQty, чтобы синхронизация выше не сбросила поля повторно.
+    const nextRange = getDefaultDiscountRange([added]);
+    setDraft({ min_qty: String(nextRange.min_qty), max_qty: String(nextRange.max_qty), percent: "" });
+    setSuggestedMinQty(nextRange.min_qty);
+    setError("");
+  };
+
+  const handleKeyDown = (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      handleAdd();
+    }
+  };
+
+  return (
+    <div
+      className="mt-4 grid gap-4 rounded-[24px] border border-dashed p-4 [background:color-mix(in_oklab,var(--settings-card-bg)_90%,transparent)] [border-color:var(--settings-card-border)]"
+      onKeyDown={handleKeyDown}
+    >
+      <div>
+        <strong className="text-base font-semibold tracking-[-0.02em] text-[color:var(--settings-text)]">Новый диапазон</strong>
+        <p className="mt-1 text-sm text-[color:var(--settings-muted)]">Диапазон предзаполнен сразу за последним существующим — поправьте его под свою партию.</p>
+      </div>
+      <div className="grid gap-4 md:grid-cols-3">
+        <SettingsField label="От">
+          <SettingsNumberInput min="1" value={draft.min_qty} onChange={updateField("min_qty")} placeholder={String(defaultRange.min_qty)} />
+        </SettingsField>
+        <SettingsField label="До">
+          <SettingsNumberInput min="1" value={draft.max_qty} onChange={updateField("max_qty")} placeholder={String(defaultRange.max_qty)} />
+        </SettingsField>
+        <SettingsField label="Скидка, %">
+          <SettingsNumberInput step="0.01" min="0" max="100" value={draft.percent} onChange={updateField("percent")} placeholder="5" />
+        </SettingsField>
+      </div>
+      {error ? (
+        <p
+          role="alert"
+          className="rounded-2xl border px-4 py-2 text-sm font-medium text-[color:var(--settings-text)] [background:var(--settings-accent-soft)] [border-color:var(--settings-accent)]"
         >
-          <SettingsField label="От">
-            <SettingsNumberInput min="1" value={discount.min_qty} onChange={(event) => handleDiscountChange(index, "min_qty", event.target.value)} />
-          </SettingsField>
-          <SettingsField label="До">
-            <SettingsNumberInput min="1" value={discount.max_qty} onChange={(event) => handleDiscountChange(index, "max_qty", event.target.value)} />
-          </SettingsField>
-          <SettingsField label="Скидка, %">
-            <SettingsNumberInput step="0.01" min="0" max="100" value={discount.percent} onChange={(event) => handleDiscountChange(index, "percent", event.target.value)} />
-          </SettingsField>
-        </div>
-      ))}
+          {error}
+        </p>
+      ) : null}
+      <div>
+        <button
+          type="button"
+          onClick={handleAdd}
+          className="h-11 rounded-2xl border px-5 text-sm font-semibold text-[color:var(--settings-text)] transition [background:var(--settings-input-bg)] [border-color:var(--settings-accent)] hover:[background:var(--settings-accent-soft)] focus:outline-none focus:ring-4 focus:ring-[color:var(--settings-focus)]"
+        >
+          Добавить
+        </button>
+      </div>
     </div>
-  </SettingsSection>
-);
+  );
+};
+
+const DiscountsBlock = ({ settings, handleDiscountChange, handleAddDiscount, handleDeleteDiscount }) => {
+  // Последний диапазон удалять нельзя: серверный normalizeSettings молча подменяет пустой
+  // batch_discounts четырьмя дефолтными диапазонами (costing.go), то есть «удалил всё и
+  // сохранил» вернуло бы чужие скидки вместо пустого списка.
+  const canDeleteRow = settings.batch_discounts.length > 1;
+
+  return (
+    <SettingsSection
+      title="Скидки за количество"
+      description="Диапазоны количества и процент скидки для автоматического уменьшения цены на крупные заказы."
+    >
+      <div className="grid gap-4">
+        {settings.batch_discounts.map((discount, index) => (
+          <div
+            className="grid gap-4 rounded-[24px] border p-4 [background:color-mix(in_oklab,var(--settings-card-bg)_90%,transparent)] [border-color:var(--settings-card-border)] md:grid-cols-[repeat(3,minmax(0,1fr))_auto]"
+            key={`${discount.min_qty}-${discount.max_qty}-${index}`}
+          >
+            <SettingsField label="От">
+              <SettingsNumberInput min="1" value={discount.min_qty} onChange={(event) => handleDiscountChange(index, "min_qty", event.target.value)} />
+            </SettingsField>
+            <SettingsField label="До">
+              <SettingsNumberInput min="1" value={discount.max_qty} onChange={(event) => handleDiscountChange(index, "max_qty", event.target.value)} />
+            </SettingsField>
+            <SettingsField label="Скидка, %">
+              <SettingsNumberInput step="0.01" min="0" max="100" value={discount.percent} onChange={(event) => handleDiscountChange(index, "percent", event.target.value)} />
+            </SettingsField>
+            <div className="flex items-end">
+              <DeleteRowButton
+                isDeletable
+                disabled={!canDeleteRow}
+                disabledHint="Последний диапазон удалить нельзя"
+                onDelete={() => handleDeleteDiscount(index)}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+      <DiscountAddForm settings={settings} onAddDiscount={handleAddDiscount} />
+    </SettingsSection>
+  );
+};
 
 const CalculationAIFeedback = ({ calculation, feedback }) => {
   if (!calculation) {
