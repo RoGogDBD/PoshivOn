@@ -124,3 +124,33 @@ No round 2 — no in-scope findings required a fix.
 - `git diff -U2` → exactly 4 hunks: the new component, plus one row edit and one form insertion in each of the two operation blocks; no line touching Изделия / `DiscountsBlock` / Task 2's shared code
 - `grep` of `OperationAddForm` / `DEFAULT_OPERATION_NAMES` call sites → exactly 2 JSX call sites each, one per calculator-mode branch; both read the same `settings.operations` object, so an add or delete is immediately visible after switching modes
 - Verify-user (browser check of add + save + reload in both modes, the three negative-value rejections, delete visibility on defaults vs. added rows) → PENDING, awaiting user
+
+## Task 5: Add/delete rows — Скидки за количество (Increment 2)
+
+**Status:** Done
+**Commit:** 9d05d6a
+**Agent:** main agent
+**Summary:** Added `DiscountAddForm` (module scope, directly above `DiscountsBlock`, mirroring the `GarmentAddForm`/`OperationAddForm` pattern from Tasks 3/4) and wired it plus `DeleteRowButton` into `DiscountsBlock`. Both range ends are pre-filled from Task 2's `getDefaultDiscountRange(settings.batch_discounts)` and re-suggested whenever the tier list changes; validation is Task 2's `validateDiscountFields` only, fed the raw input strings. The delete control renders on every tier row and is **disabled**, not hidden, while only one tier remains. Изделия/Операции sections and Task 2's handlers/constants/helpers were not touched.
+**Deviations:** Three, all forced by the code rather than chosen.
+1. `DiscountsBlock`'s two call sites (`Panel.jsx:1327`, `Panel.jsx:1421`) had to gain `handleAddDiscount`/`handleDeleteDiscount` props, contrary to the task's "call sites need no changes" claim — those handlers are defined inside the `Panel` component (`Panel.jsx:917-929`) and `DiscountsBlock` is a module-scope sibling, so there is no other way to reach them. The change is two identical prop additions; the component stays single and shared, and no add/delete logic is duplicated per mode (the intent behind that acceptance criterion).
+2. `DeleteRowButton` was extended, contrary to the task's "no changes to Task 2's `DeleteRowButton`". Task 2's version supports only hidden (`isDeletable` false → returns `null`), while this task requires *disabled*. The extension is purely additive — optional `disabled = false` / `disabledHint = ""` props, so Tasks 3/4's existing call sites behave exactly as before — and the alternative (a second, locally styled delete button inside `DiscountsBlock`) would have duplicated markup that must stay visually identical. Disabled styling follows the file's existing convention (`disabled:cursor-not-allowed disabled:opacity-60`), with `disabled:hover:*` overrides so the hover state does not fire on a dead control, and `title`/`aria-label` carrying the reason ("Последний диапазон удалить нельзя").
+3. On a successful add, the form does **not** clear itself (unlike Tasks 3/4's forms). Blank `min_qty`/`max_qty` are exactly the invalid state that makes the whole settings object unsaveable, and clearing would violate the "never blank/zero" criterion for the visible form. Instead the draft is refilled with the next suggested range, computed from the row just added (`handleAddDiscount` appends, so that row is the new last one). Percent is cleared, since it carries no continuation meaning.
+
+The default-range suggestion is kept in sync by adjusting state during render (`if (suggestedMinQty !== defaultRange.min_qty) …`) rather than with `useEffect` — React's documented pattern for resetting state on a changed prop, one render cheaper and with no flash of the stale value. It cannot loop: `getDefaultDiscountRange` always returns a finite number (never `NaN`, which would never compare equal). An in-progress percent entry survives the resync; only the two range fields are rewritten.
+
+**Reviews:**
+
+*Round 1:*
+- Not run by the executing agent — it self-reviewed against the code-writing skill instead (findings below). The independent code-reviewer/security-auditor/test-reviewer reports for Tasks 1-4 were produced separately by the team lead and live under `logs/working/task-{1..4}/`; the matching `logs/working/task-5/` reports are **still outstanding** and should be run before the feature is finalized.
+
+**Self-review findings (found and fixed before commit):**
+- First draft cleared the draft to empty strings after a successful add. Broken in a reachable case: if the admin entered a range whose `max_qty` equalled the previous suggestion minus one (e.g. suggestion `101`, entered `5-100`), the recomputed suggestion stayed `101`, the render-time resync did not fire, and the form was left with two blank required fields. Replaced with an explicit refill from the just-added row plus a matching `suggestedMinQty` update, so the resync never double-fires either.
+- `DeleteRowButton` supports only hidden, not disabled — see Deviation 2. Verified in the built CSS that both the `disabled:*` utilities and the `md:grid-cols-[repeat(3,minmax(0,1fr))_auto]` arbitrary value are actually emitted, and that the `:disabled:hover` rules come after (and outrank) the plain `:hover` rule, so a disabled button does not light up under the cursor.
+- Degenerate `1000001–1000001` suggestion on freshly-loaded default settings is left as-is, per the task's explicit "осознанно допустимо".
+
+**Verification:**
+- `cd client && npx vitest run` → 32 passed (1 file), unchanged from Tasks 2-4 — this task added no pure logic
+- `cd client && npx vite build` → passes, no warnings (vite 5.4.21, 53 modules)
+- `git diff -U1` → 5 hunks: `DeleteRowButton`'s signature/className, the two `DiscountsBlock` call sites, and the `DiscountAddForm` + `DiscountsBlock` block; no line touching Изделия / Усложнения / Task 2's handlers or validators
+- `grep` of `DiscountsBlock` → still exactly 2 JSX call sites, one per calculator-mode branch, both reading the same `settings.batch_discounts`
+- Verify-user (browser check of add + save + reload, delete of a middle tier, the two rejection cases, disabled delete on the last tier) → PENDING, awaiting user
