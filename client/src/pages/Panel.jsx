@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { checkAuthStatus, fetchAuthProfile, logout } from "../utils/yandexAuth.js";
 import AccessRequestBanner from "../components/AccessRequestBanner.jsx";
 import AdminUsersSection from "../components/AdminUsersSection.jsx";
@@ -1315,7 +1316,7 @@ const Panel = () => {
 
         {activeSection === "settings" ? (
           <section className="panel-settings rounded-[32px] border p-5 shadow-[0_28px_80px_var(--settings-shell-shadow)] backdrop-blur-xl motion-safe:animate-fade-rise [background:var(--settings-shell-bg)] [border-color:var(--settings-shell-border)] sm:p-7">
-            <form className="space-y-5" onSubmit={handleSaveSettings}>
+            <form id="settings-form" className="space-y-5" onSubmit={handleSaveSettings}>
               <SettingsSection
                 title="Режим расчёта"
                 description="Выберите логику калькулятора. Карточки переключения собраны как отдельные поверхности, чтобы активное состояние читалось без резкого контраста."
@@ -1538,29 +1539,41 @@ const Panel = () => {
                 </>
               )}
 
-              {/* Кнопка сохранения — не в потоке страницы, а всплывающим уведомлением
-                  внизу экрана, по типу баннера о cookie-политике: появляется только когда
-                  есть что сохранять (isSettingsDirty), идёт сохранение, или ещё не угасло
-                  сообщение по итогу последней попытки (settingsNotice, см. handleSaveSettings —
-                  успех гаснет сам через 3с, ошибка держится, пока не пересохранят). */}
-              {isSettingsDirty || isSavingSettings || settingsNotice ? (
-                <div className="fixed inset-x-0 bottom-0 z-50 flex justify-center px-4 pb-4 motion-safe:animate-fade-rise sm:px-6">
-                  <div className="flex w-full max-w-2xl flex-col gap-3 rounded-[24px] border p-4 shadow-[0_24px_60px_var(--settings-card-shadow)] backdrop-blur-xl [background:color-mix(in_oklab,var(--settings-shell-bg)_94%,transparent)] [border-color:var(--settings-shell-border)] sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-                    <p className="text-sm leading-6 text-[color:var(--settings-text)]">
-                      {settingsNotice || (isSavingSettings ? "Сохраняем изменения..." : "Есть несохранённые изменения.")}
-                    </p>
-                    {isSettingsDirty || isSavingSettings ? (
-                      <button
-                        className="inline-flex min-h-12 items-center justify-center rounded-2xl border px-5 text-sm font-semibold text-white motion-safe:transition-all motion-safe:duration-200 motion-safe:ease-[var(--ease-soft-spring)] motion-safe:hover:-translate-y-0.5 motion-safe:hover:opacity-95 motion-safe:active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-60 [background:var(--settings-accent)] [border-color:color-mix(in_oklab,var(--settings-accent)_90%,black)] shadow-[0_16px_30px_var(--settings-card-shadow)]"
-                        type="submit"
-                        disabled={isSavingSettings}
-                      >
-                        {isSavingSettings ? "Сохраняем..." : "Сохранить изменения"}
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-              ) : null}
+              {/* Кнопка сохранения — всплывающим уведомлением внизу ЭКРАНА (не страницы),
+                  по типу баннера о cookie-политике: появляется только когда есть что сохранять
+                  (isSettingsDirty), идёт сохранение, или ещё не угасло сообщение по итогу
+                  последней попытки (settingsNotice, см. handleSaveSettings — успех гаснет сам
+                  через 3с, ошибка держится, пока не пересохранят).
+                  Портал в document.body — не косметика: .panel__content сам скроллится
+                  (overflow-y:auto, height:100vh), а один из предков этой формы анимируется
+                  motion-safe:animate-fade-rise через transform — тот создаёт для потомков
+                  свой containing block, и «position: fixed» внутри него держится не вьюпорта,
+                  а этого предка, то есть едет вместе со скроллом контента. Портал выносит DOM-узел
+                  баннера прямо в body, где такого предка уже нет. Кнопка внутри — form="settings-form"
+                  вместо DOM-вложенности в <form>, которую портал разрывает; submit по клику или
+                  Enter в другом поле формы работает так же, через HTML5-ассоциацию по id. */}
+              {isSettingsDirty || isSavingSettings || settingsNotice
+                ? createPortal(
+                    <div className="fixed inset-x-0 bottom-0 z-50 flex justify-center px-4 pb-4 motion-safe:animate-fade-rise sm:px-6">
+                      <div className="flex w-full max-w-2xl flex-col gap-3 rounded-[24px] border p-4 shadow-[0_24px_60px_var(--settings-card-shadow)] backdrop-blur-xl [background:color-mix(in_oklab,var(--settings-shell-bg)_94%,transparent)] [border-color:var(--settings-shell-border)] sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                        <p className="text-sm leading-6 text-[color:var(--settings-text)]">
+                          {settingsNotice || (isSavingSettings ? "Сохраняем изменения..." : "Есть несохранённые изменения.")}
+                        </p>
+                        {isSettingsDirty || isSavingSettings ? (
+                          <button
+                            className="inline-flex min-h-12 items-center justify-center rounded-2xl border px-5 text-sm font-semibold text-white motion-safe:transition-all motion-safe:duration-200 motion-safe:ease-[var(--ease-soft-spring)] motion-safe:hover:-translate-y-0.5 motion-safe:hover:opacity-95 motion-safe:active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-60 [background:var(--settings-accent)] [border-color:color-mix(in_oklab,var(--settings-accent)_90%,black)] shadow-[0_16px_30px_var(--settings-card-shadow)]"
+                            type="submit"
+                            form="settings-form"
+                            disabled={isSavingSettings}
+                          >
+                            {isSavingSettings ? "Сохраняем..." : "Сохранить изменения"}
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>,
+                    document.body
+                  )
+                : null}
             </form>
           </section>
         ) : activeSection === "users" && isAdmin ? (
