@@ -407,6 +407,14 @@ const SettingsNumberInput = (props) => <input className={settingsInputClass} typ
 // диапазона скидок (Task 5): удалить его нельзя, но админ должен видеть почему, а не искать
 // пропавший элемент управления. disabledHint уходит в title/aria-label, чтобы причина читалась
 // и мышью, и скринридером.
+//
+// color/background/border-color — инлайн-стилем, не Tailwind-классами: глобальное
+// `button { background: none; color: inherit; border: 0 }` в App.css объявлено вне @layer
+// Tailwind'а, а невложенные в слой правила побеждают любые правила внутри слоёв независимо
+// от специфичности селектора (спека CSS Cascade Layers) — утилити-классы эту битву проигрывают.
+// Инлайн-стиль сильнее любого правила из внешних таблиц стилей, слой не слой. Плата за это —
+// hover-переход цвета (muted → text) убран: воспроизвести его инлайн-стилями без слежения за
+// hover в JS нельзя, а ради него городить состояние здесь не стоит.
 const DeleteRowButton = ({ isDeletable, onDelete, disabled = false, disabledHint = "" }) => {
   if (!isDeletable) {
     return null;
@@ -419,7 +427,8 @@ const DeleteRowButton = ({ isDeletable, onDelete, disabled = false, disabledHint
       disabled={disabled}
       title={disabled && disabledHint ? disabledHint : undefined}
       aria-label={disabled && disabledHint ? `Удалить — ${disabledHint}` : undefined}
-      className="h-11 rounded-2xl border px-4 text-sm font-medium text-[color:var(--settings-muted)] transition [border-color:var(--settings-input-border)] [background:var(--settings-input-bg)] hover:text-[color:var(--settings-text)] hover:[border-color:var(--settings-accent)] focus:outline-none focus:ring-4 focus:ring-[color:var(--settings-focus)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:text-[color:var(--settings-muted)] disabled:hover:[border-color:var(--settings-input-border)]"
+      className="h-11 rounded-2xl border px-4 text-sm font-medium transition focus:outline-none focus:ring-4 focus:ring-[color:var(--settings-focus)] disabled:cursor-not-allowed disabled:opacity-60"
+      style={{ color: "var(--settings-muted)", background: "var(--settings-input-bg)", borderColor: "var(--settings-input-border)" }}
     >
       Удалить
     </button>
@@ -547,7 +556,12 @@ const GarmentAddForm = ({ settings, onAddGarment, isQuickMode = false }) => {
         <button
           type="button"
           onClick={handleAdd}
-          className="h-11 rounded-2xl border px-5 text-sm font-semibold text-[color:var(--settings-text)] transition [background:var(--settings-input-bg)] [border-color:var(--settings-accent)] hover:[background:var(--settings-accent-soft)] focus:outline-none focus:ring-4 focus:ring-[color:var(--settings-focus)]"
+          className="h-11 rounded-2xl border px-5 text-sm font-semibold transition focus:outline-none focus:ring-4 focus:ring-[color:var(--settings-focus)]"
+          // color/background/border-color — инлайн-стилем: см. комментарий у DeleteRowButton
+          // (Panel.jsx, выше isDeletable) про невложенный в @layer button-сброс в App.css,
+          // который побеждает Tailwind-утилиты независимо от специфичности. Плата та же:
+          // hover:[background:var(--settings-accent-soft)] отсюда убран.
+          style={{ color: "var(--settings-text)", background: "var(--settings-input-bg)", borderColor: "var(--settings-accent)" }}
         >
           Добавить
         </button>
@@ -674,7 +688,12 @@ const OperationAddForm = ({ settings, onAddOperation, isQuickMode = false }) => 
         <button
           type="button"
           onClick={handleAdd}
-          className="h-11 rounded-2xl border px-5 text-sm font-semibold text-[color:var(--settings-text)] transition [background:var(--settings-input-bg)] [border-color:var(--settings-accent)] hover:[background:var(--settings-accent-soft)] focus:outline-none focus:ring-4 focus:ring-[color:var(--settings-focus)]"
+          className="h-11 rounded-2xl border px-5 text-sm font-semibold transition focus:outline-none focus:ring-4 focus:ring-[color:var(--settings-focus)]"
+          // color/background/border-color — инлайн-стилем: см. комментарий у DeleteRowButton
+          // (Panel.jsx, выше isDeletable) про невложенный в @layer button-сброс в App.css,
+          // который побеждает Tailwind-утилиты независимо от специфичности. Плата та же:
+          // hover:[background:var(--settings-accent-soft)] отсюда убран.
+          style={{ color: "var(--settings-text)", background: "var(--settings-input-bg)", borderColor: "var(--settings-accent)" }}
         >
           Добавить
         </button>
@@ -1561,7 +1580,14 @@ const Panel = () => {
                         </p>
                         {isSettingsDirty || isSavingSettings ? (
                           <button
-                            className="inline-flex min-h-12 shrink-0 items-center justify-center rounded-2xl border px-5 text-sm font-semibold text-[#0f172a] motion-safe:transition-all motion-safe:duration-200 motion-safe:ease-[var(--ease-soft-spring)] motion-safe:hover:-translate-y-0.5 motion-safe:hover:opacity-90 motion-safe:active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-60 [background:#e2e8f0] [border-color:rgba(15,23,42,0.12)] shadow-[0_16px_30px_rgba(2,6,23,0.35)]"
+                            className="inline-flex min-h-12 shrink-0 items-center justify-center rounded-2xl border px-5 text-sm font-semibold motion-safe:transition-all motion-safe:duration-200 motion-safe:ease-[var(--ease-soft-spring)] motion-safe:hover:-translate-y-0.5 motion-safe:hover:opacity-90 motion-safe:active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-60 shadow-[0_16px_30px_rgba(2,6,23,0.35)]"
+                            // Инлайн-стили, а не Tailwind-классы: глобальное `button { background: none;
+                            // color: inherit; border: 0 }` в App.css объявлено вне @layer Tailwind'а, а
+                            // невложенные в слой правила побеждают любые правила внутри слоёв независимо
+                            // от специфичности селектора (спека CSS Cascade Layers) — утилити-классы вроде
+                            // text-[#0f172a] эту битву проигрывали, отсюда «текст почти не видно».
+                            // Инлайн-стиль сильнее любого правила из внешних таблиц стилей, слой не слой.
+                            style={{ color: "#0f172a", background: "#e2e8f0", borderColor: "rgba(15,23,42,0.12)" }}
                             type="submit"
                             form="settings-form"
                             disabled={isSavingSettings}
@@ -1915,7 +1941,12 @@ const DiscountAddForm = ({ settings, onAddDiscount }) => {
         <button
           type="button"
           onClick={handleAdd}
-          className="h-11 rounded-2xl border px-5 text-sm font-semibold text-[color:var(--settings-text)] transition [background:var(--settings-input-bg)] [border-color:var(--settings-accent)] hover:[background:var(--settings-accent-soft)] focus:outline-none focus:ring-4 focus:ring-[color:var(--settings-focus)]"
+          className="h-11 rounded-2xl border px-5 text-sm font-semibold transition focus:outline-none focus:ring-4 focus:ring-[color:var(--settings-focus)]"
+          // color/background/border-color — инлайн-стилем: см. комментарий у DeleteRowButton
+          // (Panel.jsx, выше isDeletable) про невложенный в @layer button-сброс в App.css,
+          // который побеждает Tailwind-утилиты независимо от специфичности. Плата та же:
+          // hover:[background:var(--settings-accent-soft)] отсюда убран.
+          style={{ color: "var(--settings-text)", background: "var(--settings-input-bg)", borderColor: "var(--settings-accent)" }}
         >
           Добавить
         </button>
