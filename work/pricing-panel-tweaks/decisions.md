@@ -154,3 +154,31 @@ The default-range suggestion is kept in sync by adjusting state during render (`
 - `git diff -U1` → 5 hunks: `DeleteRowButton`'s signature/className, the two `DiscountsBlock` call sites, and the `DiscountAddForm` + `DiscountsBlock` block; no line touching Изделия / Усложнения / Task 2's handlers or validators
 - `grep` of `DiscountsBlock` → still exactly 2 JSX call sites, one per calculator-mode branch, both reading the same `settings.batch_discounts`
 - Verify-user (browser check of add + save + reload, delete of a middle tier, the two rejection cases, disabled delete on the last tier) → PENDING, awaiting user
+
+## Ad-hoc fix: stale `orderForm` reference after deleting a garment/operation
+
+**Status:** Done
+**Commit:** 569c72f
+**Agent:** main agent
+**Type:** Ad-hoc fix, not a planned task — no task file exists for it. It closes the cross-cutting defect that Tasks 3 and 4 each surfaced independently under "Surfaced, not fixed (out of scope)": both correctly declined to fix it because the fix lives in Task 2's shared `handleDeleteGarment`/`handleDeleteOperation`, outside either task's scope, and needed one feature-level decision instead of two unilateral ones.
+**Summary:** `syncOrderForm` reprojects `orderForm` onto the current settings only on the settings-*load* path, so deleting a garment/operation that the calculator currently references left `orderForm.garment_type` (or a key of `orderForm.operation_counts`) pointing at a name that no longer exists; the stale count passed the `count > 0` filter in `handleCalculate` and the server rejected the whole calculation with `unknown operation` until a page reload. Both delete handlers now clear that reference themselves, following `syncOrderForm`'s existing convention rather than a new one: `garment_type` falls back to the first remaining garment (`Object.keys(settings.garments).find((key) => key !== name) || ""`, matching `syncOrderForm`'s `Object.keys(settings.garments)[0] || ""`), and the deleted operation's key is dropped from `operation_counts`, since `syncOrderForm` defines that map's key set as exactly the keys of `settings.operations`.
+**Deviations:** Deliberately minimal, per the scope given: only the two delete handlers were extended. `orderForm` state management was not restructured, `syncOrderForm` was not moved onto a `useEffect`, and `handleSaveSettings` was not made to re-sync — a general "re-sync `orderForm` after every `setSettings`" mechanism would have been a larger, riskier change than the one confirmed defect warrants. The fallback deliberately reads the unsorted `Object.keys(settings.garments)` (like `syncOrderForm`) rather than the sorted `garmentOptions` used for the `<select>`; either way the chosen value is guaranteed to be among the rendered options.
+
+**Reviews:**
+
+*Round 1:*
+- Not run independently — the executing agent self-reviewed as a hostile critic, as instructed. Findings below. This matches the review situation of Tasks 2-5, whose independent reports are still partly outstanding.
+
+**Self-review findings (hostile pass, all checked, no fix needed):**
+- Both updaters are no-ops when the deleted item is *not* the referenced one: `handleDeleteGarment` returns `current` unchanged unless `current.garment_type === name`, and `handleDeleteOperation` returns `current` unless the key is actually present in `operation_counts`. Same-object identity, so no spurious re-render and no way to blank a selection the admin did not delete.
+- The normal edit flow is untouched: `handleGarmentChange`, `handleOperationSettingChange`, both add handlers, `handleOrderChange` and `handleOperationCountChange` were not modified, and renaming is not a supported operation, so delete is the only path that can orphan a reference.
+- Both updaters are pure and idempotent, so React StrictMode's double invocation is safe: on the second pass the name no longer matches / the key is already gone and `current` is returned.
+- `handleDeleteGarment` reads `settings.garments` from the render closure rather than from the `setSettings` updater's `current`, on purpose — running a second state update inside an updater is unsafe under StrictMode. The closure can only go stale if two deletes are dispatched inside one tick without a re-render, which two separate clicks cannot do.
+- Dropping a key from `operation_counts` cannot break the readers: the calculator input reads `orderForm.operation_counts[name] || 0`, `handleOperationCountChange` re-adds the key on edit, `handleCalculate` iterates `Object.entries`, and a later `syncOrderForm` rebuilds the full key set with `|| 0`.
+- `garment_type: ""` is only reachable if every garment is deleted, which the UI forbids — `DeleteRowButton` never renders for `DEFAULT_GARMENT_NAMES` — and it is the same terminal value `syncOrderForm` and `createDefaultOrderForm` already produce.
+
+**Verification:**
+- `cd client && npx vitest run` → 32 passed (1 file), unchanged — the fix touches no validation logic, only the two delete handlers
+- `cd client && npx vite build` → passes, no warnings (vite 5.4.21, 53 modules)
+- `git diff -U3` → exactly 2 hunks, one per delete handler; no other line in `Panel.jsx` changed
+- Verify-user (browser: select a self-added garment/operation in the calculator, delete it in Настройки without reloading, run a calculation → must succeed instead of failing with `unknown operation`) → PENDING, awaiting user
