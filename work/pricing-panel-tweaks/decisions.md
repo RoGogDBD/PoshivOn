@@ -319,3 +319,18 @@ None — implemented directly by the main agent (small, well-scoped follow-up), 
 - `cd client && npx vite build` → passes, 53 modules
 - `go build ./...` and `go vet ./...` (via `golang:1.25.5-alpine` Docker image, matching `server/Dockerfile`'s `GO_VERSION`) → clean
 - `go test ./...` → **initially failed** (`TestCostingService_CalculateInChat_RespectsMinimumMarginFloor`, implicitly relied on the old default mode) — fixed by explicitly setting `CalculatorMode = calculatorModeMasterpiece` in that test (it exercises masterpiece-only margin-floor logic); full suite green after the fix
+
+## Post-deploy hotfix: AI feedback stopped after default-mode change
+
+**Status:** Done
+**Commit:** 0d0f007
+**Agent:** main agent
+**Summary:** User reported "DeepSeek stopped answering" after tag `0.2.1.18`. Root cause: `handleCalculate` only requested AI feedback when `result.CalculationMode == "masterpiece"` — harmless while masterpiece was the default tariff, but the prior commit switched the default to `quick`, so any user without explicitly saved settings silently got zero AI feedback regardless of UI. Fixed by dropping the mode restriction; `buildMarketFeedbackInputFromCalculation` already degrades gracefully for quick-mode's empty `MaterialType`/`Urgency`/`MarketSegment` fields, so the restriction was never load-bearing.
+**Deviations:** None.
+
+**Reviews:**
+
+None — small, well-understood bugfix, self-reviewed, not routed through the task/reviewer pipeline.
+
+**Verification:**
+- `go build ./...`, `go vet ./...`, `go test ./...` (via `golang:1.25.5-alpine`, matching `server/Dockerfile`) → all clean, no test relied on the removed mode check
