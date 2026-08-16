@@ -246,3 +246,29 @@ None — this task is itself the security review for the feature (`reviewers` in
 - `cd client && npx vitest run` → 32 passed (1 file), run by the auditor, not taken from prior reports
 - `it(` count in `Panel.validation.test.js` → 32, matching the reported total; no skipped or `.only` tests
 - `DEFAULT_GARMENT_NAMES` / `DEFAULT_OPERATION_NAMES` cross-checked line-by-line against `server/internal/service/costing.go` `DefaultUserSettings()` → exact match; `defaultSettings.operations` now carries all 8 entries (Decision 6 drift confirmed fixed)
+
+## Ad-hoc fix: reject fractional values for integer backend fields (Audit findings F1, U1)
+
+**Status:** Done — reviews pending
+**Commit:** f8216ca (code + tests), d49d08a (decisions.md F10 doc fix)
+**Agent:** main agent
+**Type:** Ad-hoc fix, not a planned task — no task file exists for it. It closes code-audit finding **F1** (major, [logs/working/task-6/code-audit-report.md](logs/working/task-6/code-audit-report.md)) and test-audit finding **U1** (moderate-low, [logs/working/task-8/test-audit-report.md](logs/working/task-8/test-audit-report.md)), plus the documentation drift of finding **F10** in a separate commit.
+**Summary:** Task 2's three validators checked only sign and range, never integrality, so a fractional value in a field the Go backend declares as `int`/`int64` passed client validation and reached the server. Six such fields exist: `base_minutes` and `quick_price` (`costing.go:45-47`), `additional_minutes` and `additional_material_per_unit` (`costing.go:51-52`), `min_qty` and `max_qty` (`costing.go:23-24`). A value like `10.5` in any of them fails `encoding/json` unmarshal *before* the server's own `validateSettings` runs, so the whole settings POST returns 400 — one bad new row again blocking the save of the entire settings object, the exact failure class this feature exists to prevent. The failure is also invisible: `База, мин` is not rendered in quick mode's garment row, so nothing on screen looks wrong until Save fails. Fix: a shared `isIntegerValue` helper (`Number.isInteger(toFiniteNumber(value))`, so non-numeric input is rejected too) applied as an `else if` after each field's existing finite/sign check, with a field-specific "должно быть целым числом" message. `step="1"` was added to the six matching `SettingsNumberInput` elements as a browser hint only — the "Добавить" buttons are `type="button"` and never trigger native form validation, so enforcement lives entirely in the validators.
+**Deviations:** None. The three genuinely-float server fields were deliberately left alone and are now marked as such in the code: `complexity_coeff` (`float64`, `costing.go:46`), `quick_percent` (`float64`, `costing.go:53`) and `percent` (`float64`, `costing.go:25`) still accept fractions, which the new tests assert explicitly so a future "make everything integer" sweep breaks loudly.
+
+**Ordering decision (discount `max_qty`):** the integer check is placed *before* the existing `max_qty >= min_qty` comparison. Without that order, `max_qty: 10.5` with `min_qty: 1` would pass the range comparison and reach the server. Both branches reject, so the ordering only decides which message the admin sees; the more specific cause wins. U1's premise was verified rather than assumed: `{min_qty: 11, max_qty: ""}` is indeed already rejected today, but by `isPositiveNumber(NaN)` on `max_qty`'s own branch, not by the `NaN >= 11` comparison the audit hypothesized — the comparison sits in an `else if` that a blank `max_qty` never reaches. That branch is now covered directly, so it cannot silently lose its guard if the comparison is ever rewritten.
+
+**Test coverage added (9 new cases, suite 32 → 41):**
+- `validateGarmentFields`: fractional `base_minutes` / `quick_price` rejected; fractional `complexity_coeff` still accepted.
+- `validateOperationFields`: fractional `additional_minutes` / `additional_material_per_unit` rejected while `0` stays valid; fractional `quick_percent` still accepted.
+- `validateDiscountFields` (U1): blank/non-numeric `max_qty` on its own branch, `max_qty <= 0` with a valid `min_qty`, fractional `min_qty`/`max_qty`, and — asserted separately — that a *whole* `max_qty` below `min_qty` still reports the range message rather than the integer one.
+- One pre-existing test was amended, not deleted: "accepts the smallest positive values" used `base_minutes: 0.01, quick_price: 0.01`, which the new rule correctly rejects; the smallest valid integer is `1`, and `complexity_coeff` keeps its `0.01`.
+
+**Reviews:**
+
+*Round 1:* Pending — code-reviewer and test-reviewer (the two auditors who raised F1 and U1) to be spawned by the team lead.
+
+**Verification:**
+- `cd client && npx vitest run` → 41 passed (1 file), vitest 3.2.7
+- `cd client && npx vite build` → passes, no warnings (vite 5.4.21, 53 modules)
+- Field-by-field cross-check of every validated field against its Go struct tag in `costing.go` → exactly 6 int/int64 fields guarded, exactly 3 float64 fields left free
