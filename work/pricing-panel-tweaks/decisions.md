@@ -182,3 +182,63 @@ The default-range suggestion is kept in sync by adjusting state during render (`
 - `cd client && npx vite build` → passes, no warnings (vite 5.4.21, 53 modules)
 - `git diff -U3` → exactly 2 hunks, one per delete handler; no other line in `Panel.jsx` changed
 - Verify-user (browser: select a self-added garment/operation in the calculator, delete it in Настройки without reloading, run a calculation → must succeed instead of failing with `unknown operation`) → PENDING, awaiting user
+
+## Task 6: Code Audit (Audit Wave)
+
+**Status:** Done
+**Commit:** (this entry)
+**Agent:** main agent
+**Summary:** Holistic cross-component pass over the assembled feature (Tasks 1-5 + the ad-hoc `orderForm` fix) using the `code-reviewing` skill's 11 dimensions at feature level. Verdict **PASS with findings — Audit Wave not blocked**: 0 critical, 1 major, 9 minor. The three independently-built add-forms converged rather than drifted (identical handler/prop naming, trim and coercion discipline, error markup, shared-helper reuse), no validation logic is duplicated anywhere, and Decisions 1-6 are all correctly realised — both mode-branch render sites present with identical props, `DEFAULT_*_NAMES` exact against `costing.go:227-242`, `defaultSettings.operations` fully fixed, `getDefaultDiscountRange` pre-filling both ends. The one major finding is a gap no per-task reviewer could see: the add-forms accept fractional values for six fields that are `int`/`int64` server-side, and because the row editors show different field subsets per calculator mode, the offending field is invisible in the mode where the add happened — the whole settings save then fails with an opaque `invalid_request`, re-opening the "one bad new row blocks the entire save" bug class the specs treat as closed. Full findings, severities and suggested fixes → [logs/working/task-6/code-audit-report.md](logs/working/task-6/code-audit-report.md).
+**Deviations:** None. No code was changed, per the task's explicit "report only, do not fix" instruction — including for findings that are one-line fixes.
+
+**Reviews:**
+
+None — audit task. Per the project's skills-and-reviewers catalog the audit itself is the review; no `logs/working/task-6/{reviewer}-{round}.json` reports are produced.
+
+**Verification:**
+- `cd client && npx vitest run` → 32 passed (1 file) on the merged codebase — confirms Tasks 3/4/5's JSX edits did not break Task 2's validation suite
+- Every file in the Tasks 1-5 union read in its current post-Wave-3 state (`Panel.jsx` 2127 lines, `Panel.validation.test.js`, `package.json`), plus `panelApi.js`, `main.jsx` and the server-side references `costing.go` / `handler/http.go` used to cross-check bounds, defaults and the save-time error path
+- No code changes: `git status` clean apart from this entry and the report file
+
+## Task 7: Security Audit (Audit Wave)
+
+**Status:** Done
+**Commit:** (report only — no code changes)
+**Agent:** main agent
+**Summary:** Holistic full-feature OWASP Top 10 pass over the assembled final state of `Panel.jsx` (commits `4edea63^..HEAD`), covering ground no diff-scoped per-task review saw: cross-component data flow of admin-typed names from the three add-forms all the way to the backend AI prompt, plus the ad-hoc `569c72f` `orderForm` fix that landed after Task 5's review and had never been security-reviewed. Verdict: **0 Critical, 0 High, 1 Medium, 2 Low** — nothing blocking. Full report: [logs/working/task-7/security-audit-report.md](logs/working/task-7/security-audit-report.md).
+**Deviations:** None.
+
+**Findings accepted as-is rather than fixed:**
+- The `deepseek.go:404-406` prompt item is **re-confirmed as still holding** and is noted, not remediated, exactly as tech-spec's Risks table intends. Verified three ways: the file is byte-identical (no backend file changed at all in this feature), the blast radius is still self-scoped (both `AnalyzeMarketFeedback` call sites take settings from `GetUserSettings(ctx, userID)` with `userID` from the session identity, and the AI result is display-only, attached after the price is computed), and no new unescaped sink exists. This feature changes discoverability only, not the trust boundary — fixing it would require editing backend code that user-spec puts out of scope.
+- The Medium finding (build-toolchain `npm audit` advisories) is pre-existing dev-only debt already carried forward from Task 1, not introduced here — `vitest` itself adds no advisory, and its own CVE was already fixed in `7a2aeee`. The `vite` major bump remains separate maintenance work.
+- Both Low findings are optional hardening outside this feature's scope (no `maxLength` on the name inputs; no integrality check on integer-typed numeric fields — the latter a pre-existing class shared with the existing edit handlers).
+
+**Reviews:**
+
+None — this task is itself the security review for the feature (`reviewers` intentionally empty); findings live in the report, not in a reviewer JSON cycle.
+
+**Bookkeeping note for the lead:** the Tasks 2-5 entries above state their reviews were "not run", but `logs/working/task-{2..5}/security-auditor-1.json` (and the code/test reviewer reports) do exist, committed later in `5ef014d`, `c1eb100`, `c9ec79f`. Stale prose only — their findings were read and are consistent with this audit.
+
+**Verification:**
+- Verify-smoke 1: `grep -n "dangerouslySetInnerHTML" client/src/pages/Panel.jsx` → no matches (exit 1); widened to `grep -rn "dangerouslySetInnerHTML\|innerHTML" client/src/` → also no matches
+- Verify-smoke 2: `git log --oneline 4edea63^..HEAD -- server/internal/service/deepseek.go` → empty, and `git diff --stat 4edea63^ HEAD -- server/` → empty (no backend file touched at all); `deepseek.go`'s last commit is `5a777f9` (2026-04-24), long before this feature
+- `cd client && npx vitest run` → 32 passed (1 file); `npx vite build` → passes; `git status --porcelain` → clean
+
+## Task 8: Test Audit (Audit Wave)
+
+**Status:** Done
+**Agent:** main agent
+**Summary:** Holistic test-quality audit of the whole feature — verdict **PASS with 8 minor findings, none blocking**. All 22 bounds enumerated in tech-spec's Testing Strategy are genuinely covered by the 32-test vitest suite, every assertion invokes real exports from `Panel.jsx` (zero tautologies), and both default-name lists were re-verified by hand against `DefaultUserSettings()` in `costing.go` — 4/4 garments and 8/8 operations including "Шлица" and "Декоративная отстрочка". Decision 7's promise holds: the `quick_price = 0` drift risk is now a permanent regression guard, not a one-time authorship check. Full report: [logs/working/task-8/test-audit-report.md](logs/working/task-8/test-audit-report.md).
+**Deviations:** None. Read-only audit — no code, tests or specs were modified.
+
+**Findings and disposition (nothing blocks the Final Wave):**
+- One unit-level gap worth an opportunistic one-line fix: `validateDiscountFields` never exercises `max_qty`'s own `> 0` branch, so blank/non-numeric `max_qty` is unguarded by the suite (the implementation is correct today; only the test is missing). Two further unit gaps are low-risk shared-helper duplication.
+- The manual checklist is adequate in aggregate for the *planned* Wave 3 scope — it does walk both render sites per component, delete presence/absence for default vs. added rows, the disabled-last-tier state, and add/delete persistence across reload. It is **not** adequate for the two *unplanned* additions: the ad-hoc `orderForm`-clearing fix and the Enter-interception workaround in the three add-forms both postdate user-spec and appear in no `Verify-user` field. Every checklist was also written from the "confirm it's rejected" angle, so the boundary-*accept* cases (operation field `0`, `percent` 0/100, `max_qty === min_qty`) are systematically absent.
+- Both gaps previously raised by per-task test-reviewers were adjudicated as **not consequential**: "AC8 recalculation-in-both-modes" is in fact covered by user-spec's How to Verify (it was only missing from task-level fields), and "`min_qty <= 0` rejection" is triple-defended by the unit test, the input's `min="1"`, and backend `validateSettings`.
+- All 8 manual gaps (M1-M8) are handed to Task 9 rather than warranting a new implementation task, together with a "known-and-accepted, do not file as bugs" list (degenerate `1000001–1000001` suggestion, middle-tier discount hole, deleted-item recalculation of saved chats) and a reminder that Task 1's mode-order ambiguity needs explicit user confirmation, not a silent assertion.
+- Outside this audit's scope but relevant to whoever accepts the feature: independent code-reviewer/security-auditor/test-reviewer rounds remain outstanding for Tasks 2-5 and the ad-hoc fix — that code has been largely self-reviewed.
+
+**Verification:**
+- `cd client && npx vitest run` → 32 passed (1 file), run by the auditor, not taken from prior reports
+- `it(` count in `Panel.validation.test.js` → 32, matching the reported total; no skipped or `.only` tests
+- `DEFAULT_GARMENT_NAMES` / `DEFAULT_OPERATION_NAMES` cross-checked line-by-line against `server/internal/service/costing.go` `DefaultUserSettings()` → exact match; `defaultSettings.operations` now carries all 8 entries (Decision 6 drift confirmed fixed)
