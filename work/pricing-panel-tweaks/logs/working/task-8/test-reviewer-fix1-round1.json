@@ -1,0 +1,68 @@
+{
+  "task": "Ad-hoc fix — reject fractional values for integer backend fields (F1) + max_qty own-branch coverage (U1)",
+  "commit_reviewed": "f8216ca",
+  "files_reviewed": [
+    "client/src/pages/Panel.jsx",
+    "client/src/pages/Panel.validation.test.js",
+    "work/pricing-panel-tweaks/logs/working/task-8/test-audit-report.md",
+    "work/pricing-panel-tweaks/decisions.md",
+    "server/internal/service/costing.go"
+  ],
+  "verdict": "approve",
+  "summary": "cd /home/makar/PoshivOn/client && npx vitest run: 41/41 tests pass (Panel.validation.test.js, up from 32 before this commit). All 9 newly added tests exercise the real isIntegerValue logic through the actual exported validators, not tautologies: each fractional-value case (10.5, \"10.5\", 0.5, 259.999, 7000.5, 15.5, 50.5, 11.000001, etc.) is chosen so it passes the pre-existing sign/finite check and is caught only by the new integer branch, and one test explicitly pins branch-ordering (a whole max_qty below min_qty reports the range message, not the integer message). U1's specific gap — max_qty's own '>0 / is-a-number' branch never independently exercised — is now genuinely closed by two new tests using min_qty=11 (fixed, valid) with bad/non-positive max_qty values on their own. The one amended pre-existing test ('accepts the smallest positive values', base_minutes/quick_price 0.01 -> 1) is a correct, non-weakening update: 0.01 is no longer a valid boundary for those two now-integer fields (would fail under the new logic), 1 is the true new boundary, and complexity_coeff (still float64 server-side) is correctly left at 0.01. Diff contains no test deletions — one line changed, everything else additive — so no coverage regression elsewhere. One documentation-accuracy note, not a code or test defect: decisions.md's fix-commit entry says U1's audit 'hypothesized' rejection happened via the NaN>=min_qty comparison; re-reading the original test-audit-report.md (line 157) shows the audit already correctly named the isPositiveNumber(NaN) mechanism as the current, live rejection path — the comparison scenario was explicitly framed as what would happen only if that branch were deleted. The implementer's characterization of the audit's prior hypothesis is inaccurate, though the resulting code and test are both correct and the coverage gap is genuinely fixed.",
+  "findings": [
+    {
+      "id": "TRF1-1",
+      "severity": "trivial",
+      "category": "documentation-accuracy",
+      "title": "decisions.md mischaracterizes what the original U1 audit finding said about the rejection mechanism",
+      "detail": "work/pricing-panel-tweaks/decisions.md line 259 states: '{min_qty: 11, max_qty: \"\"} is indeed already rejected today, but by isPositiveNumber(NaN) on max_qty's own branch, not by the NaN >= 11 comparison the audit hypothesized.' The original audit (logs/working/task-8/test-audit-report.md, U1, lines 156-158) actually reads: 'Delete the first branch and the suite still passes, yet {min_qty: 11, max_qty: \"\", percent: 5} would then be accepted (NaN < 11 is false)' — this is explicit about the first branch (isPositiveNumber) being the branch that currently rejects it; the NaN<11 scenario was presented only as what would happen if that branch were removed, used to motivate why the missing test coverage mattered. The audit never claimed the comparison branch was doing the rejecting today.",
+      "impact": "None on code or test correctness — the fix and its tests are right regardless of this framing. Purely a decisions-log accuracy issue; a future reader tracing 'why was this fixed' would get a slightly wrong impression of what the original finding actually said.",
+      "mitigation_present": "The underlying test-audit-report.md remains unedited and available as the source of truth; this reviewer read it directly per the task instruction rather than trusting the implementer's restatement, and confirmed no code or test defect follows from the mischaracterization.",
+      "recommendation": "Optional: fix the decisions.md wording to match the audit's actual text, or leave as-is since it doesn't affect shippable artifacts."
+    }
+  ],
+  "checks_performed": [
+    {
+      "check": "npx vitest run — full suite passes",
+      "result": "pass",
+      "detail": "cd /home/makar/PoshivOn/client && npx vitest run -> 'Panel.validation.test.js (41 tests)', 'Test Files 1 passed (1)', 'Tests 41 passed (41)'. Matches the reported total exactly; 9 new tests over the pre-fix baseline of 32."
+    },
+    {
+      "check": "Implementer's claim about the max_qty rejection mechanism, verified against actual code (not taken on trust)",
+      "result": "pass",
+      "detail": "Read validateDiscountFields directly (Panel.jsx:319-337) and toFiniteNumber/isPositiveNumber (Panel.jsx:227-240). For {min_qty:11, max_qty:\"\"}: toFiniteNumber(\"\") returns NaN (empty-after-trim string path), isPositiveNumber(NaN) = Number.isFinite(NaN) && NaN>0 = false, so the first `if (!isPositiveNumber(fields.max_qty))` branch fires and sets the '«До» должно быть больше 0' error — execution never reaches the `else if (... < min_qty)` comparison branch at all. Claim confirmed true for the current implementation."
+    },
+    {
+      "check": "New integer-rejection tests genuinely exercise isIntegerValue (not tautological)",
+      "result": "pass",
+      "detail": "Every fractional test value (10.5, \"10.5\", 0.5, 259.999 for base_minutes; 7000.5, \"7000.5\", 0.01 for quick_price; 15.5/\"15.5\"/0.5 for the two operation int fields; 50.5/\"50.5\"/11.000001 for max_qty; 10.5 for min_qty) is positive and finite, so it passes the pre-existing isPositiveNumber/isNonNegativeNumber check and is caught only by the new `else if (!isIntegerValue(...))` branch — a broken or missing isIntegerValue would flip these tests from fail to pass (valid:true), so they are non-trivial regression guards, not assertions against literals. Companion 'still allows a fractional X' tests (complexity_coeff, quick_percent, percent) confirm the three genuinely-float64 server fields were deliberately left unguarded, protecting against an overly broad future edit."
+    },
+    {
+      "check": "U1's specific gap (max_qty's own positivity/is-a-number branch) is now covered by a real, non-trivial test",
+      "result": "pass",
+      "detail": "'rejects empty and non-numeric max_qty on its own branch' (Panel.validation.test.js:239-245) fixes min_qty=11 (valid) and loops bad max_qty values [\"\", \"   \", \"abc\", null, undefined, NaN, Infinity], asserting errors.max_qty is set — this is exactly the case the audit named as untested (blank/non-numeric max_qty with a valid min_qty, so the comparison branch is never reached and only the max_qty-own branch can be catching it). A companion test 'rejects max_qty <= 0 even when min_qty is valid' checks the boundary (0, -1, \"-5\") with the exact expected message. Manually traced both through the implementation; both pass for the reason the test names claim."
+    },
+    {
+      "check": "Amended pre-existing test ('accepts the smallest positive values') does not weaken original coverage",
+      "result": "pass",
+      "detail": "Original: validateGarmentFields({base_minutes:0.01, complexity_coeff:0.01, quick_price:0.01}).valid === true, asserting the boundary just above 0 for all three fields. Under the new isIntegerValue check, base_minutes and quick_price are now int/int64 on the server, so 0.01 would legitimately fail (Number.isInteger(0.01) === false) — the old assertion would be a false test of a now-incorrect boundary. Amended version uses base_minutes:1, quick_price:1 (the true new minimum positive integer) and keeps complexity_coeff:0.01 (still float64 server-side, unaffected). Confirmed against server/internal/service/costing.go:45-47: BaseMinutes int, ComplexityCoeff float64, QuickPrice int64 — the amendment correctly tracks the real server types. This is a correction to match new, correct, stricter behavior, not a weakening; the boundary being tested is still the tightest valid value for each field."
+    },
+    {
+      "check": "No coverage regression elsewhere in the suite",
+      "result": "pass",
+      "detail": "git show f8216ca -- client/src/pages/Panel.validation.test.js shows exactly one removed line (the smallest-positive-values assertion addressed above, replaced in-place) and otherwise pure additions (9 new `it(...)` blocks). Full current file read end-to-end (335 lines): all pre-existing describe blocks (isDuplicateName, isBlankName, default name constants, getDefaultDiscountRange) are untouched; manual count of `it(` blocks (4+2+10+6+10+4+5=41) matches vitest's reported total exactly, confirming no silent deletions or skips (no .only/.skip present)."
+    },
+    {
+      "check": "F1 field-type claims verified against server source (not trusted from the commit message)",
+      "result": "pass",
+      "detail": "Read server/internal/service/costing.go:44-53 directly: GarmentConfig.BaseMinutes int, ComplexityCoeff float64, QuickPrice int64; OperationConfig.AdditionalMinutes int, AdditionalMaterialPerUnit int64, QuickPercent float64; BatchDiscount.MinQty int, MaxQty int, Percent float64 (lines 22-25). All six fields the fix applies isIntegerValue to (base_minutes, quick_price, additional_minutes, additional_material_per_unit, min_qty, max_qty) are indeed int/int64; all three left unguarded (complexity_coeff, quick_percent, percent) are indeed float64. No mismatch found."
+    }
+  ],
+  "severity_counts": {
+    "critical": 0,
+    "major": 0,
+    "minor": 0,
+    "trivial": 1
+  }
+}

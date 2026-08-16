@@ -1,0 +1,60 @@
+{
+  "review": "fix1-round1",
+  "feature": "pricing-panel-tweaks",
+  "target_commit": "f8216ca",
+  "finding_addressed": "F1 (major) — add-forms accepted fractional values for backend int/int64 fields",
+  "verdict": "approved",
+  "summary": "Fix is correct and complete. isIntegerValue is applied to exactly the 6 server-side int/int64 fields, deliberately skipped on the 3 float64 fields, step=\"1\" added to the matching 6 inputs, existing >0/>=0/range checks are untouched and still run before the new integer check, and the new/updated tests (41/41) pass.",
+  "counts": {
+    "critical": 0,
+    "major": 0,
+    "minor": 0,
+    "informational": 1
+  },
+  "checks": [
+    {
+      "id": "1-field-scope",
+      "description": "isIntegerValue applied to exactly base_minutes, quick_price, additional_minutes, additional_material_per_unit, min_qty, max_qty; not applied to complexity_coeff, quick_percent, percent",
+      "result": "pass",
+      "evidence": "server/internal/service/costing.go confirms field types: BaseMinutes int (L45), ComplexityCoeff float64 (L46), QuickPrice int64 (L47); AdditionalMinutes int (L51), AdditionalMaterialPerUnit int64 (L52), QuickPercent float64 (L53); MinQty int (L23), MaxQty int (L24), Percent float64 (L25). client/src/pages/Panel.jsx lines 281-341 (validateGarmentFields, validateOperationFields, validateDiscountFields) apply the `else if (!isIntegerValue(...))` branch to exactly the 6 int/int64 fields and add explicit 'намеренно без проверки' comments on the 3 float64 fields (lines 286-287, 311, 335) explaining why they're excluded."
+    },
+    {
+      "id": "2-rejects-fractional-accepts-integer",
+      "description": "isIntegerValue rejects fractional input (e.g. 10.5) and accepts valid integers; error messages are clear",
+      "result": "pass",
+      "evidence": "isIntegerValue (Panel.jsx:260) = Number.isInteger(toFiniteNumber(value)). toFiniteNumber coerces numeric strings and numbers, returns NaN for blank/non-numeric (so Number.isInteger(NaN)=false, no false negative). Error strings are field-specific and in Russian consistent with the rest of the file, e.g. 'База/мин должна быть целым числом', '«От» должно быть целым числом'. Verified via `npx vitest run src/pages/Panel.validation.test.js`: 41/41 tests pass, including new cases for 10.5, '10.5' (string), 0.5, 259.999 rejected and 1/valid integers accepted, plus explicit tests that complexity_coeff/quick_percent/percent still accept fractional values."
+    },
+    {
+      "id": "3-step-attribute",
+      "description": "step=\"1\" added to the 6 corresponding SettingsNumberInput elements in the 3 add-forms",
+      "result": "pass",
+      "evidence": "Confirmed present at Panel.jsx:509 (quick_price), 512 (base_minutes), 627 (additional_minutes), 630 (additional_material_per_unit), 1848 (min_qty), 1851 (max_qty). SettingsNumberInput (Panel.jsx:397) spreads props onto a native <input type=\"number\">, so step is passed through correctly. Non-integer siblings (complexity_coeff, quick_percent, percent) correctly retain step=\"0.01\" and were not touched."
+    },
+    {
+      "id": "4-no-regression-existing-checks",
+      "description": "Existing >0 / >=0 / range checks still run correctly alongside the new integer check",
+      "result": "pass",
+      "evidence": "New checks are appended as `else if` branches after the existing isPositiveNumber/isNonNegativeNumber guards (Panel.jsx:281-296, 299-316, 318-341), so they only run once the value is already confirmed a finite positive/non-negative number — no change to when the original checks fire or what they reject. In validateDiscountFields the integer check for max_qty is deliberately ordered before the min_qty range comparison (comment at lines 325-327 explains why: a fractional max_qty greater than min_qty must not slip past the range check unflagged). Full test suite (41/41) including pre-existing range/positivity tests passes unmodified."
+    },
+    {
+      "id": "5-code-quality",
+      "description": "isIntegerValue placement and style consistency",
+      "result": "pass",
+      "evidence": "Helper is placed directly after isNonNegativeNumber (Panel.jsx:242-245) and before isBlankName (Panel.jsx:263), i.e. grouped with the other field-level predicate helpers (toFiniteNumber, isPositiveNumber, isNonNegativeNumber) in the same declarative one-line-body style. Doc comment follows the file's established convention of citing exact costing.go line numbers and explaining the 'why' (late JSON-unmarshal 400 on the whole settings POST) rather than restating the 'what'. Per-field 'намеренно без проверки' comments on the 3 float64 fields make the omission look intentional rather than an oversight for a future reader."
+    }
+  ],
+  "informational_notes": [
+    {
+      "id": "N1",
+      "description": "The existing inline row-editors for already-saved garments/operations/discounts (Panel.jsx lines ~1350, 1419, 1445, 1448, 1896, 1899 — handleGarmentChange/handleOperationSettingChange/handleDiscountChange) still lack both step=\"1\" and any integer validation for the same 6 fields, so a fractional edit there could still trigger the same late 400 on save.",
+      "severity": "informational, not a finding against this fix",
+      "rationale": "Out of scope: F1 and this fix commit (f8216ca) were explicitly scoped to the 3 add-forms per the audit report (code-audit-report.md line 48, 'Add-forms accept fractional values...'), and the row-editor path is a materially different, pre-existing code path not touched by this change. Flagging for awareness only in case a future task wants to extend the same protection to row-editors; not a defect in the change under review."
+    }
+  ],
+  "test_results": {
+    "command": "npx vitest run src/pages/Panel.validation.test.js",
+    "passed": 41,
+    "failed": 0,
+    "total": 41
+  }
+}
