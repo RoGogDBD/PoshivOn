@@ -244,6 +244,21 @@ const isNonNegativeNumber = (value) => {
   return Number.isFinite(parsed) && parsed >= 0;
 };
 
+// isIntegerValue — для полей, объявленных на сервере как int/int64: base_minutes и quick_price
+// у изделия (costing.go:45-47), additional_minutes и additional_material_per_unit у операции
+// (costing.go:51-52), min_qty и max_qty у диапазона скидки (costing.go:23-24).
+//
+// Дробное значение в таком поле до серверного validateSettings даже не доходит: encoding/json
+// роняет разбор тела запроса, и весь POST настроек возвращает 400 — то есть одна новая строка
+// снова блокирует сохранение всего объекта настроек, ровно тот класс отказа, ради которого
+// делалась эта фича. Хуже того, отказ невидим: в быстром режиме, например, «База, мин» в строке
+// изделия не показывается, и на экране ничего не выглядит сломанным до самого сохранения.
+//
+// Атрибут step="1" на инпутах — только подсказка браузера: кнопка «Добавить» это type="button",
+// нативную валидацию формы она не запускает, поэтому настоящая проверка живёт здесь.
+// Number.isInteger(NaN) === false, так что нечисловой ввод тоже не пройдёт.
+const isIntegerValue = (value) => Number.isInteger(toFiniteNumber(value));
+
 // isBlankName — зеркало серверной проверки strings.TrimSpace(name) == "".
 export const isBlankName = (name) => String(name ?? "").trim() === "";
 
@@ -265,12 +280,18 @@ export const validateGarmentFields = (fields = {}) => {
   const errors = {};
   if (!isPositiveNumber(fields.base_minutes)) {
     errors.base_minutes = "База/мин должна быть больше 0";
+  } else if (!isIntegerValue(fields.base_minutes)) {
+    errors.base_minutes = "База/мин должна быть целым числом";
   }
+  // complexity_coeff намеренно без проверки на целое: на сервере это float64 (costing.go:46),
+  // дробный коэффициент сложности — штатное значение (1.15, 1.6 в дефолтах).
   if (!isPositiveNumber(fields.complexity_coeff)) {
     errors.complexity_coeff = "Коэффициент сложности должен быть больше 0";
   }
   if (!isPositiveNumber(fields.quick_price)) {
     errors.quick_price = "Мин. цена / шт должна быть больше 0";
+  } else if (!isIntegerValue(fields.quick_price)) {
+    errors.quick_price = "Мин. цена / шт должна быть целым числом";
   }
   return buildValidationResult(errors);
 };
@@ -279,10 +300,15 @@ export const validateOperationFields = (fields = {}) => {
   const errors = {};
   if (!isNonNegativeNumber(fields.additional_minutes)) {
     errors.additional_minutes = "Доп. минуты не могут быть меньше 0";
+  } else if (!isIntegerValue(fields.additional_minutes)) {
+    errors.additional_minutes = "Доп. минуты должны быть целым числом";
   }
   if (!isNonNegativeNumber(fields.additional_material_per_unit)) {
     errors.additional_material_per_unit = "Доп. материал / шт не может быть меньше 0";
+  } else if (!isIntegerValue(fields.additional_material_per_unit)) {
+    errors.additional_material_per_unit = "Доп. материал / шт должен быть целым числом";
   }
+  // quick_percent намеренно без проверки на целое: на сервере это float64 (costing.go:53).
   if (!isNonNegativeNumber(fields.quick_percent)) {
     errors.quick_percent = "Надбавка, % не может быть меньше 0";
   }
@@ -293,12 +319,20 @@ export const validateDiscountFields = (fields = {}) => {
   const errors = {};
   if (!isPositiveNumber(fields.min_qty)) {
     errors.min_qty = "«От» должно быть больше 0";
+  } else if (!isIntegerValue(fields.min_qty)) {
+    errors.min_qty = "«От» должно быть целым числом";
   }
+  // Порядок веток важен: проверка на целое идёт перед сравнением с «От», иначе 10.5 при «От» = 1
+  // прошло бы дальше и уехало на сервер. Обе ветки всё равно отклоняют строку, разница только
+  // в тексте ошибки — показываем самую конкретную причину.
   if (!isPositiveNumber(fields.max_qty)) {
     errors.max_qty = "«До» должно быть больше 0";
+  } else if (!isIntegerValue(fields.max_qty)) {
+    errors.max_qty = "«До» должно быть целым числом";
   } else if (isPositiveNumber(fields.min_qty) && toFiniteNumber(fields.max_qty) < toFiniteNumber(fields.min_qty)) {
     errors.max_qty = "«До» не может быть меньше «От»";
   }
+  // percent намеренно без проверки на целое: на сервере это float64 (costing.go:25).
   const percent = toFiniteNumber(fields.percent);
   if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
     errors.percent = "Скидка должна быть от 0 до 100 %";
@@ -472,10 +506,10 @@ const GarmentAddForm = ({ settings, onAddGarment }) => {
           />
         </SettingsField>
         <SettingsField label="Мин. цена / шт">
-          <SettingsNumberInput min="0" value={draft.quick_price} onChange={updateField("quick_price")} placeholder="7000" />
+          <SettingsNumberInput step="1" min="0" value={draft.quick_price} onChange={updateField("quick_price")} placeholder="7000" />
         </SettingsField>
         <SettingsField label="База, мин">
-          <SettingsNumberInput min="0" value={draft.base_minutes} onChange={updateField("base_minutes")} placeholder="260" />
+          <SettingsNumberInput step="1" min="0" value={draft.base_minutes} onChange={updateField("base_minutes")} placeholder="260" />
         </SettingsField>
         <SettingsField label="Коэфф. сложности">
           <SettingsNumberInput step="0.01" min="0" value={draft.complexity_coeff} onChange={updateField("complexity_coeff")} placeholder="1.6" />
@@ -590,10 +624,10 @@ const OperationAddForm = ({ settings, onAddOperation }) => {
           <SettingsNumberInput step="0.01" min="0" value={draft.quick_percent} onChange={updateField("quick_percent")} placeholder="8" />
         </SettingsField>
         <SettingsField label="Доп. минуты">
-          <SettingsNumberInput min="0" value={draft.additional_minutes} onChange={updateField("additional_minutes")} placeholder="15" />
+          <SettingsNumberInput step="1" min="0" value={draft.additional_minutes} onChange={updateField("additional_minutes")} placeholder="15" />
         </SettingsField>
         <SettingsField label="Доп. материал / шт">
-          <SettingsNumberInput min="0" value={draft.additional_material_per_unit} onChange={updateField("additional_material_per_unit")} placeholder="80" />
+          <SettingsNumberInput step="1" min="0" value={draft.additional_material_per_unit} onChange={updateField("additional_material_per_unit")} placeholder="80" />
         </SettingsField>
       </div>
       {error ? (
@@ -1811,10 +1845,10 @@ const DiscountAddForm = ({ settings, onAddDiscount }) => {
       </div>
       <div className="grid gap-4 md:grid-cols-3">
         <SettingsField label="От">
-          <SettingsNumberInput min="1" value={draft.min_qty} onChange={updateField("min_qty")} placeholder={String(defaultRange.min_qty)} />
+          <SettingsNumberInput step="1" min="1" value={draft.min_qty} onChange={updateField("min_qty")} placeholder={String(defaultRange.min_qty)} />
         </SettingsField>
         <SettingsField label="До">
-          <SettingsNumberInput min="1" value={draft.max_qty} onChange={updateField("max_qty")} placeholder={String(defaultRange.max_qty)} />
+          <SettingsNumberInput step="1" min="1" value={draft.max_qty} onChange={updateField("max_qty")} placeholder={String(defaultRange.max_qty)} />
         </SettingsField>
         <SettingsField label="Скидка, %">
           <SettingsNumberInput step="0.01" min="0" max="100" value={draft.percent} onChange={updateField("percent")} placeholder="5" />

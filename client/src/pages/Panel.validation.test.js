@@ -100,7 +100,28 @@ describe("validateGarmentFields", () => {
   });
 
   it("accepts the smallest positive values", () => {
-    expect(validateGarmentFields({ base_minutes: 0.01, complexity_coeff: 0.01, quick_price: 0.01 }).valid).toBe(true);
+    // base_minutes и quick_price — int/int64 на сервере, поэтому «наименьшее допустимое»
+    // для них 1, а не 0.01; дробным остаётся только complexity_coeff (float64).
+    expect(validateGarmentFields({ base_minutes: 1, complexity_coeff: 0.01, quick_price: 1 }).valid).toBe(true);
+  });
+
+  it("rejects fractional base_minutes and quick_price (int/int64 on the server)", () => {
+    for (const base_minutes of [10.5, "10.5", 0.5, 259.999]) {
+      const result = validateGarmentFields({ ...validGarment, base_minutes });
+      expect(result.valid).toBe(false);
+      expect(result.errors.base_minutes).toBeTruthy();
+    }
+
+    for (const quick_price of [7000.5, "7000.5", 0.01]) {
+      const result = validateGarmentFields({ ...validGarment, quick_price });
+      expect(result.valid).toBe(false);
+      expect(result.errors.quick_price).toBeTruthy();
+    }
+  });
+
+  it("still allows a fractional complexity_coeff (float64 on the server)", () => {
+    expect(validateGarmentFields({ ...validGarment, complexity_coeff: 1.15 }).valid).toBe(true);
+    expect(validateGarmentFields({ ...validGarment, complexity_coeff: "1.6" }).valid).toBe(true);
   });
 
   it("rejects empty, blank and non-numeric input instead of coercing it to 0", () => {
@@ -153,6 +174,23 @@ describe("validateOperationFields", () => {
       expect(result.errors.quick_percent).toBeTruthy();
     }
   });
+
+  it("rejects fractional additional_minutes and additional_material_per_unit (int/int64 on the server)", () => {
+    for (const field of ["additional_minutes", "additional_material_per_unit"]) {
+      for (const bad of [15.5, "15.5", 0.5]) {
+        const result = validateOperationFields({ ...validOperation, [field]: bad });
+        expect(result.valid).toBe(false);
+        expect(result.errors[field]).toBeTruthy();
+      }
+      // 0 остаётся валидным: это целое, а операция «только проценты» — штатный случай.
+      expect(validateOperationFields({ ...validOperation, [field]: 0 }).valid).toBe(true);
+    }
+  });
+
+  it("still allows a fractional quick_percent (float64 on the server)", () => {
+    expect(validateOperationFields({ ...validOperation, quick_percent: 7.5 }).valid).toBe(true);
+    expect(validateOperationFields({ ...validOperation, quick_percent: "8.25" }).valid).toBe(true);
+  });
 });
 
 describe("validateDiscountFields", () => {
@@ -192,6 +230,51 @@ describe("validateDiscountFields", () => {
       expect(validateDiscountFields({ ...validDiscount, min_qty: bad }).valid).toBe(false);
       expect(validateDiscountFields({ ...validDiscount, percent: bad }).valid).toBe(false);
     }
+  });
+
+  // Findings U1: у max_qty своя ветка проверки на положительность и «число вообще», и до сих пор
+  // она не была покрыта напрямую — покрытие держалось на сравнении с min_qty. Здесь оба пути
+  // проверяются явно и по отдельности, чтобы ветка не осталась незамеченной, если сравнение
+  // когда-нибудь перепишут.
+  it("rejects empty and non-numeric max_qty on its own branch", () => {
+    for (const bad of ["", "   ", "abc", null, undefined, NaN, Infinity]) {
+      const result = validateDiscountFields({ min_qty: 11, max_qty: bad, percent: 5 });
+      expect(result.valid).toBe(false);
+      expect(result.errors.max_qty).toBeTruthy();
+    }
+  });
+
+  it("rejects max_qty <= 0 even when min_qty is valid", () => {
+    for (const max_qty of [0, -1, "-5"]) {
+      const result = validateDiscountFields({ min_qty: 11, max_qty, percent: 5 });
+      expect(result.valid).toBe(false);
+      expect(result.errors.max_qty).toBe("«До» должно быть больше 0");
+    }
+  });
+
+  it("rejects fractional min_qty and max_qty (int on the server)", () => {
+    const badMin = validateDiscountFields({ min_qty: 10.5, max_qty: 50, percent: 5 });
+    expect(badMin.valid).toBe(false);
+    expect(badMin.errors.min_qty).toBe("«От» должно быть целым числом");
+
+    // Дробное max_qty больше min_qty: сравнение диапазона его пропускает, отклоняет именно
+    // проверка на целое — та самая новая ветка.
+    for (const max_qty of [50.5, "50.5", 11.000001]) {
+      const result = validateDiscountFields({ min_qty: 11, max_qty, percent: 5 });
+      expect(result.valid).toBe(false);
+      expect(result.errors.max_qty).toBe("«До» должно быть целым числом");
+    }
+  });
+
+  it("reports the range error, not the integer error, for a whole max_qty below min_qty", () => {
+    const result = validateDiscountFields({ min_qty: 11, max_qty: 10, percent: 5 });
+    expect(result.valid).toBe(false);
+    expect(result.errors.max_qty).toBe("«До» не может быть меньше «От»");
+  });
+
+  it("still allows a fractional percent (float64 on the server)", () => {
+    expect(validateDiscountFields({ ...validDiscount, percent: 7.5 }).valid).toBe(true);
+    expect(validateDiscountFields({ ...validDiscount, percent: "12.25" }).valid).toBe(true);
   });
 });
 
