@@ -174,7 +174,12 @@ func (h *APIHandler) handleCalculate(w http.ResponseWriter, r *http.Request, use
 		return
 	}
 
-	if h.deepseek != nil && result.CalculationMode == "masterpiece" {
+	// До перехода дефолтного тарифа на quick фидбек запрашивался только для masterpiece —
+	// тогда это совпадало почти со всеми пользователями. Теперь quick — это дефолт, и то же
+	// условие тихо отключило бы AI-фидбек для большинства. buildMarketFeedbackInputFromCalculation
+	// уже устойчив к пустым MaterialType/Urgency/MarketSegment у quick-расчётов (см. emptyOrUnknown
+	// в deepseek.go), так что ограничение по режиму было для этого не нужно.
+	if h.deepseek != nil {
 		settings, settingsErr := h.costing.GetUserSettings(r.Context(), userID)
 		if settingsErr != nil {
 			if errors.Is(settingsErr, service.ErrNotFound) {
