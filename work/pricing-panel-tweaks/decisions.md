@@ -272,3 +272,32 @@ None — this task is itself the security review for the feature (`reviewers` in
 - `cd client && npx vitest run` → 41 passed (1 file), vitest 3.2.7
 - `cd client && npx vite build` → passes, no warnings (vite 5.4.21, 53 modules)
 - Field-by-field cross-check of every validated field against its Go struct tag in `costing.go` → exactly 6 int/int64 fields guarded, exactly 3 float64 fields left free
+
+## Task 9: Pre-deploy QA (Final Wave)
+
+**Status:** Done
+**Commit:** (this entry)
+**Agent:** main agent
+**Summary:** Source-level QA of the assembled feature: `npx vitest run` → 41/41 green (32 from Task 2 + 9 from the integer-validation fix), `npx vite build` → clean, and all **19 acceptance criteria verified true by reading the final `Panel.jsx` and `costing.go` directly** rather than trusting prior task reports — 3 Инкремент 1 + 8 Инкремент 2 (user-spec) + 8 technical (tech-spec). **0 findings.** Both Audit-Wave defects (F1 fractional values, U1 untested `max_qty` branch) confirmed closed. Full report: [logs/working/task-9/qa-report.md](logs/working/task-9/qa-report.md) (+ machine-readable [qa-report.json](logs/working/task-9/qa-report.json)).
+**Deviations:** None. Read-only task — no code, tests or specs modified.
+
+**Manual checklist status:** **NOT walked — handed to the user, not confirmed.** This feature's Agent Verification Plan has no agent-executable live check (`/panel` needs an authenticated admin session, no MCP/curl surface), so Task 9's job was to *produce* the definitive checklist, not execute it. §3 of the QA report merges user-spec's "How to Verify", the `Verify-user` fields of Tasks 1/3/4/5, and Task 8's gaps M1-M8 into one deduplicated 35-item list organised by area, plus a "known-accepted, do not file as bugs" section (degenerate `1000001–1000001` suggestion, mid-list discount hole, deleted-item recalculation of saved chats, undeletable defaults, per-user settings). Per Task 9's own AC the feature is not fully accepted until the user reports back.
+
+**Highest-priority manual items — zero automated coverage anywhere:**
+- **E2/E3** — the ad-hoc `orderForm` stale-reference fix (`569c72f`), both halves: delete a self-added garment that is currently selected in the calculator, and delete a self-added operation that currently has a non-zero count, each without reloading; a calculation must still succeed.
+- **E4** — Enter inside each of the 3 add-forms must add the row and **not** trigger a full settings save (the deliberate nested-form workaround).
+- **C4 / D5** — boundary-*accept* cases every prior checklist omitted: operation field `= 0`, discount `percent = 0`, `percent = 100`, `max_qty === min_qty`.
+- **A2** — Task 1's mode-order ambiguity, still open: user-spec's narrative and its own AC contradict each other; the code follows the AC (**«Быстрый» first**). Needs explicit user sign-off, not a silent pass. Reverting is a one-line array swap with the renames kept.
+
+**Reviews:**
+
+None — QA task; the QA pass is itself the verification for this feature (`reviewers: []`).
+
+**Verification:**
+- `cd client && npx vitest run` → 41 passed (1 file), vitest 3.2.7 — run by this agent, not taken from prior reports
+- `cd client && npx vite build` → passes, 53 modules, no warnings
+- `git diff --stat 4edea63^ HEAD -- server/` → empty (AC T2: no backend change, route table untouched)
+- `DEFAULT_GARMENT_NAMES` / `DEFAULT_OPERATION_NAMES` re-checked line-by-line against `DefaultUserSettings()` (`costing.go:227-242`) → 4/4 and 8/8 exact
+- Client vs backend bounds cross-checked field-by-field (`Panel.jsx:279-341` vs `costing.go:593-657`) → every bound equal or stricter, none looser
+- Call-site census by grep → `GarmentAddForm` ×2, `OperationAddForm` ×2, `DiscountsBlock` ×2, `DeleteRowButton` ×5, one per mode branch as specified
+- Verify-user (the §3 browser checklist) → PENDING, awaiting user

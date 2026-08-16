@@ -1,0 +1,46 @@
+{
+  "status": "passed",
+  "summary": {
+    "totalChecks": 19,
+    "passed": 19,
+    "failed": 0,
+    "notVerifiable": 0,
+    "criticals": 0,
+    "majors": 0,
+    "minors": 0
+  },
+  "testSuite": {
+    "status": "passed",
+    "details": "npx vitest run (vitest 3.2.7) -> 41 passed / 41 in client/src/pages/Panel.validation.test.js, 1 file, 0 failed, 0 skipped. npx vite build -> passes, 53 modules, no warnings."
+  },
+  "acceptanceCriteria": [
+    { "criterion": "U1.1 Mode order changed - former second mode now first", "status": "passed", "evidence": "calculatorModes Panel.jsx:83-94 now [quick, masterpiece]; pre-change (git show 4edea63^) was [masterpiece, quick]. Rendered by .map at Panel.jsx:1302 in array order. See open question: user-spec narrative contradicts its own AC - needs user sign-off." },
+    { "criterion": "U1.2 Labels Продвинутый/Быстрый, values masterpiece/quick unchanged", "status": "passed", "evidence": "Panel.jsx:85,90 values intact; grep for Шедевр|По быстрому across client/src and server/ -> 0 matches; git diff 4edea63^ HEAD -- server/ -> empty." },
+    { "criterion": "U1.3 Скидки по партиям -> Скидки за количество everywhere", "status": "passed", "evidence": "DiscountsBlock title Panel.jsx:1886, single shared component rendered from both mode branches (:1381, :1475); grep for old label -> 0 matches." },
+    { "criterion": "U2.1 Three Добавить buttons always visible, identical in both modes", "status": "passed", "evidence": "Quick branch :1355/:1378/:1381; masterpiece branch :1427/:1453/:1475; DiscountAddForm inside shared DiscountsBlock :1915. Same components, identical props, no per-mode variant." },
+    { "criterion": "U2.2 Add-form shows all fields, no hidden defaults", "status": "passed", "evidence": "GarmentAddForm draft :428 + fields :499-516; OperationAddForm :539 + :614-631; no isQuickCalculator reference inside either. Blank input -> NaN via toFiniteNumber :227-235, rejected not defaulted." },
+    { "criterion": "U2.3 Add-form rejects out-of-bounds garment and discount values", "status": "passed", "evidence": "validateGarmentFields :279-297 (all three > 0); validateDiscountFields :318-341 (min_qty > 0, max_qty >= min_qty, percent in [0,100]). Unit-covered." },
+    { "criterion": "U2.4 Saved add survives reload and prices correctly in both modes", "status": "passed", "evidence": "Add handlers :925-991 mutate the same settings state the existing handleSaveSettings POSTs whole-object; all-fields-collected design guarantees valid quick_price/base_minutes/complexity_coeff for both mode paths. End-to-end save/reload/price is manual item B3/B4." },
+    { "criterion": "U2.5 Discount add-form pre-fills a valid full range continuing the last tier", "status": "passed", "evidence": "getDefaultDiscountRange :346-351 returns both min_qty and max_qty from the same nextMinQty; wired at DiscountAddForm :1781-1783, resynced :1791-1794, refilled after add :1824-1826." },
+    { "criterion": "U2.6 Duplicate name blocked client-side with 'Такое название уже есть'", "status": "passed", "evidence": "isDuplicateName :267-273 trims+lowercases both sides; GarmentAddForm :453-456 and OperationAddForm :568-571 emit that exact message and return before calling the add handler." },
+    { "criterion": "U2.7 Удалить only on admin-added garment/operation rows, absent on the 4/8 defaults, persists after reload", "status": "passed", "evidence": "DeleteRowButton returns null when !isDeletable :409-412; gates at :1345, :1414 (DEFAULT_GARMENT_NAMES) and :1368, :1440 (DEFAULT_OPERATION_NAMES) - all four call sites, both modes." },
+    { "criterion": "U2.8 Discount Удалить works on any row except the last remaining (disabled there)", "status": "passed", "evidence": "canDeleteRow = batch_discounts.length > 1 at :1882; button rendered visible with disabled={!canDeleteRow} and disabledHint at :1905-1910; title/aria-label at :419-420." },
+    { "criterion": "T1 calculatorModes[*].value unchanged, Cyrillic labels only in label/description", "status": "passed", "evidence": "Panel.jsx:85,90; repo-wide grep for old labels -> 0 hits." },
+    { "criterion": "T2 No new backend HTTP endpoints", "status": "passed", "evidence": "git diff --stat 4edea63^ HEAD -- server/ -> empty output; no server file touched, route table byte-identical." },
+    { "criterion": "T3 DEFAULT_GARMENT_NAMES (4) / DEFAULT_OPERATION_NAMES (8) match DefaultUserSettings() exactly", "status": "passed", "evidence": "costing.go:227-242 read directly this pass; 4/4 garments and 8/8 operations identical to Panel.jsx:101-112 incl. Шлица and Декоративная отстрочка. defaultSettings.operations :136-145 also carries all 8." },
+    { "criterion": "T4 Client validation bounds equal or stricter than backend validateSettings", "status": "passed", "evidence": "costing.go:593-657 vs Panel.jsx:279-341: all bounds equal except quick_price (client > 0 vs backend >= 0, deliberately stricter) and the 6 int/int64 fields guarded by isIntegerValue :260. No field is looser." },
+    { "criterion": "T5 Add-forms and delete button render in both mode branches without divergence", "status": "passed", "evidence": "Call-site census: GarmentAddForm x2, OperationAddForm x2, DiscountsBlock x2, DeleteRowButton x5; identical props at each paired site, all reading the same settings object." },
+    { "criterion": "T6 getDefaultDiscountRange pre-fills both ends", "status": "passed", "evidence": "Panel.jsx:350 returns both keys; 5 unit tests incl. a suggestion-passes-its-own-validator invariant." },
+    { "criterion": "T7 npx vitest run passes", "status": "passed", "evidence": "41/41 passed, vitest 3.2.7." },
+    { "criterion": "T8 No regressions in existing settings fields", "status": "passed", "evidence": "git diff 4edea63^ HEAD -- client/src/pages/Panel.jsx shows no modification to any existing handler definition; only pre-existing lines touched are the calculatorModes reorder/relabel, the DiscountsBlock title, two DiscountsBlock call sites gaining 2 props, and per-row name cells wrapped in a flex header. Materials/Urgency/Market untouched; vite build clean. Rendered smoke is manual item E1." }
+  ],
+  "findings": [],
+  "deferredToPostDeploy": [
+    {
+      "criterion": "Full manual behavioral checklist (sections A-E of logs/working/task-9/qa-report.md)",
+      "reason": "/panel requires an authenticated admin session (Yandex login + granted access) that no agent has; this feature's Agent Verification Plan explicitly provides no MCP, Playwright or curl-checkable surface.",
+      "verificationCondition": "Admin logged into poshivon.ru/panel or a local dev build.",
+      "verificationSteps": "Execute the consolidated checklist in section 3 of qa-report.md. Highest-priority items with zero automated coverage anywhere: A2 (mode-order sign-off), E2/E3 (ad-hoc orderForm stale-reference fix, both garment and operation halves), E4 (Enter key in each of the 3 add-forms must not trigger a full settings save), C4 and D5 (boundary values that must be accepted: operation field = 0; discount percent = 0, percent = 100, max_qty === min_qty)."
+    }
+  ]
+}
