@@ -384,3 +384,20 @@ None — self-reviewed, small well-scoped UI change.
 - `cd client && npx vitest run` → 41 passed, no regression
 - `cd client && npx vite build` → passes, 53 modules
 - Confirmed `fade-rise` animation utility already exists in `index.css`; no other `fixed`/`z-50` elements to conflict with
+
+## Post-deploy hotfix: save-banner drifted with page scroll instead of staying pinned to the viewport
+
+**Status:** Done
+**Commit:** 55cf9d9
+**Agent:** main agent
+**Summary:** User reported the new save-notification banner moved with scroll instead of staying at the bottom of the screen. Root cause: an ancestor (`.panel-settings` section) uses `motion-safe:animate-fade-rise`, a transform-based keyframe animation, which creates a new containing block for `position: fixed` descendants — so the banner was fixed relative to that ancestor, not the viewport, and `.panel__content`'s own scroll container (`overflow-y: auto`, `height: 100vh`) made it visibly drift as the page scrolled. Fixed by rendering the banner via `createPortal()` into `document.body`, bypassing the ancestor chain entirely. Since portals move the DOM node (not just the React tree) out of the `<form>`, the submit button is re-associated to the form via the HTML5 `form="settings-form"` attribute instead of DOM containment.
+**Deviations:** None.
+
+**Reviews:**
+
+None — self-reviewed, well-understood CSS/DOM fix.
+
+**Verification:**
+- `cd client && npx vitest run` → 41 passed, no regression
+- `cd client && npx vite build` → passes, 53 modules
+- Confirmed `id="settings-form"` is unique in the file
