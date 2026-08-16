@@ -334,3 +334,20 @@ None — small, well-understood bugfix, self-reviewed, not routed through the ta
 
 **Verification:**
 - `go build ./...`, `go vet ./...`, `go test ./...` (via `golang:1.25.5-alpine`, matching `server/Dockerfile`) → all clean, no test relied on the removed mode check
+
+## Post-deploy hotfix (2): AI feedback still not shown after backend fix
+
+**Status:** Done
+**Commit:** d18277c
+**Agent:** main agent
+**Summary:** After the backend hotfix (`0d0f007`, tag `0.2.1.19`) started returning `ai_feedback` for quick-mode calculations, the user reported the block still wasn't showing on poshivon.ru/panel. Found a second, independent gate: the client's calculation-history render branch for `itemMode === "quick"` never called `<CalculationAIFeedback>` at all (only the masterpiece branch did, plus a redundant dead `itemMode === "quick" ? null : ...` check inside a branch that only renders when it's already not quick). Added the component to the quick branch and removed the dead guard.
+**Deviations:** None.
+
+**Reviews:**
+
+None — small, well-understood follow-up to the previous hotfix, self-reviewed.
+
+**Verification:**
+- `cd client && npx vitest run` → 41 passed, no regression
+- `cd client && npx vite build` → passes, 53 modules
+- Read `CalculationAIFeedback`'s helpers (`formatMarketPosition`, `marketStatusLabel`, `buildAIVerdict`) — all have safe switch defaults, confirmed no crash risk from quick-mode items lacking `market_status`/`market_segment`
