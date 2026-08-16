@@ -697,6 +697,10 @@ const Panel = () => {
   const [activeSection, setActiveSection] = useState("workspace");
   const [theme, setTheme] = useState(() => localStorage.getItem("panelTheme") || "light");
   const [settings, setSettings] = useState(defaultSettings);
+  // Снимок последнего загруженного/сохранённого состояния — сравнение с ним даёт isDirty
+  // (см. ниже). Инициализирован тем же defaultSettings, что и settings, чтобы до ответа
+  // GET /settings баннер не мигал «есть изменения» на ровном месте.
+  const [lastSavedSettings, setLastSavedSettings] = useState(defaultSettings);
   const [settingsNotice, setSettingsNotice] = useState("");
   const [chats, setChats] = useState([]);
   const [activeChatID, setActiveChatID] = useState("");
@@ -784,6 +788,7 @@ const Panel = () => {
         }
         const nextSettings = normalizeSettings(loaded);
         setSettings(nextSettings);
+        setLastSavedSettings(nextSettings);
         setOrderForm((current) => syncOrderForm(current, nextSettings));
       } catch (error) {
         if (!isActive) {
@@ -857,6 +862,11 @@ const Panel = () => {
   const activeChat = chats.find((chat) => chat.id === activeChatID) || null;
   const calculatorMode = normalizeCalculatorMode(settings.pricing_rules?.calculator_mode);
   const isQuickCalculator = calculatorMode === "quick";
+  // Плоский JSON.stringify-сравнение вместо глубокого diff: settings — чистые данные
+  // (числа/строки/вложенные объекты и массивы, без функций и дат), порядок ключей стабилен
+  // между setSettings-апдейтами, так что это надёжно и на объекте такого размера дёшево
+  // пересчитывать на каждый рендер — не нужен даже useMemo.
+  const isSettingsDirty = JSON.stringify(settings) !== JSON.stringify(lastSavedSettings);
   const totalHistoryAmount = useMemo(
     () => history.reduce((sum, item) => sum + (Number(item.total) || 0), 0),
     [history]
@@ -1076,7 +1086,13 @@ const Panel = () => {
     setSettingsNotice("");
     try {
       await saveUserSettings(settings);
+      setLastSavedSettings(settings);
       setSettingsNotice("Настройки сохранены.");
+      // Баннер сам скрывается через isDirty сразу после setLastSavedSettings, но
+      // подтверждение должно мелькнуть, а не исчезнуть мгновенно — держим его отдельным
+      // таймером. На ошибке не запускаем: settings остаются «грязными», баннер должен
+      // остаться на экране до повторной попытки.
+      window.setTimeout(() => setSettingsNotice(""), 3000);
     } catch (error) {
       setSettingsNotice(mapPanelError(error));
     } finally {
@@ -1522,16 +1538,29 @@ const Panel = () => {
                 </>
               )}
 
-              <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
-                <button
-                  className="inline-flex min-h-12 items-center justify-center rounded-2xl border px-5 text-sm font-semibold text-white motion-safe:transition-all motion-safe:duration-200 motion-safe:ease-[var(--ease-soft-spring)] motion-safe:hover:-translate-y-0.5 motion-safe:hover:opacity-95 motion-safe:active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-60 [background:var(--settings-accent)] [border-color:color-mix(in_oklab,var(--settings-accent)_90%,black)] shadow-[0_16px_30px_var(--settings-card-shadow)]"
-                  type="submit"
-                  disabled={isSavingSettings}
-                >
-                  {isSavingSettings ? "Сохраняем..." : "Сохранить изменения"}
-                </button>
-                {settingsNotice ? <p className="text-sm leading-6 text-[color:var(--settings-muted)]">{settingsNotice}</p> : null}
-              </div>
+              {/* Кнопка сохранения — не в потоке страницы, а всплывающим уведомлением
+                  внизу экрана, по типу баннера о cookie-политике: появляется только когда
+                  есть что сохранять (isSettingsDirty), идёт сохранение, или ещё не угасло
+                  сообщение по итогу последней попытки (settingsNotice, см. handleSaveSettings —
+                  успех гаснет сам через 3с, ошибка держится, пока не пересохранят). */}
+              {isSettingsDirty || isSavingSettings || settingsNotice ? (
+                <div className="fixed inset-x-0 bottom-0 z-50 flex justify-center px-4 pb-4 motion-safe:animate-fade-rise sm:px-6">
+                  <div className="flex w-full max-w-2xl flex-col gap-3 rounded-[24px] border p-4 shadow-[0_24px_60px_var(--settings-card-shadow)] backdrop-blur-xl [background:color-mix(in_oklab,var(--settings-shell-bg)_94%,transparent)] [border-color:var(--settings-shell-border)] sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                    <p className="text-sm leading-6 text-[color:var(--settings-text)]">
+                      {settingsNotice || (isSavingSettings ? "Сохраняем изменения..." : "Есть несохранённые изменения.")}
+                    </p>
+                    {isSettingsDirty || isSavingSettings ? (
+                      <button
+                        className="inline-flex min-h-12 items-center justify-center rounded-2xl border px-5 text-sm font-semibold text-white motion-safe:transition-all motion-safe:duration-200 motion-safe:ease-[var(--ease-soft-spring)] motion-safe:hover:-translate-y-0.5 motion-safe:hover:opacity-95 motion-safe:active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-60 [background:var(--settings-accent)] [border-color:color-mix(in_oklab,var(--settings-accent)_90%,black)] shadow-[0_16px_30px_var(--settings-card-shadow)]"
+                        type="submit"
+                        disabled={isSavingSettings}
+                      >
+                        {isSavingSettings ? "Сохраняем..." : "Сохранить изменения"}
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
             </form>
           </section>
         ) : activeSection === "users" && isAdmin ? (
