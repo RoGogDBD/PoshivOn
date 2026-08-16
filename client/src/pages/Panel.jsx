@@ -903,6 +903,15 @@ const Panel = () => {
       ...current,
       garments: Object.fromEntries(Object.entries(current.garments).filter(([key]) => key !== name)),
     }));
+    // syncOrderForm чинит такие расхождения только на загрузке настроек, поэтому удаление
+    // внутри сессии обязано подчистить ссылку само — иначе в калькуляторе останется имя,
+    // которого больше нет, и расчёт упадёт на сервере. Фолбэк тот же, что в syncOrderForm:
+    // первое оставшееся изделие (удаляемое исключено), пустая строка — если их не осталось.
+    setOrderForm((current) =>
+      current.garment_type === name
+        ? { ...current, garment_type: Object.keys(settings.garments).find((key) => key !== name) || "" }
+        : current
+    );
   };
 
   const handleAddOperation = (name, fields) => {
@@ -920,6 +929,17 @@ const Panel = () => {
       ...current,
       operations: Object.fromEntries(Object.entries(current.operations).filter(([key]) => key !== name)),
     }));
+    // То же, что в handleDeleteGarment: ключи operation_counts в syncOrderForm — ровно ключи
+    // settings.operations, поэтому удалённая операция просто выбрасывается. Иначе её счётчик
+    // пережил бы удаление, прошёл фильтр count > 0 в handleCalculate и вернулся бы с сервера
+    // ошибкой unknown operation.
+    setOrderForm((current) => {
+      if (!(name in (current.operation_counts || {}))) {
+        return current;
+      }
+      const { [name]: removedCount, ...restCounts } = current.operation_counts;
+      return { ...current, operation_counts: restCounts };
+    });
   };
 
   const handleAddDiscount = (fields) => {
