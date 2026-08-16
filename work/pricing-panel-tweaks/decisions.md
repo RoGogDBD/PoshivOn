@@ -401,3 +401,19 @@ None — self-reviewed, well-understood CSS/DOM fix.
 - `cd client && npx vitest run` → 41 passed, no regression
 - `cd client && npx vite build` → passes, 53 modules
 - Confirmed `id="settings-form"` is unique in the file
+
+## Post-deploy hotfix: save banner nearly invisible (blended with the page)
+
+**Status:** Done
+**Commit:** a8d593c
+**Agent:** main agent
+**Summary:** User reported the save banner blended almost completely with the background. Root cause: its background used `color-mix(in_oklab, var(--settings-shell-bg), transparent)`, but `--settings-shell-bg` is a `linear-gradient()`, not a `<color>` — `color-mix()` only accepts colors, so the entire `background` declaration was invalid CSS and silently dropped by the browser, leaving only `backdrop-blur` with no fill. Replaced with a solid, theme-independent dark surface (snackbar-style) and light text for guaranteed contrast against any page background. Also fixed the action button, which previously used `--settings-accent` + `text-white` — that token flips to a *dark* accent color in light theme, which would have blended into the new dark banner too — switched to a fixed light fill + dark text.
+**Deviations:** None.
+
+**Reviews:**
+
+None — self-reviewed, well-understood CSS bug.
+
+**Verification:**
+- `cd client && npx vitest run` → 41 passed, no regression
+- `cd client && npx vite build` → passes, 53 modules
