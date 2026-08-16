@@ -9,7 +9,7 @@ feature_dir: work/pricing-panel-tweaks
 execution_plan: work/pricing-panel-tweaks/logs/execution-plan.md
 team_name: pricing-panel-tweaks
 
-last_completed_wave: 4
+last_completed_wave: 5
 total_waves: 5
 
 # Format: task_number: status (planned | in_progress | done)
@@ -27,6 +27,12 @@ tasks:
   6: done
   7: done
   8: done
-  9: planned
+  9: done
 
-next_wave: 5
+next_wave: null
+# All agent-executable work is complete (41/41 tests, 19/19 AC verified at
+# source level). Outstanding before this can be called fully finalized:
+# (1) user's manual browser walkthrough of the checklist in
+#     logs/working/task-9/qa-report.md, (2) user sign-off on calculator-mode
+#     display order (A2 in that checklist). Not deleting this checkpoint
+#     until both are resolved.
