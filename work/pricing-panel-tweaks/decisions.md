@@ -65,13 +65,14 @@ No round 2 — no in-scope findings required a fix.
 **Status:** Done
 **Commit:** 6517d72
 **Agent:** main agent
-**Summary:** Built the shared, JSX-free foundation Wave 3 will call: `DEFAULT_GARMENT_NAMES`/`DEFAULT_OPERATION_NAMES`, the two missing `defaultSettings.operations` entries (Decision 6), pure validation helpers whose bounds mirror the backend `validateSettings` and are stricter where needed (`quick_price > 0`), `getDefaultDiscountRange` returning both range ends, six add/delete handlers in the existing `setSettings((current) => ({...}))` style, and a `DeleteRowButton` component. Added `vitest` (Decision 7) with 32 pure-function tests; `vitest` was pinned to `^2.1.9` rather than the latest `4.x` because 4.x installs a second major Vite (v8) alongside the app's Vite 5, while 2.1.9 dedupes onto the existing Vite 5 and needs no config changes.
+**Summary:** Built the shared, JSX-free foundation Wave 3 will call: `DEFAULT_GARMENT_NAMES`/`DEFAULT_OPERATION_NAMES`, the two missing `defaultSettings.operations` entries (Decision 6), pure validation helpers whose bounds mirror the backend `validateSettings` and are stricter where needed (`quick_price > 0`), `getDefaultDiscountRange` returning both range ends, six add/delete handlers in the existing `setSettings((current) => ({...}))` style, and a `DeleteRowButton` component. Added `vitest` (Decision 7) with 32 pure-function tests; `vitest` was pinned to `^3.2.6` rather than the latest `4.x` because 4.x installs a second major Vite (v8) alongside the app's Vite 5, while the 3.x line dedupes onto the existing Vite 5 and needs no config changes. (This entry originally recorded the pin as `^2.1.9`, which was the value at the time of writing; `7a2aeee` bumped it to `^3.2.6` to clear a vitest CVE, and `client/package.json` has carried `^3.2.6` since.)
 **Deviations:** Two small additions beyond the literal step list, both to prevent drift across the three parallel Wave 3 tasks: an `isBlankName` helper (mirrors the backend's `strings.TrimSpace(name) == ""` check, which Tasks 3/4 need for their "reject empty name" criterion) and `defaultSettings` exported so a test can assert it stays in sync with the server defaults — that assertion is the regression guard for the step-2 drift fix. The add-handlers deliberately do NOT trim `name`, per the spec's "does not re-validate, just writes"; the trim obligation is documented at the handler block for Wave 3.
 
 **Reviews:**
 
 *Round 1:*
-- Not run — interactive reviewer spawning was unavailable in this session, so no code-reviewer/security-auditor/test-reviewer JSON reports exist under `logs/working/task-2/`. The executing agent self-reviewed against the code-writing skill instead. **Reviews for this task remain outstanding** and should be run before the feature is finalized.
+- Not run at the time this entry was written — interactive reviewer spawning was unavailable in that session, so the executing agent self-reviewed against the code-writing skill instead.
+- **Run later by the team lead.** All three reports exist and were committed in `5ef014d` ("chore: review reports for task 2"): [logs/working/task-2/code-reviewer-1.json](logs/working/task-2/code-reviewer-1.json), [logs/working/task-2/security-auditor-1.json](logs/working/task-2/security-auditor-1.json), [logs/working/task-2/test-reviewer-1.json](logs/working/task-2/test-reviewer-1.json). Nothing about this task remains outstanding.
 
 **Verification:**
 - `cd client && npx vitest run` → 32 passed (1 file)
@@ -89,11 +90,12 @@ No round 2 — no in-scope findings required a fix.
 **Reviews:**
 
 *Round 1:*
-- Not run — independent reviewer spawning was unavailable in this session run, so no code-reviewer/security-auditor/test-reviewer JSON reports exist under `logs/working/task-3/`. The executing agent self-reviewed against the code-writing skill instead. **Reviews for this task remain outstanding**, same as Task 2's, and should be run before the feature is finalized.
+- Not run at the time this entry was written — independent reviewer spawning was unavailable in that session run, so the executing agent self-reviewed against the code-writing skill instead.
+- **Run later by the team lead.** All three reports exist: [logs/working/task-3/code-reviewer-1.json](logs/working/task-3/code-reviewer-1.json) (committed in `c1eb100`, "chore: review reports for tasks 3 and 4"), plus [logs/working/task-3/security-auditor-1.json](logs/working/task-3/security-auditor-1.json) and [logs/working/task-3/test-reviewer-1.json](logs/working/task-3/test-reviewer-1.json) (committed in `8f20c45`). Nothing about this task remains outstanding.
 
 **Surfaced, not fixed (out of scope):**
 - `syncOrderForm` (`Panel.jsx:1729`) is only called on the settings-*load* path (`Panel.jsx:599`), not after a local `setSettings`. If the admin selects a self-added garment in the calculator and then deletes it in Настройки, `orderForm.garment_type` keeps pointing at the removed name until the page reloads, and a calculation in that state fails server-side instead of silently falling back. Fixing it means editing Task 2's `handleDeleteGarment` (explicitly out of this task's scope) and Task 4 has the identical situation with `operation_counts`, so it needs a feature-level decision, not a unilateral fix here. Narrow in practice: the default selection is "Пиджак", so the user must have deliberately selected the custom garment first.
-- Task 2's entry above states `vitest` was pinned to `^2.1.9`; `client/package.json` actually carries `^3.2.6` (3.2.7 installed). Tests and build both pass on Vite 5.4.21, so nothing is broken — the claim in the log is just stale.
+- Task 2's entry above stated `vitest` was pinned to `^2.1.9`, while `client/package.json` actually carries `^3.2.6` (3.2.7 installed) after the CVE bump in `7a2aeee`. Tests and build both pass on Vite 5.4.21, so nothing was broken — the claim in the log was just stale, and it has since been corrected in place (audit finding F10).
 
 **Verification:**
 - `cd client && npx vitest run` → 32 passed (1 file), unchanged from Task 2 — this task added no pure logic
@@ -113,7 +115,8 @@ No round 2 — no in-scope findings required a fix.
 **Reviews:**
 
 *Round 1:*
-- Not run — independent reviewer spawning was unavailable in this session run, so no code-reviewer/security-auditor/test-reviewer JSON reports exist under `logs/working/task-4/`. The executing agent self-reviewed against the code-writing skill instead. **Reviews for this task remain outstanding**, same as Tasks 2 and 3's, and should be run before the feature is finalized.
+- Not run at the time this entry was written — independent reviewer spawning was unavailable in that session run, so the executing agent self-reviewed against the code-writing skill instead.
+- **Run later by the team lead.** All three reports exist and were committed in `c1eb100` ("chore: review reports for tasks 3 and 4"): [logs/working/task-4/code-reviewer-1.json](logs/working/task-4/code-reviewer-1.json), [logs/working/task-4/security-auditor-1.json](logs/working/task-4/security-auditor-1.json), [logs/working/task-4/test-reviewer-1.json](logs/working/task-4/test-reviewer-1.json). Nothing about this task remains outstanding.
 
 **Surfaced, not fixed (out of scope):**
 - The `syncOrderForm` gap Task 3 surfaced has its operations-side twin, and it is slightly sharper here. `syncOrderForm` (`Panel.jsx:1852`) reprojects `orderForm.operation_counts` onto the current operation names, but runs only on the settings-*load* path (`Panel.jsx:714`) — `handleSaveSettings` does not re-sync. Adding an operation is safe (the calculator reads `orderForm.operation_counts[name] || 0`), but if the admin gives a self-added operation a non-zero count in the calculator and then deletes that operation in Настройки, the stale count survives in `orderForm`, passes the `count > 0` filter at `Panel.jsx:1074-1075`, and the server rejects the whole calculation with `unknown operation` (`costing.go:452` and `costing.go:731`) until the page is reloaded. Fixing it means editing Task 2's `handleDeleteOperation`/`handleDeleteGarment` (explicitly out of this task's scope) and it is the same defect for garments, so it needs one feature-level decision rather than a unilateral fix in the last task that happened to touch the area.
@@ -141,7 +144,8 @@ The default-range suggestion is kept in sync by adjusting state during render (`
 **Reviews:**
 
 *Round 1:*
-- Not run by the executing agent — it self-reviewed against the code-writing skill instead (findings below). The independent code-reviewer/security-auditor/test-reviewer reports for Tasks 1-4 were produced separately by the team lead and live under `logs/working/task-{1..4}/`; the matching `logs/working/task-5/` reports are **still outstanding** and should be run before the feature is finalized.
+- Not run by the executing agent — it self-reviewed against the code-writing skill instead (findings below). The independent reports for Tasks 1-4 were produced separately by the team lead and live under `logs/working/task-{1..4}/`.
+- **Run later by the team lead.** All three Task 5 reports exist and were committed in `c9ec79f` ("chore: review reports for task 5"): [logs/working/task-5/code-reviewer-1.json](logs/working/task-5/code-reviewer-1.json), [logs/working/task-5/security-auditor-1.json](logs/working/task-5/security-auditor-1.json), [logs/working/task-5/test-reviewer-1.json](logs/working/task-5/test-reviewer-1.json). Nothing about this task remains outstanding.
 
 **Self-review findings (found and fixed before commit):**
 - First draft cleared the draft to empty strings after a successful add. Broken in a reachable case: if the admin entered a range whose `max_qty` equalled the previous suggestion minus one (e.g. suggestion `101`, entered `5-100`), the recomputed suggestion stayed `101`, the render-time resync did not fire, and the form was left with two blank required fields. Replaced with an explicit refill from the just-added row plus a matching `suggestedMinQty` update, so the resync never double-fires either.
@@ -167,7 +171,7 @@ The default-range suggestion is kept in sync by adjusting state during render (`
 **Reviews:**
 
 *Round 1:*
-- Not run independently — the executing agent self-reviewed as a hostile critic, as instructed. Findings below. This matches the review situation of Tasks 2-5, whose independent reports are still partly outstanding.
+- Not run independently — the executing agent self-reviewed as a hostile critic, as instructed. Findings below. (This entry originally said the same held for Tasks 2-5; that is no longer true — their independent reports were all run later and live under `logs/working/task-{2..5}/`. This ad-hoc fix is the one item still carrying only a self-review; the Task 7 security audit did cover it separately.)
 
 **Self-review findings (hostile pass, all checked, no fix needed):**
 - Both updaters are no-ops when the deleted item is *not* the referenced one: `handleDeleteGarment` returns `current` unchanged unless `current.garment_type === name`, and `handleDeleteOperation` returns `current` unless the key is actually present in `operation_counts`. Same-object identity, so no spurious re-render and no way to blank a selection the admin did not delete.
@@ -236,7 +240,7 @@ None — this task is itself the security review for the feature (`reviewers` in
 - The manual checklist is adequate in aggregate for the *planned* Wave 3 scope — it does walk both render sites per component, delete presence/absence for default vs. added rows, the disabled-last-tier state, and add/delete persistence across reload. It is **not** adequate for the two *unplanned* additions: the ad-hoc `orderForm`-clearing fix and the Enter-interception workaround in the three add-forms both postdate user-spec and appear in no `Verify-user` field. Every checklist was also written from the "confirm it's rejected" angle, so the boundary-*accept* cases (operation field `0`, `percent` 0/100, `max_qty === min_qty`) are systematically absent.
 - Both gaps previously raised by per-task test-reviewers were adjudicated as **not consequential**: "AC8 recalculation-in-both-modes" is in fact covered by user-spec's How to Verify (it was only missing from task-level fields), and "`min_qty <= 0` rejection" is triple-defended by the unit test, the input's `min="1"`, and backend `validateSettings`.
 - All 8 manual gaps (M1-M8) are handed to Task 9 rather than warranting a new implementation task, together with a "known-and-accepted, do not file as bugs" list (degenerate `1000001–1000001` suggestion, middle-tier discount hole, deleted-item recalculation of saved chats) and a reminder that Task 1's mode-order ambiguity needs explicit user confirmation, not a silent assertion.
-- Outside this audit's scope but relevant to whoever accepts the feature: independent code-reviewer/security-auditor/test-reviewer rounds remain outstanding for Tasks 2-5 and the ad-hoc fix — that code has been largely self-reviewed.
+- Outside this audit's scope but relevant to whoever accepts the feature: the independent code-reviewer/security-auditor/test-reviewer rounds for Tasks 2-5 did in fact run (reports under `logs/working/task-{2..5}/`, committed in `5ef014d`, `c1eb100`, `c9ec79f`, `8f20c45`) — this line was written from the then-stale prose in the Tasks 2-5 entries, corrected under audit finding F10. The `orderForm` ad-hoc fix remains the one change carrying only a self-review plus the Task 7 security pass.
 
 **Verification:**
 - `cd client && npx vitest run` → 32 passed (1 file), run by the auditor, not taken from prior reports
