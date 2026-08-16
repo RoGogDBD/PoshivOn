@@ -113,7 +113,7 @@ export const DEFAULT_OPERATION_NAMES = [
 
 export const defaultSettings = {
   pricing_rules: {
-    calculator_mode: "masterpiece",
+    calculator_mode: "quick",
     labor_minute_rate: 18,
     payroll_taxes_percent: 30,
     overhead_percent: 18,
@@ -427,15 +427,24 @@ const DeleteRowButton = ({ isDeletable, onDelete, disabled = false, disabledHint
 
 const emptyGarmentDraft = { name: "", quick_price: "", base_minutes: "", complexity_coeff: "" };
 
-// GarmentAddForm — форма добавления изделия. Собирает все четыре поля всегда, независимо от
-// активного режима калькулятора (Decision 2): изделие, добавленное в быстром режиме без
-// base_minutes, сохранилось бы с нулём и уронило бы расчёт в продвинутом режиме — и наоборот.
+// Скрытые значения для полей, которые форма не показывает в быстром режиме (см. isQuickMode
+// ниже). Раньше (Decision 2) форма всегда собирала все четыре поля именно чтобы не подставлять
+// такие дефолты — они дают технически «рабочее», но фиктивное значение для продвинутого режима
+// (база/коэффициент = 1 — не реальная норма времени/сложность, а просто валидное число, чтобы
+// прошла проверка). Сознательно принятый компромисс по просьбе пользователя: изделие,
+// добавленное из быстрого тарифа, будет с виду нормально считаться в продвинутом режиме,
+// но по абсурдно заниженным нормам, пока админ не поправит База/Коэфф. вручную.
+const HIDDEN_GARMENT_DEFAULTS = { base_minutes: 1, complexity_coeff: 1 };
+
+// GarmentAddForm — форма добавления изделия. В продвинутом режиме показывает все четыре поля
+// сразу (Decision 2). В быстром режиме (isQuickMode) — только Название и Мин. цена/шт; База и
+// Коэфф. подставляются скрытыми дефолтами (HIDDEN_GARMENT_DEFAULTS), см. комментарий выше.
 //
 // Это НЕ <form>: вся секция настроек уже обёрнута в <form onSubmit={handleSaveSettings}>,
 // а вложенные формы HTML запрещает. Поэтому кнопка type="button" + onClick, а Enter внутри
 // полей перехватывается вручную — иначе он отправил бы внешнюю форму и сохранил настройки
 // вместо добавления строки.
-const GarmentAddForm = ({ settings, onAddGarment }) => {
+const GarmentAddForm = ({ settings, onAddGarment, isQuickMode = false }) => {
   const [draft, setDraft] = useState(emptyGarmentDraft);
   const [error, setError] = useState("");
 
@@ -457,10 +466,12 @@ const GarmentAddForm = ({ settings, onAddGarment }) => {
 
     // Валидатору отдаются сырые строки из input: он сам приводит их к числу строго
     // (пустая строка и мусор дают NaN, а не 0). Приводить через Number() заранее нельзя —
-    // это подменило бы невалидный ввод нулём ещё до проверки.
+    // это подменило бы невалидный ввод нулём ещё до проверки. Поля, скрытые в быстром режиме,
+    // валидируются по своим скрытым дефолтам — они всегда корректны (1 > 0), но валидатор всё
+    // равно вызывается на полном наборе, чтобы не разойтись с бэкендом при будущих правках bounds.
     const { valid, errors } = validateGarmentFields({
-      base_minutes: draft.base_minutes,
-      complexity_coeff: draft.complexity_coeff,
+      base_minutes: isQuickMode ? HIDDEN_GARMENT_DEFAULTS.base_minutes : draft.base_minutes,
+      complexity_coeff: isQuickMode ? HIDDEN_GARMENT_DEFAULTS.complexity_coeff : draft.complexity_coeff,
       quick_price: draft.quick_price,
     });
     if (!valid) {
@@ -471,8 +482,8 @@ const GarmentAddForm = ({ settings, onAddGarment }) => {
     // Обработчик добавления имя не обрезает — обрезаем здесь, иначе ключом изделия
     // станет строка с пробелами по краям.
     onAddGarment(name, {
-      base_minutes: Number(draft.base_minutes),
-      complexity_coeff: Number(draft.complexity_coeff),
+      base_minutes: isQuickMode ? HIDDEN_GARMENT_DEFAULTS.base_minutes : Number(draft.base_minutes),
+      complexity_coeff: isQuickMode ? HIDDEN_GARMENT_DEFAULTS.complexity_coeff : Number(draft.complexity_coeff),
       quick_price: Number(draft.quick_price),
     });
     setDraft(emptyGarmentDraft);
@@ -493,9 +504,13 @@ const GarmentAddForm = ({ settings, onAddGarment }) => {
     >
       <div>
         <strong className="text-base font-semibold tracking-[-0.02em] text-[color:var(--settings-text)]">Новое изделие</strong>
-        <p className="mt-1 text-sm text-[color:var(--settings-muted)]">Значения заполняются сразу для обоих режимов расчёта.</p>
+        <p className="mt-1 text-sm text-[color:var(--settings-muted)]">
+          {isQuickMode
+            ? "База и коэффициент сложности подставляются автоматически — поправьте их в продвинутом режиме при необходимости."
+            : "Значения заполняются сразу для обоих режимов расчёта."}
+        </p>
       </div>
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className={`grid gap-4 md:grid-cols-2 ${isQuickMode ? "" : "xl:grid-cols-4"}`}>
         <SettingsField label="Название">
           <input
             className={settingsInputClass}
@@ -508,12 +523,16 @@ const GarmentAddForm = ({ settings, onAddGarment }) => {
         <SettingsField label="Мин. цена / шт">
           <SettingsNumberInput step="1" min="0" value={draft.quick_price} onChange={updateField("quick_price")} placeholder="7000" />
         </SettingsField>
-        <SettingsField label="База, мин">
-          <SettingsNumberInput step="1" min="0" value={draft.base_minutes} onChange={updateField("base_minutes")} placeholder="260" />
-        </SettingsField>
-        <SettingsField label="Коэфф. сложности">
-          <SettingsNumberInput step="0.01" min="0" value={draft.complexity_coeff} onChange={updateField("complexity_coeff")} placeholder="1.6" />
-        </SettingsField>
+        {isQuickMode ? null : (
+          <>
+            <SettingsField label="База, мин">
+              <SettingsNumberInput step="1" min="0" value={draft.base_minutes} onChange={updateField("base_minutes")} placeholder="260" />
+            </SettingsField>
+            <SettingsField label="Коэфф. сложности">
+              <SettingsNumberInput step="0.01" min="0" value={draft.complexity_coeff} onChange={updateField("complexity_coeff")} placeholder="1.6" />
+            </SettingsField>
+          </>
+        )}
       </div>
       {error ? (
         <p
@@ -1268,31 +1287,6 @@ const Panel = () => {
 
         {activeSection === "settings" ? (
           <section className="panel-settings rounded-[32px] border p-5 shadow-[0_28px_80px_var(--settings-shell-shadow)] backdrop-blur-xl motion-safe:animate-fade-rise [background:var(--settings-shell-bg)] [border-color:var(--settings-shell-border)] sm:p-7">
-            <div className="mb-6 flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-              <div className="max-w-3xl">
-                <span className="inline-flex rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-[color:var(--settings-muted)] [background:var(--settings-accent-soft)] [border-color:var(--settings-card-border)]">
-                  Настройка модели
-                </span>
-                <h2 className="mt-4 text-[30px] font-semibold tracking-[-0.04em] text-[color:var(--settings-text)] sm:text-[38px]">
-                  Модель расчёта
-                </h2>
-                <p className="mt-3 max-w-2xl text-sm leading-6 text-[color:var(--settings-muted)] sm:text-[15px]">
-                  Спокойная рабочая панель без жесткого белого фона: параметры сгруппированы по смыслу, а все поля читаются на мягких матовых поверхностях.
-                </p>
-              </div>
-              <div className={`${settingsInsetClass} grid min-w-[220px] gap-2 self-start lg:max-w-[260px]`}>
-                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[color:var(--settings-subtle)]">Активный режим</span>
-                <strong className="text-xl font-semibold tracking-[-0.03em] text-[color:var(--settings-text)]">
-                  {calculatorModes.find((mode) => mode.value === calculatorMode)?.label || "Продвинутый"}
-                </strong>
-                <p className="text-sm leading-6 text-[color:var(--settings-muted)]">
-                  {isQuickCalculator
-                    ? "Быстрый тарифный режим для чернового просчёта без детальной стоимости."
-                    : "Полная модель с минутами, материалами, срочностью, скидками и рыночными диапазонами."}
-                </p>
-              </div>
-            </div>
-
             <form className="space-y-5" onSubmit={handleSaveSettings}>
               <SettingsSection
                 title="Режим расчёта"
@@ -1352,7 +1346,7 @@ const Panel = () => {
                         </div>
                       ))}
                     </div>
-                    <GarmentAddForm settings={settings} onAddGarment={handleAddGarment} />
+                    <GarmentAddForm settings={settings} onAddGarment={handleAddGarment} isQuickMode />
                   </SettingsSection>
 
                   <SettingsSection title="Усложнения" description="Процентные надбавки, которые добавляются к базовой цене в быстром режиме.">
