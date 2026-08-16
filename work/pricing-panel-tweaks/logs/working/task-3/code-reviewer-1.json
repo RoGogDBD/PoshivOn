@@ -1,0 +1,53 @@
+{
+  "task": "3",
+  "feature": "pricing-panel-tweaks",
+  "reviewer": "code-reviewer",
+  "round": 1,
+  "commit_reviewed": "c0a11bc",
+  "verdict": "approve",
+  "summary": "GarmentAddForm + DeleteRowButton wiring for Изделия matches tech-spec Decisions 2/3/5 and Task 2's handler/validation contracts exactly. Enter-interception claim verified correct in the actual DOM structure (outer <form onSubmit={handleSaveSettings}> at Panel.jsx:1234-1457 wraps both Изделия SettingsSection blocks at 1273/1337; GarmentAddForm is a plain <div>, so an un-intercepted Enter in the Название input would bubble to and submit the outer form — the onKeyDown+preventDefault container handler correctly blocks this). No issues found.",
+  "claims_verified": [
+    {
+      "claim": "type=\"button\" + manual onKeyDown Enter-interception instead of real <form>, because nested forms are invalid HTML and Enter would otherwise submit the outer settings form",
+      "verified": true,
+      "evidence": "Panel.jsx:1234 `<form className=\"space-y-5\" onSubmit={handleSaveSettings}>` ... closes at Panel.jsx:1457. Both Изделия SettingsSection blocks (Panel.jsx:1273 quick mode, 1337 masterpiece mode) are nested inside this form. GarmentAddForm renders as a plain `<div onKeyDown={handleKeyDown}>` (not `<form>`), containing a bare `<input type=\"text\">` and SettingsNumberInput fields with no ancestor <form> of their own — so without interception, native browser 'implicit submission' on Enter would target the outer form and fire handleSaveSettings. handleKeyDown calls event.preventDefault() on the container's keydown handler (bubble-phase, before the browser's default action for the key is processed), which reliably cancels the implicit submission — this is the standard, well-established React idiom for this exact problem. Add button is `type=\"button\"` with a manual onClick, so it never triggers native submission either. Claim holds."
+    },
+    {
+      "claim": "onAddGarment receives name.trim() and real numbers (not strings), matching Task 2's handler contract",
+      "verified": true,
+      "evidence": "GarmentAddForm.handleAdd: `const name = draft.name.trim();` ... `onAddGarment(name, { base_minutes: Number(draft.base_minutes), complexity_coeff: Number(draft.complexity_coeff), quick_price: Number(draft.quick_price) })`. Task 2's handleAddGarment (Panel.jsx:883-891) doc comment explicitly states the contract: 'name передавать уже обрезанным (name.trim())' and stores `fields` as-is into `garments[name]`. Numbers are only computed after validateGarmentFields already confirmed each raw string is a valid positive finite number (toFiniteNumber/isPositiveNumber in Panel.jsx:227-240), so Number() conversion at that point is safe and non-lossy. Matches exactly."
+    },
+    {
+      "claim": "Validation errors are field-specific and match validateGarmentFields's bounds",
+      "verified": true,
+      "evidence": "validateGarmentFields (Panel.jsx:264-276) checks base_minutes/complexity_coeff/quick_price each via isPositiveNumber (strict > 0, NaN-safe via toFiniteNumber), matching user-spec AC 'Мин. цена/шт > 0, База/мин > 0, Коэфф. сложности > 0' and tech-spec's backend-bound cross-check (costing.go save-time base_minutes>0/complexity_coeff>0, and the stricter quick-calc-time quick_price>0 requirement folded into the same >0 check here). GarmentAddForm displays `Object.values(errors).join('. ')` — each error message is per-field ('База/мин должна быть больше 0', etc.), concatenated into one visible <p role=\"alert\">. This satisfies the task's own instruction ('no existing error-styling precedent... a plain <p>... is sufficient') and the AC's requirement of a visible, specific error — it does not claim per-field inline highlighting, which was never required."
+    },
+    {
+      "claim": "DeleteRowButton gated correctly on !DEFAULT_GARMENT_NAMES.includes(name) in both mode branches",
+      "verified": true,
+      "evidence": "Both call sites present and identical: quick-mode row block (Panel.jsx ~1163 in diff / current file quick Изделия section) and masterpiece-mode row block (~1226 in diff), each `<DeleteRowButton isDeletable={!DEFAULT_GARMENT_NAMES.includes(name)} onDelete={() => handleDeleteGarment(name)} />`. DEFAULT_GARMENT_NAMES (Panel.jsx:101) = exactly the 4 names from user-spec/tech-spec (Пиджак, Юбка, Рубашка, Платье), defined by Task 2 per Decision 6 cross-check against server DefaultUserSettings() — not derived from the stale defaultSettings constant."
+    },
+    {
+      "claim": "No code duplication between quick-mode and masterpiece-mode wiring beyond what's structurally necessary",
+      "verified": true,
+      "evidence": "The only duplicated lines are the two identical `<GarmentAddForm settings={settings} onAddGarment={handleAddGarment} />` call sites and the two identical DeleteRowButton one-liners inside each mode's pre-existing `.map(...)` row block. This is the exact, minimal duplication mandated by tech-spec Decision 5 (component defined once, invoked at both existing per-mode render sites, mirroring the file's existing DiscountsBlock precedent) — the two mode branches render genuinely different field subsets per row (pre-existing structure, correctly left untouched), so no further sharing is possible without an out-of-scope refactor of the mode-branch structure itself."
+    }
+  ],
+  "findings": [],
+  "scope_check": {
+    "diff_stat": "1 file changed, 121 insertions(+), 2 deletions(-) — client/src/pages/Panel.jsx only",
+    "out_of_scope_touched": false,
+    "notes": "Confirmed via `git show c0a11bc --stat` and full diff read: only Изделия SettingsSection blocks and the new GarmentAddForm component were touched. Усложнения/Операции and DiscountsBlock (Task 4/5 scope) are untouched. Task 2's handlers/constants/DeleteRowButton definition were not modified, only called."
+  },
+  "dimensions_reviewed": [
+    "Cross-File Consistency (10) — primary focus per review brief",
+    "Error Handling (4) — inline validation error path",
+    "Separation of Concerns (2) — form component vs handler contract",
+    "Readability (3) — naming, comments explaining the type=button/onKeyDown choice"
+  ],
+  "severity_counts": {
+    "critical": 0,
+    "major": 0,
+    "minor": 0
+  }
+}

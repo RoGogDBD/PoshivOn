@@ -1,0 +1,52 @@
+{
+  "task": "Task 4 — Add/delete rows for Усложнения/Операции",
+  "commit_reviewed": "fe3355b",
+  "files_reviewed": [
+    "client/src/pages/Panel.jsx"
+  ],
+  "verdict": "approve",
+  "summary": "OperationAddForm and DeleteRowButton are wired correctly into both Усложнения (quick mode) and Операции (masterpiece mode) SettingsSection blocks, using Task 2's shared constants/handlers/validators without modifying them. Diff scope is exactly the two operations sections plus the new component definition — no touches to Изделия sections, DiscountsBlock, or Task 2's foundation code. `npx vitest run` passes (32/32) unchanged.",
+  "findings": [],
+  "checks_performed": [
+    {
+      "check": "Nested-<form> avoidance / Enter-key handling",
+      "result": "pass",
+      "detail": "OperationAddForm renders a <div> (not <form>), submit button is type=\"button\" with onClick=handleAdd; onKeyDown on the wrapping div intercepts Enter (event.preventDefault() + handleAdd()) so it can't bubble to the outer <form onSubmit={handleSaveSettings}> and trigger a full settings save. Identical pattern to Task 3's GarmentAddForm (already-reviewed precedent)."
+    },
+    {
+      "check": "onAddOperation receives name.trim() and real numbers",
+      "result": "pass",
+      "detail": "handleAdd() computes `const name = draft.name.trim()` before any check and passes that trimmed name to onAddOperation. Numeric fields are converted via Number(draft.x) only after validateOperationFields has already validated the raw strings (avoids the 'empty string coerced to 0 before validation' bug class). handleAddOperation (Task 2, Panel.jsx:900-908) stores fields as given, no double-trim/no re-coercion needed."
+    },
+    {
+      "check": "Validation bounds >= 0 for operations (not > 0 like garments)",
+      "result": "pass",
+      "detail": "validateOperationFields (Panel.jsx:278-290) uses isNonNegativeNumber for additional_minutes, additional_material_per_unit, quick_percent — correctly permissive of 0, distinct from validateGarmentFields' isPositiveNumber (> 0). OperationAddForm's SettingsNumberInput fields all use min=\"0\" (not min=\"1\"), consistent with the >= 0 contract. Task commit message explicitly calls out this distinction from Task 3."
+    },
+    {
+      "check": "DeleteRowButton gated on !DEFAULT_OPERATION_NAMES.includes(name) in both mode branches",
+      "result": "pass",
+      "detail": "Quick-mode Усложнения row (Panel.jsx:1306) and masterpiece-mode Операции row (Panel.jsx:1373) both pass isDeletable={!DEFAULT_OPERATION_NAMES.includes(name)} and onDelete={() => handleDeleteOperation(name)} — identical gating logic at both call sites, correct constant (DEFAULT_OPERATION_NAMES, not the stale defaultSettings.operations)."
+    },
+    {
+      "check": "No accidental touches to Изделия sections, DiscountsBlock, or Task 2 shared code",
+      "result": "pass",
+      "detail": "git show fe3355b --stat shows only client/src/pages/Panel.jsx changed (125 insertions, 2 deletions). Full diff confirms: (1) new OperationAddForm component inserted after GarmentAddForm/before hasPanelAccess, (2) DeleteRowButton + wrapping flex div + OperationAddForm call added inside the two existing Усложнения/Операции SettingsSection blocks only. No hunks touch the Изделия SettingsSection blocks, DiscountsBlock (Panel.jsx:1258-1282 in the original, unaffected), or Task 2's constants/handlers block (lines 96-192, 479-548 region) beyond reading them."
+    },
+    {
+      "check": "Shared settings.operations state consistency across modes",
+      "result": "pass",
+      "detail": "Both OperationAddForm call sites read/write the same settings.operations object via handleAddOperation/handleDeleteOperation (Task 2 handlers use setSettings((current) => ({...current, operations: ...})) against the single shared state) — an add/delete in one mode is immediately visible after switching modes, no per-mode copy introduced."
+    },
+    {
+      "check": "Automated regression check",
+      "result": "pass",
+      "detail": "npx vitest run (client/) — 32/32 tests pass, Task 2's test file unaffected by this task's JSX-only changes."
+    }
+  ],
+  "severity_counts": {
+    "critical": 0,
+    "major": 0,
+    "minor": 0
+  }
+}

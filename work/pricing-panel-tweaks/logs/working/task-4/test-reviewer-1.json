@@ -1,0 +1,52 @@
+{
+  "task": "Task 4 — Add/delete rows for Усложнения/Операции",
+  "commit_reviewed": "fe3355b",
+  "files_reviewed": [
+    "client/src/pages/Panel.jsx",
+    "client/src/pages/Panel.validation.test.js",
+    "work/pricing-panel-tweaks/tasks/4.md",
+    "work/pricing-panel-tweaks/tech-spec.md",
+    "work/pricing-panel-tweaks/user-spec.md"
+  ],
+  "verdict": "approve",
+  "summary": "No automated tests were added for Task 4, matching the deliberate, tech-spec-sanctioned scope (Decision 7 / Testing Strategy: only Task 2's pure functions get unit tests; component/JSX wiring is manual-only). Confirmed OperationAddForm genuinely delegates to Task 2's tested isBlankName/isDuplicateName/validateOperationFields/DeleteRowButton rather than reimplementing any validation logic — no untested duplicate logic exists. `npx vitest run` passes unchanged (32/32). One real gap: Task 4's own Verify-user checklist (3 bullets) does not explicitly walk through 2 of its 8 listed acceptance criteria (duplicate-name rejection, delete+save+reload permanence for operations) — these are only covered by the broader shared user-spec 'How to Verify -> Инкремент 2' checklist (once, across all 3 blocks), which Pre-deploy QA will execute separately. Non-blocking: same abbreviation pattern exists in Task 3's already-approved checklist, and the full AC set is still exercised at the feature level.",
+  "findings": [
+    {
+      "id": "TR4-1",
+      "severity": "minor",
+      "category": "verification-coverage",
+      "title": "Task 4's own Verify-user checklist omits explicit duplicate-name and delete-persistence checks for operations",
+      "detail": "Task 4's Verification Steps > User section (work/pricing-panel-tweaks/tasks/4.md lines 127-130) has 3 bullets: (1) add + save + reload + persists in both modes, (2) negative value rejected in 3 numeric fields, (3) no delete button on 8 defaults + working button on new item. This does not explicitly exercise: AC 'Submitting the add-form with a name that already exists ... is rejected with a \"Такое название уже есть\"-type error' (task 4.md line 98), or AC 'Deleting an admin-added row via handleDeleteOperation + Сохранить изменения + reload removes it permanently' (task 4.md line 101). It also doesn't explicitly ask the verifier to confirm all four fields are visible in both modes before adding, or that exactly one Добавить control is visible at a time — though those two are structurally guaranteed by the implementation (OperationAddForm unconditionally renders all 4 fields; only one of the two mode-branch SettingsSection blocks renders at a time) rather than requiring a runtime check.",
+      "impact": "The duplicate-name and delete-persistence behaviors are genuine runtime paths (state mutation + save round-trip) that could regress without a test catching it, and are exactly the kind of risk user-spec's own revision history flagged repeatedly. If QA only followed Task 4's own narrower checklist rather than the full user-spec 'How to Verify' checklist, these two ACs could go unverified for the Усложнения/Операции block specifically.",
+      "mitigation_present": "user-spec.md 'How to Verify -> User verifies' (lines 299-321) already contains both checks generically, worded to cover 'изделие/усложнение' and all blocks at once: duplicate-name rejection (line 315-317) and delete+save+reload permanence (line 311-312). The task file's Verify-user footer explicitly says 'Per tech-spec Task 4 Verify-user, itself derived from user-spec \"How to Verify -> Инкремент 2\"' — signaling the task-level checklist is a subset, not a replacement, of the shared one. The feature's Pre-deploy QA task (tech-spec.md 'Final Wave') is scoped to verify all user-spec + tech-spec acceptance criteria, so this gap is caught at the feature level even though it's absent from Task 4's own file.",
+      "recommendation": "No code change needed. Optional: when Task 3/4/5's task files are used as a template for future features, consider having each block's Verify-user restate the duplicate-name and delete-persistence checks explicitly rather than relying on a separately-referenced shared checklist, to make each task file self-verifying in isolation."
+    }
+  ],
+  "checks_performed": [
+    {
+      "check": "OperationAddForm validation genuinely reuses Task 2's tested helpers (no untested duplicate logic)",
+      "result": "pass",
+      "detail": "OperationAddForm's handleAdd (Panel.jsx ~519-548) calls isBlankName(name) (defined once, Panel.jsx:248, tested in Panel.validation.test.js describe('isBlankName')), isDuplicateName(name, settings.operations) (defined once, Panel.jsx:252-258, tested in describe('isDuplicateName')), and validateOperationFields({...}) (defined once, Panel.jsx:278-290, tested in describe('validateOperationFields') including the allows-0-for-every-field and rejects-below-0 cases). grep across Panel.jsx confirms each of these three functions has exactly one definition; Task 4's diff (git show fe3355b) adds zero new validation logic, only the component shell, local useState draft/error, and JSX call-sites. DeleteRowButton likewise has a single definition (Panel.jsx:370-384) invoked identically from both mode branches with DEFAULT_OPERATION_NAMES.includes(name)."
+    },
+    {
+      "check": "Automated regression: Task 2's test suite still passes after Task 4's edits",
+      "result": "pass",
+      "detail": "`cd client && npx vitest run` -> 32/32 tests pass in Panel.validation.test.js, unchanged from Task 2/3's baseline. No new test file was expected or added for Task 4 (tech-spec Testing Strategy scopes unit tests to Task 2's pure functions only)."
+    },
+    {
+      "check": "Task 4's Verify-user checklist coverage of its own 8 acceptance criteria",
+      "result": "partial",
+      "detail": "Covered explicitly: negative-value rejection (AC3), delete-button absent on 8 defaults / present on admin-added row (AC6, persistence-after-reload for the add itself, and cross-mode display via AC5's 'both calculator modes' wording). Not explicitly restated in Task 4's own 3-bullet checklist: duplicate-name rejection (AC4) and delete+save+reload permanent-removal (AC7) — both are present in the shared user-spec-level checklist instead. AC1 (exactly one Добавить visible) and AC2 (all four fields always shown) are structurally guaranteed by the code (single component, unconditional fields, mode-exclusive rendering) rather than needing a dedicated manual check, and AC8 (no changes to other sections) is a diff-scope check already confirmed by code-reviewer, not a manual-test AC. See finding TR4-1."
+    },
+    {
+      "check": "Bounds correctness in the reused validator (0 valid for operations, matching backend >= 0)",
+      "result": "pass",
+      "detail": "validateOperationFields uses isNonNegativeNumber for all three numeric fields (Panel.jsx:280-288), matching server/internal/service/costing.go:634-644 (AdditionalMinutes >= 0, AdditionalMaterialPerUnit >= 0, QuickPercent >= 0). Test file's describe('validateOperationFields') > 'allows 0 for every field' asserts this exactly. Confirmed OperationAddForm does not accidentally reuse validateGarmentFields (isPositiveNumber, > 0) — commit message and code both explicitly call out this distinction from Task 3."
+    }
+  ],
+  "severity_counts": {
+    "critical": 0,
+    "major": 0,
+    "minor": 1
+  }
+}
