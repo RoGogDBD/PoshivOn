@@ -13,6 +13,62 @@ jobs:
   test:
     uses: ./.github/workflows/test.yml
 
+  deploy-frontend-cdn:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        working-directory: client
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: client
+        env:
+          VITE_API_URL: https://api.poshivon.ru
+          VITE_YA_CLIENT_ID: ${{ secrets.VITE_YA_CLIENT_ID }}
+          VITE_YA_REDIRECT_URI: ${{ secrets.VITE_YA_REDIRECT_URI }}
+        run: npm run build
+
+      - name: Ensure aws-cli is available
+        run: |
+          command -v aws || (
+            curl -sS "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o awscliv2.zip &&
+            unzip -q awscliv2.zip &&
+            sudo ./aws/install
+          )
+
+      - name: Sync build to Object Storage
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.YC_S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.YC_S3_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ru-central1
+        run: |
+          # Без --delete: старые хэшированные ассеты остаются в бакете, чтобы у клиентов
+          # с ещё не протухшим кэшем index.html не словился 404 на удалённый чанк.
+          aws --endpoint-url=https://storage.yandexcloud.net s3 sync client/dist s3://poshivon-frontend
+
+      - name: Install yc CLI
+        run: |
+          curl -sSL https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash
+          echo "$HOME/yandex-cloud/bin" >> "$GITHUB_PATH"
+
+      - name: Purge CDN cache
+        env:
+          YC_SA_KEY_JSON: ${{ secrets.YC_SA_KEY_JSON }}
+        run: |
+          echo "$YC_SA_KEY_JSON" > sa-key.json
+          yc config set service-account-key sa-key.json
+          yc cdn cache purge --resource-id bc8rdwnrjokp2wvx5nki --all
+          rm -f sa-key.json
+
   build-and-deploy:
     needs: test
     runs-on: ubuntu-latest
