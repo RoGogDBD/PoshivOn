@@ -246,10 +246,18 @@ curl -X POST http://localhost:8080/api/v1/users/demo/chats/chat-1/calculate \
 В репозитории уже лежит базовая production-компоновка:
 
 - `docker-compose.prod.yml`
-- `deploy/nginx.conf`
 - GitHub Actions workflow `.github/workflows/deploy.yml`
 
-Текущий пайплайн собирает образы `poshivon-app` и `poshivon-web`, публикует их в `GHCR`, после чего разворачивает стек на удалённом сервере через `SSH`.
+Фронтенд и бэкенд раздаются с разных адресов:
+
+| Адрес | Что отдаёт |
+| --- | --- |
+| `poshivon.ru` | статика из бакета `poshivon-frontend` через Yandex Cloud CDN |
+| `api.poshivon.ru` | бэкенд (`poshivon_app`) |
+
+Пайплайн запускается по git-тегу и состоит из двух независимых частей: `deploy-frontend-cdn` собирает клиент с `VITE_API_URL`, заливает сборку в бакет и сбрасывает кеш CDN; `build-and-deploy` собирает образ `poshivon-app`, публикует его в `GHCR` и разворачивает стек на сервере через `SSH`.
+
+TLS для `api.poshivon.ru` выпускает `acme-companion` из общей сети `haclever_proxy` по переменным `VIRTUAL_HOST`/`LETSENCRYPT_HOST`; сертификат для `poshivon.ru` живёт в Yandex Certificate Manager и привязан к CDN-ресурсу.
 
 ## Полезные материалы
 
