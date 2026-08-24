@@ -101,15 +101,16 @@ jobs:
 
       # Пустой секрет здесь — не гипотетический риск: ровно так один раз уже случилось в этом
       # проекте (пустой DB_PASS в ручном деплое db-service тихо ушёл в контейнер, см. память
-      # проекта poshivon-backend-migration) — там был единственный пароль, тут пятнадцать
-      # переменных сразу, площадь для той же ошибки больше. Список — только по-настоящему
-      # обязательные для старта переменные (config.Load, server/internal/config/config.go):
-      # опечатка в имени секрета или удалённый в GitHub секрет теперь падает здесь явно,
-      # а не тихой поломкой уже задеплоенной ревизии.
+      # проекта poshivon-backend-migration). Список — только те переменные, для пустого
+      # значения которых у config.Load() (server/internal/config/config.go) нет разумного
+      # дефолта: без них соответствующая функциональность полностью не работает (OAuth,
+      # DeepSeek), а не просто отличается от текущего прода. COOKIE_SECURE/SAMESITE/DOMAIN и
+      # редирект OAuth сюда намеренно не входят — см. комментарий у revision-env ниже, тот же
+      # прогон CI показал, что первая версия этого списка была строже, чем реально нужно.
       - name: Verify required secrets are set
         run: |
           missing=()
-          for name in YC_CI_SA_KEY_JSON CORS_ALLOWED_ORIGINS COOKIE_SECURE COOKIE_SAMESITE COOKIE_DOMAIN VITE_YA_CLIENT_ID VITE_YA_CLIENT_SECRET VITE_YA_REDIRECT_URI DEEPSEEK_API_KEY; do
+          for name in YC_CI_SA_KEY_JSON CORS_ALLOWED_ORIGINS VITE_YA_CLIENT_ID VITE_YA_CLIENT_SECRET DEEPSEEK_API_KEY; do
             [ -n "${!name}" ] || missing+=("$name")
           done
           if [ "${#missing[@]}" -gt 0 ]; then
@@ -119,12 +120,8 @@ jobs:
         env:
           YC_CI_SA_KEY_JSON: ${{ secrets.YC_CI_SA_KEY_JSON }}
           CORS_ALLOWED_ORIGINS: ${{ secrets.CORS_ALLOWED_ORIGINS }}
-          COOKIE_SECURE: ${{ secrets.COOKIE_SECURE }}
-          COOKIE_SAMESITE: ${{ secrets.COOKIE_SAMESITE }}
-          COOKIE_DOMAIN: ${{ secrets.COOKIE_DOMAIN }}
           VITE_YA_CLIENT_ID: ${{ secrets.VITE_YA_CLIENT_ID }}
           VITE_YA_CLIENT_SECRET: ${{ secrets.VITE_YA_CLIENT_SECRET }}
-          VITE_YA_REDIRECT_URI: ${{ secrets.VITE_YA_REDIRECT_URI }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
 
       - name: Install yc CLI
@@ -195,18 +192,36 @@ jobs:
           # DEEPSEEK_TIMEOUT_SEC/DEEPSEEK_MAX_RETRIES ниже в secrets когда-нибудь изменят,
           # пересчитать и это число тоже (deploy review).
           revision-execution-timeout: 200
+          # COOKIE_SECURE=true — не секрет, а константа архитектуры: и api.poshivon.ru, и
+          # poshivon.ru всегда только по HTTPS (см. работу с Certificate Manager этой же
+          # сессии), значение не может быть иным для прода.
+          #
+          # COOKIE_SAMESITE и COOKIE_DOMAIN здесь намеренно не заданы — раньше ссылались на
+          # секреты, которые оказались пустыми в GitHub (см. первый неудавшийся прогон этого
+          # workflow), и это правильно: config.Load() (server/internal/config/config.go)
+          # берёт для них дефолты Lax и "" (host-only cookie) — то самое поведение, на
+          # котором прод уже работает на VPS. Host-only cookie для api.poshivon.ru не мешает
+          # кросс-поддоменным fetch-запросам с poshivon.ru (домен куки должен совпасть с
+          # хостом ответа, а не с хостом инициировавшей запрос страницы) — расширять Domain
+          # до .poshivon.ru не нужно и было бы шире необходимого.
+          #
+          # YANDEX_REDIRECT_URI=https://poshivon.ru/auth — тоже не секрет (публичный
+          # callback URL, виден в любом сетевом логе браузера), не отдельный GitHub-секрет:
+          # это ровно то значение, которое сейчас вычисляет сам фронтенд как фолбэк
+          # (client/src/utils/yandexAuth.js: `${window.location.origin}/auth`) и передаёт в
+          # теле запроса на /auth/yandex/code — backend его использует только если фронтенд
+          # почему-то не прислал redirect_uri сам (auth.go:138-143), так что это скорее
+          # страховка, чем боевой путь.
           revision-env: |
             APP_STORAGE=http
             APP_HOST=0.0.0.0
             DB_SERVICE_URL=${{ env.DB_SERVICE_URL }}
             LOG_LEVEL=${{ secrets.LOG_LEVEL }}
             CORS_ALLOWED_ORIGINS=${{ secrets.CORS_ALLOWED_ORIGINS }}
-            COOKIE_SECURE=${{ secrets.COOKIE_SECURE }}
-            COOKIE_SAMESITE=${{ secrets.COOKIE_SAMESITE }}
-            COOKIE_DOMAIN=${{ secrets.COOKIE_DOMAIN }}
+            COOKIE_SECURE=true
             YANDEX_CLIENT_ID=${{ secrets.VITE_YA_CLIENT_ID }}
             YANDEX_CLIENT_SECRET=${{ secrets.VITE_YA_CLIENT_SECRET }}
-            YANDEX_REDIRECT_URI=${{ secrets.VITE_YA_REDIRECT_URI }}
+            YANDEX_REDIRECT_URI=https://poshivon.ru/auth
             DEEPSEEK_API_KEY=${{ secrets.DEEPSEEK_API_KEY }}
             DEEPSEEK_API_ENDPOINT=${{ secrets.DEEPSEEK_API_ENDPOINT }}
             DEEPSEEK_MODEL=${{ secrets.DEEPSEEK_MODEL }}
