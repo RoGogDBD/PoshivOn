@@ -193,6 +193,12 @@ jobs:
           # CPU-bound. Нижняя доля реально экономит здесь, а не только звучит так.
           revision-core-fraction: 20
           revision-concurrency: 16
+          # Логирование выключено намеренно, тем же способом, что и у db-service (--no-logging
+          # там) — по умолчанию у этого action revision-log-options-disabled: 'false', и
+          # именно поэтому Cloud Logging пересоздался при первом реальном деплое (лог группа
+          # "default" в фолдере появляется заново, как только у любого serverless-ресурса
+          # логирование включено).
+          revision-log-options-disabled: true
           # 200с: расчётный худший случай ретраев DeepSeek-клиента — 4 попытки по 45с плюс
           # бэкоффы 1+2+4с (server/internal/service/deepseek.go) = 187с, с запасом. Этот
           # запас считался от значений по умолчанию (Timeout=45s, MaxRetries=3) — если
