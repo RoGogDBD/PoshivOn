@@ -78,6 +78,13 @@ jobs:
       # backend читает/пишет через db-service по HTTPS+IAM, gateway вызывает backend так же.
       BACKEND_RUNTIME_SA_ID: ajeuj09dv92cnqpjbdqb
       GATEWAY_RUNTIME_SA_ID: ajer6n32ttva3fa5u6rp
+      # poshivon-ci — тот SA, под которым бежит сам этот job (YC_CI_SA_KEY_JSON). Нужен как
+      # второй ожидаемый invoker на backend-контейнере: create-token --impersonate-service-
+      # account-id не сработал для CI-идентичности, аутентифицированной статическим ключом
+      # (permission denied даже с iam.serviceAccounts.user на цели — реальный прогон CI это
+      # подтвердил), поэтому health-check ходит напрямую под своим же токеном, не через
+      # имперсонацию gateway SA.
+      CI_SA_ID: ajeftvk26r0m1puqunnr
       # db-service развёрнут отдельно (server/internal/dbservice) и этим job'ом пока не
       # управляется — адрес стабилен (container_id не меняется между ревизиями), это не
       # секрет, а публичный DNS-адрес самого db-service.
@@ -244,34 +251,43 @@ jobs:
 
       # Идемпотентно: add-access-binding не ошибается на уже существующем биндинге, поэтому
       # безопасно повторять на каждом деплое, а не только при первом создании контейнера.
-      - name: Grant API Gateway invoker access on backend container
+      # poshivon-ci получает invoker тоже — не только gateway SA: create-token
+      # --impersonate-service-account-id не сработал для CI-идентичности, аутентифицированной
+      # статическим ключом, даже с iam.serviceAccounts.user на цели (реальный прогон CI дал
+      # PERMISSION_DENIED) — health-check ниже поэтому ходит под собственным токеном CI, а
+      # не имперсонирует gateway SA, и для этого CI нужен свой invoker-доступ.
+      - name: Grant invoker access on backend container
         run: |
           yc serverless container add-access-binding "${{ steps.deploy-backend.outputs.id }}" \
             --role serverless-containers.containerInvoker \
             --service-account-id "${{ env.GATEWAY_RUNTIME_SA_ID }}"
+          yc serverless container add-access-binding "${{ steps.deploy-backend.outputs.id }}" \
+            --role serverless-containers.containerInvoker \
+            --service-account-id "${{ env.CI_SA_ID }}"
 
       # Вся модель доверия architecture держится на том, что вызвать backend умеет только
-      # gateway (см. "ГРАНИЦА ДОВЕРИЯ" в server/internal/dbservice/handlers.go — тот же
-      # принцип здесь). add-access-binding только добавляет, никогда не проверяет, что он
-      # единственный, — посторонний биндинг (ручная правка, старый забытый грант) остался бы
-      # незамеченным и пробивал бы дыру в обход CORS/политики шлюза (security audit).
-      - name: Verify backend container invoker is exclusively the gateway SA
+      # gateway и сам CI (см. "ГРАНИЦА ДОВЕРИЯ" в server/internal/dbservice/handlers.go — тот
+      # же принцип здесь). add-access-binding только добавляет, никогда не проверяет состав —
+      # посторонний биндинг (ручная правка, старый забытый грант) остался бы незамеченным и
+      # пробивал бы дыру в обход CORS/политики шлюза (security audit).
+      - name: Verify backend container invoker is exclusively gateway SA + CI SA
         run: |
           bindings=$(yc serverless container list-access-bindings "${{ steps.deploy-backend.outputs.id }}" --format json)
-          other=$(echo "$bindings" | jq -r --arg sa "${{ env.GATEWAY_RUNTIME_SA_ID }}" \
-            '[.[] | select(.role_id == "serverless-containers.containerInvoker" and .subject.id != $sa)] | length')
+          other=$(echo "$bindings" | jq -r --arg gw "${{ env.GATEWAY_RUNTIME_SA_ID }}" --arg ci "${{ env.CI_SA_ID }}" \
+            '[.[] | select(.role_id == "serverless-containers.containerInvoker" and .subject.id != $gw and .subject.id != $ci)] | length')
           if [ "$other" != "0" ]; then
-            echo "::error::на backend-контейнере containerInvoker выдан не только gateway SA:"
+            echo "::error::на backend-контейнере containerInvoker выдан не только gateway/CI SA:"
             echo "$bindings"
             exit 1
           fi
 
       # Гейт перед тем, как шлюз узнает про новую ревизию (deploy review): без этого сломанная
       # ревизия (упавший старт, опечатка в env) переключила бы на себя весь трафик молча — до
-      # первой жалобы пользователя, без единого сигнала в CI.
+      # первой жалобы пользователя, без единого сигнала в CI. Токен — свой собственный (yc
+      # config уже настроен под poshivon-ci шагом Authenticate yc CLI выше), без имперсонации.
       - name: Health check new backend revision
         run: |
-          token=$(yc iam create-token --impersonate-service-account-id "${{ env.GATEWAY_RUNTIME_SA_ID }}")
+          token=$(yc iam create-token)
           url="https://${{ steps.deploy-backend.outputs.id }}.containers.yandexcloud.net/health"
           for attempt in $(seq 1 5); do
             if curl -sS -f --max-time 15 -H "Authorization: Bearer $token" "$url" >/dev/null; then
