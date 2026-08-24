@@ -7,6 +7,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -75,6 +76,111 @@ func newThrowawayDB(t *testing.T) *sql.DB {
 		}
 	})
 	return db
+}
+
+// newThrowawayDBPair — как newThrowawayDB, но создаёт ОДНУ свежую базу и возвращает ДВА
+// независимых *sql.DB-пула, подключённых к ней. Нужен ровно для одного сценария: два
+// параллельных инстанса db-service (Фаза 2 плана), стартующих Run одновременно на ещё
+// не смигрированной базе, — в реальности это два разных процесса с собственными пулами
+// соединений, а не два клиента одного пула.
+func newThrowawayDBPair(t *testing.T) (db1, db2 *sql.DB, dbName string) {
+	t.Helper()
+
+	adminDSN := os.Getenv(testAdminDSNEnv)
+	if adminDSN == "" {
+		t.Skipf("%s is not set — skipping the concurrent-migration regression test", testAdminDSNEnv)
+	}
+
+	admin, err := sql.Open("mysql", adminDSN)
+	if err != nil {
+		t.Fatalf("open %s: %v", testAdminDSNEnv, err)
+	}
+	t.Cleanup(func() {
+		if err := admin.Close(); err != nil {
+			t.Logf("close %s connection: %v", testAdminDSNEnv, err)
+		}
+	})
+
+	dbName = fmt.Sprintf("migration_concurrency_%d", time.Now().UnixNano())
+	if _, err := admin.Exec("CREATE DATABASE " + dbName); err != nil {
+		t.Fatalf("create database %s: %v", dbName, err)
+	}
+	t.Cleanup(func() {
+		if _, err := admin.Exec("DROP DATABASE IF EXISTS " + dbName); err != nil {
+			t.Errorf("drop database %s: %v (leaked — clean up manually)", dbName, err)
+		}
+	})
+
+	parts := strings.SplitN(adminDSN, "/", 2)
+	if len(parts) != 2 {
+		t.Fatalf("%s must be of the form user:pass@tcp(host:port)/?params (no database name)", testAdminDSNEnv)
+	}
+	scopedDSN := parts[0] + "/" + dbName + parts[1]
+
+	open := func() *sql.DB {
+		db, err := sql.Open("mysql", scopedDSN)
+		if err != nil {
+			t.Fatalf("open scoped connection: %v", err)
+		}
+		t.Cleanup(func() {
+			if err := db.Close(); err != nil {
+				t.Logf("close scoped connection: %v", err)
+			}
+		})
+		return db
+	}
+
+	return open(), open(), dbName
+}
+
+// TestRun_ConcurrentInstances_NoDuplicateKeyFailure — регрессия на гонку, найденную
+// независимым аудитом плана миграции db-service: до GET_LOCK два параллельных вызова Run
+// на холодном старте (два инстанса db-service, поднявшиеся одновременно на ещё не
+// смигрированной базе) видели одну и ту же непримененную миграцию, оба пытались её
+// применить, и второй падал на PRIMARY KEY-конфликте в schema_migrations — Run возвращал
+// ошибку, и инстанс не поднимался (log.Fatalf в точке вызова).
+//
+// Два независимых *sql.DB-пула на одну и ту же свежую базу воспроизводят именно эту
+// ситуацию: два процесса, не одно соединение с параллельными запросами.
+func TestRun_ConcurrentInstances_NoDuplicateKeyFailure(t *testing.T) {
+	db1, db2, dbName := newThrowawayDBPair(t)
+
+	var wg sync.WaitGroup
+	errs := make([]error, 2)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		errs[0] = Run(db1)
+	}()
+	go func() {
+		defer wg.Done()
+		errs[1] = Run(db2)
+	}()
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("Run() инстанс %d вернул ошибку: %v (гонка на холодном старте не закрыта)", i, err)
+		}
+	}
+
+	entries, err := fs.Glob(migrationsFS, "*.up.sql")
+	if err != nil {
+		t.Fatalf("glob migrations: %v", err)
+	}
+	for _, path := range entries {
+		version := extractVersion(path)
+		var count int
+		if err := db1.QueryRow(
+			"SELECT COUNT(*) FROM schema_migrations WHERE version = ?", version,
+		).Scan(&count); err != nil {
+			t.Fatalf("query schema_migrations for %s: %v", version, err)
+		}
+		if count != 1 {
+			t.Errorf("миграция %s записана %d раз(а) в schema_migrations, ожидался ровно 1 (dbName=%s)",
+				version, count, dbName)
+		}
+	}
 }
 
 // TestAdminSeed_SurvivesCollisionUnderLegacyCollation — регрессия на SEC-11-01.

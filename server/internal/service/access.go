@@ -55,12 +55,20 @@ type UserRecord struct {
 }
 
 // AccessRequest — строка access_requests: одна на пользователя (Decision 5).
+//
+// json-теги нужны только потому, что этот тип пересекает границу двух независимо
+// разворачиваемых сервисов (db-service отдаёт его как HTTP-ответ /rpc/GetRequest,
+// internal/repository/http.go декодирует) — без них поле уходило бы на wire как
+// капитализированное имя Go-поля ("UserID") по факту, а не по замыслу, и осталось бы
+// синхронизировано только тем, что оба сервиса собраны из одного модуля (code review,
+// HTTPRepository client). Значения snake_case выбраны в тон остальным типам этого пакета
+// (UserRecord, UserSettings, Chat, CalculationResult), которые уже сериализуются так.
 type AccessRequest struct {
-	UserID    string
-	Status    string // "pending" | "approved" | "rejected"
-	CreatedAt time.Time
-	DecidedAt *time.Time
-	DecidedBy string
+	UserID    string     `json:"user_id"`
+	Status    string     `json:"status"` // "pending" | "approved" | "rejected"
+	CreatedAt time.Time  `json:"created_at"`
+	DecidedAt *time.Time `json:"decided_at"`
+	DecidedBy string     `json:"decided_by"`
 }
 
 type UserRepository interface {

@@ -1,0 +1,83 @@
+openapi: 3.0.0
+info:
+  title: PoshivOn API Gateway
+  version: "1.0"
+  description: >
+    Публичный вход для api.poshivon.ru. Единственная задача — проксировать всё, кроме
+    /metrics, на Serverless Container бэкенда по HTTPS с IAM-авторизацией вызова
+    (см. server/internal/handler для маршрутов, которые реально существуют за этим шлюзом).
+    db-service сюда не попадает — он вызывается бэкендом напрямую, наружу не выставлен.
+
+# CORS — явный origin, не пустой объект (найдено при ревью плана миграции): пустой cors
+# на уровне шлюза мог бы оказаться шире allowlist'а самого приложения
+# (handler.WithCORS/RequireSameOrigin, server/internal/handler/http.go), и один и тот же
+# запрос получил бы разные вердикты на шлюзе и в приложении.
+#
+# backend_container_id, gateway_sa_id — нативный механизм переменных API Gateway (не
+# sed/envsubst): CI передаёт реальные значения через `yc serverless api-gateway
+# create/update --variables backend_container_id=<id>,gateway_sa_id=<id>`. Оба дефолта
+# намеренно невалидны (пустая строка) — если CI забудет передать --variables, деплой шлюза
+# упадёт явно на несуществующем container_id/SA, а не тихо укажет на что-то другое (второе
+# раньше было хардкодом прямо здесь, отдельно от того же id в deploy.yml — deploy review:
+# при ротации SA два места разошлись бы молча).
+x-yc-apigateway:
+  variables:
+    backend_container_id:
+      default: ""
+    gateway_sa_id:
+      default: ""
+  cors:
+    origin: https://poshivon.ru
+    # Ровно то же множество методов, что и в app-level CORS (server/internal/handler/cors.go)
+    # — держим синхронно вручную (найдено при security audit: расхождение между шлюзом и
+    # приложением уже было — PUT никогда не использовался, а DELETE был занижен на уровне
+    # приложения). PUT не добавляем: ни одного PUT-маршрута в handler/http.go нет.
+    methods: GET, POST, DELETE, OPTIONS
+    allowedHeaders: Content-Type, Authorization
+    allowCredentials: true
+    maxAge: 3600
+  # Глобальный предохранитель от стоимостной амплификации (security audit): в отличие от
+  # VPS с фиксированной мощностью, serverless-контейнер за шлюзом тарифицируется по факту
+  # запросов — непрерывный флуд от одного клиента напрямую превращается в счёт. rps не
+  # per-IP (Yandex API Gateway такого не даёт для этого расширения), но как грубый потолок
+  # на весь шлюз разом — с большим запасом над реальной нагрузкой ~10 пользователей (см.
+  # память проекта: сейчас там единицы запросов в час), но далёкий от произвольно большого.
+  rateLimit:
+    allRequests:
+      rps: 20
+
+paths:
+  # /metrics — эндпоинт Prometheus-скрейпа, не для внешних вызовов (найдено при аудите:
+  # он смонтирован без auth-middleware внутри приложения, потому что за нормальными
+  # условиями location для него просто отсутствует перед бэкендом). Здесь — явный dummy-
+  # ответ вместо проксирования, чтобы застолбить путь раньше catch-all /{proxy+}: точное
+  # совпадение пути у Yandex API Gateway имеет приоритет над {proxy+}, поэтому проксирования
+  # сюда не произойдёт вообще, ни при каких условиях бэкенда.
+  /metrics:
+    x-yc-apigateway-any-method:
+      operationId: metricsBlocked
+      responses:
+        "404":
+          description: Not Found
+      x-yc-apigateway-integration:
+        type: dummy
+        http_code: 404
+        content:
+          "*": "not found"
+
+  /{proxy+}:
+    x-yc-apigateway-any-method:
+      operationId: proxyToBackend
+      parameters:
+        - name: proxy
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+      x-yc-apigateway-integration:
+        type: serverless_containers
+        container_id: ${var.backend_container_id}
+        service_account_id: ${var.gateway_sa_id}

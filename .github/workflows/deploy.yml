@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   test:
@@ -72,6 +71,17 @@ jobs:
   build-and-deploy:
     needs: test
     runs-on: ubuntu-latest
+    env:
+      YC_FOLDER_ID: b1grc2qov4kbhs6mt3uq
+      YC_REGISTRY_ID: crps7ifpscu7b8leoc4p
+      # SA, под которыми бегут ревизии (см. память проекта poshivon-backend-migration):
+      # backend читает/пишет через db-service по HTTPS+IAM, gateway вызывает backend так же.
+      BACKEND_RUNTIME_SA_ID: ajeuj09dv92cnqpjbdqb
+      GATEWAY_RUNTIME_SA_ID: ajer6n32ttva3fa5u6rp
+      # db-service развёрнут отдельно (server/internal/dbservice) и этим job'ом пока не
+      # управляется — адрес стабилен (container_id не меняется между ревизиями), это не
+      # секрет, а публичный DNS-адрес самого db-service.
+      DB_SERVICE_URL: https://bba9df4hg2a9s91p9m0j.containers.yandexcloud.net
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -79,19 +89,71 @@ jobs:
       - name: Set image metadata
         id: meta
         run: |
-          owner=$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')
-          echo "owner=$owner" >> "$GITHUB_OUTPUT"
-          echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          tag="${GITHUB_REF_NAME}"
+          # Docker-тег строится из имени git-тега напрямую (cr.yandex/.../backend:$tag ниже);
+          # без этой проверки невалидный символ (например "/") падал бы глубоко внутри
+          # docker/build-push-action с непонятной ошибкой вместо ясной здесь (deploy review).
+          if ! [[ "$tag" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+            echo "::error::git-тег '$tag' не подходит под допустимый набор символов Docker-тега"
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      # Пустой секрет здесь — не гипотетический риск: ровно так один раз уже случилось в этом
+      # проекте (пустой DB_PASS в ручном деплое db-service тихо ушёл в контейнер, см. память
+      # проекта poshivon-backend-migration) — там был единственный пароль, тут пятнадцать
+      # переменных сразу, площадь для той же ошибки больше. Список — только по-настоящему
+      # обязательные для старта переменные (config.Load, server/internal/config/config.go):
+      # опечатка в имени секрета или удалённый в GitHub секрет теперь падает здесь явно,
+      # а не тихой поломкой уже задеплоенной ревизии.
+      - name: Verify required secrets are set
+        run: |
+          missing=()
+          for name in YC_CI_SA_KEY_JSON CORS_ALLOWED_ORIGINS COOKIE_SECURE COOKIE_SAMESITE COOKIE_DOMAIN VITE_YA_CLIENT_ID VITE_YA_CLIENT_SECRET VITE_YA_REDIRECT_URI DEEPSEEK_API_KEY; do
+            [ -n "${!name}" ] || missing+=("$name")
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::пустые или не заданные GitHub Secrets: ${missing[*]}"
+            exit 1
+          fi
+        env:
+          YC_CI_SA_KEY_JSON: ${{ secrets.YC_CI_SA_KEY_JSON }}
+          CORS_ALLOWED_ORIGINS: ${{ secrets.CORS_ALLOWED_ORIGINS }}
+          COOKIE_SECURE: ${{ secrets.COOKIE_SECURE }}
+          COOKIE_SAMESITE: ${{ secrets.COOKIE_SAMESITE }}
+          COOKIE_DOMAIN: ${{ secrets.COOKIE_DOMAIN }}
+          VITE_YA_CLIENT_ID: ${{ secrets.VITE_YA_CLIENT_ID }}
+          VITE_YA_CLIENT_SECRET: ${{ secrets.VITE_YA_CLIENT_SECRET }}
+          VITE_YA_REDIRECT_URI: ${{ secrets.VITE_YA_REDIRECT_URI }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+
+      - name: Install yc CLI
+        run: |
+          curl -sSL https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash
+          echo "$HOME/yandex-cloud/bin" >> "$GITHUB_PATH"
+
+      # Отдельный ключ от YC_SA_KEY_JSON (используется job'ом deploy-frontend-cdn для
+      # purge CDN) — за этим стоит SA poshivon-ci, созданный именно под сборку/деплой
+      # (Фаза 1 плана миграции), с ролями, ограниченными Container Registry и db-service,
+      # а не тот, что даёт права на CDN. Разные обязанности — разные ключи (least privilege).
+      - name: Authenticate yc CLI
+        env:
+          YC_CI_SA_KEY_JSON: ${{ secrets.YC_CI_SA_KEY_JSON }}
+        run: |
+          umask 077
+          # trap, а не просто rm в конце: если yc config set упадёт, скрипт останавливается
+          # (GitHub Actions run: выполняется под bash -e) до последней строки, и ключ в
+          # открытом виде остался бы в рабочей директории до конца job'а (security audit).
+          trap 'rm -f sa-key.json' EXIT
+          echo "$YC_CI_SA_KEY_JSON" > sa-key.json
+          yc config set service-account-key sa-key.json
+          yc config set folder-id "$YC_FOLDER_ID"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Log in to Yandex Container Registry
+        run: yc container registry configure-docker
 
       - name: Build and push backend image
         uses: docker/build-push-action@v5
@@ -99,199 +161,113 @@ jobs:
           context: ./server
           file: ./server/Dockerfile
           push: true
-          tags: ghcr.io/${{ steps.meta.outputs.owner }}/poshivon-app:${{ steps.meta.outputs.tag }}
+          tags: cr.yandex/${{ env.YC_REGISTRY_ID }}/backend:${{ steps.meta.outputs.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      - name: Create remote directory
-        uses: appleboy/ssh-action@v1.0.3
+      # SHA-пиннинг для этого action рекомендован security audit (единственный шаг, которому
+      # передаётся живой SA-ключ, а не команда, которую пишем и контролируем сами) — не смог
+      # разрешить тег в SHA из этой среды (GitHub был недоступен в момент подготовки). Разрешить
+      # разово (`git ls-remote https://github.com/yc-actions/yc-sls-container-deploy v5`) и
+      # закрепить как `@<sha> # v5` вместо строки ниже — стоит сделать перед первым реальным
+      # прогоном этого job'а.
+      - name: Deploy backend Serverless Container
+        id: deploy-backend
+        uses: yc-actions/yc-sls-container-deploy@v5
         with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SSH_PORT }}
-          script: |
-            set -e
-            whoami
-            mkdir -p "$HOME/poshivon/nginx"
-            mkdir -p "$HOME/poshivon/monitoring/prometheus"
-            mkdir -p "$HOME/poshivon/monitoring/grafana/provisioning/datasources"
-            mkdir -p "$HOME/poshivon/monitoring/grafana/provisioning/dashboards"
-            mkdir -p "$HOME/poshivon/monitoring/grafana/dashboards"
+          yc-sa-json-credentials: ${{ secrets.YC_CI_SA_KEY_JSON }}
+          container-name: poshivon-backend
+          folder-id: ${{ env.YC_FOLDER_ID }}
+          revision-service-account-id: ${{ env.BACKEND_RUNTIME_SA_ID }}
+          revision-image-url: cr.yandex/${{ env.YC_REGISTRY_ID }}/backend:${{ steps.meta.outputs.tag }}
+          revision-cores: 1
+          revision-memory: 256Mb
+          # 20%, не 100% как у db-service: там холодный старт CPU-bound (mariadb-install-db,
+          # доля CPU напрямую конвертируется в его длительность — см. память проекта,
+          # почему там оставлен 100%). Здесь холодный старт — это просто запуск Go-бинарника
+          # (миллисекунды), а обычная работа — сетевые вызовы (db-service, DeepSeek), не
+          # CPU-bound. Нижняя доля реально экономит здесь, а не только звучит так.
+          revision-core-fraction: 20
+          revision-concurrency: 16
+          # 200с: расчётный худший случай ретраев DeepSeek-клиента — 4 попытки по 45с плюс
+          # бэкоффы 1+2+4с (server/internal/service/deepseek.go) = 187с, с запасом. Этот
+          # запас считался от значений по умолчанию (Timeout=45s, MaxRetries=3) — если
+          # DEEPSEEK_TIMEOUT_SEC/DEEPSEEK_MAX_RETRIES ниже в secrets когда-нибудь изменят,
+          # пересчитать и это число тоже (deploy review).
+          revision-execution-timeout: 200
+          revision-env: |
+            APP_STORAGE=http
+            APP_HOST=0.0.0.0
+            DB_SERVICE_URL=${{ env.DB_SERVICE_URL }}
+            LOG_LEVEL=${{ secrets.LOG_LEVEL }}
+            CORS_ALLOWED_ORIGINS=${{ secrets.CORS_ALLOWED_ORIGINS }}
+            COOKIE_SECURE=${{ secrets.COOKIE_SECURE }}
+            COOKIE_SAMESITE=${{ secrets.COOKIE_SAMESITE }}
+            COOKIE_DOMAIN=${{ secrets.COOKIE_DOMAIN }}
+            YANDEX_CLIENT_ID=${{ secrets.VITE_YA_CLIENT_ID }}
+            YANDEX_CLIENT_SECRET=${{ secrets.VITE_YA_CLIENT_SECRET }}
+            YANDEX_REDIRECT_URI=${{ secrets.VITE_YA_REDIRECT_URI }}
+            DEEPSEEK_API_KEY=${{ secrets.DEEPSEEK_API_KEY }}
+            DEEPSEEK_API_ENDPOINT=${{ secrets.DEEPSEEK_API_ENDPOINT }}
+            DEEPSEEK_MODEL=${{ secrets.DEEPSEEK_MODEL }}
+            DEEPSEEK_TIMEOUT_SEC=${{ secrets.DEEPSEEK_TIMEOUT_SEC }}
+            DEEPSEEK_MAX_RETRIES=${{ secrets.DEEPSEEK_MAX_RETRIES }}
+            CONTACT_EMAIL=${{ secrets.CONTACT_EMAIL }}
 
-      - name: Upload docker-compose
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SSH_PORT }}
-          source: docker-compose.prod.yml
-          target: /home/${{ secrets.SSH_USER }}/poshivon
+      # Идемпотентно: add-access-binding не ошибается на уже существующем биндинге, поэтому
+      # безопасно повторять на каждом деплое, а не только при первом создании контейнера.
+      - name: Grant API Gateway invoker access on backend container
+        run: |
+          yc serverless container add-access-binding "${{ steps.deploy-backend.outputs.id }}" \
+            --role serverless-containers.containerInvoker \
+            --service-account-id "${{ env.GATEWAY_RUNTIME_SA_ID }}"
 
-      - name: Upload monitoring configs
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SSH_PORT }}
-          source: monitoring/
-          target: /home/${{ secrets.SSH_USER }}/poshivon
+      # Вся модель доверия architecture держится на том, что вызвать backend умеет только
+      # gateway (см. "ГРАНИЦА ДОВЕРИЯ" в server/internal/dbservice/handlers.go — тот же
+      # принцип здесь). add-access-binding только добавляет, никогда не проверяет, что он
+      # единственный, — посторонний биндинг (ручная правка, старый забытый грант) остался бы
+      # незамеченным и пробивал бы дыру в обход CORS/политики шлюза (security audit).
+      - name: Verify backend container invoker is exclusively the gateway SA
+        run: |
+          bindings=$(yc serverless container list-access-bindings "${{ steps.deploy-backend.outputs.id }}" --format json)
+          other=$(echo "$bindings" | jq -r --arg sa "${{ env.GATEWAY_RUNTIME_SA_ID }}" \
+            '[.[] | select(.role_id == "serverless-containers.containerInvoker" and .subject.id != $sa)] | length')
+          if [ "$other" != "0" ]; then
+            echo "::error::на backend-контейнере containerInvoker выдан не только gateway SA:"
+            echo "$bindings"
+            exit 1
+          fi
 
-      - name: Deploy
-        uses: appleboy/ssh-action@v1.0.3
-        env:
-          IMAGE_OWNER: ${{ steps.meta.outputs.owner }}
-          IMAGE_TAG: ${{ steps.meta.outputs.tag }}
-          APP_STORAGE: mysql
-          APP_HOST: 0.0.0.0
-          APP_PORT: ${{ secrets.APP_PORT }}
-          LOG_LEVEL: ${{ secrets.LOG_LEVEL }}
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          DEEPSEEK_API_ENDPOINT: ${{ secrets.DEEPSEEK_API_ENDPOINT }}
-          DEEPSEEK_MODEL: ${{ secrets.DEEPSEEK_MODEL }}
-          DEEPSEEK_TIMEOUT_SEC: ${{ secrets.DEEPSEEK_TIMEOUT_SEC }}
-          DEEPSEEK_MAX_RETRIES: ${{ secrets.DEEPSEEK_MAX_RETRIES }}
-          CONTACT_EMAIL: ${{ secrets.CONTACT_EMAIL }}
-          CORS_ALLOWED_ORIGINS: ${{ secrets.CORS_ALLOWED_ORIGINS }}
-          COOKIE_SECURE: ${{ secrets.COOKIE_SECURE }}
-          COOKIE_SAMESITE: ${{ secrets.COOKIE_SAMESITE }}
-          COOKIE_DOMAIN: ${{ secrets.COOKIE_DOMAIN }}
-          YANDEX_CLIENT_ID: ${{ secrets.VITE_YA_CLIENT_ID }}
-          YANDEX_CLIENT_SECRET: ${{ secrets.VITE_YA_CLIENT_SECRET }}
-          YANDEX_REDIRECT_URI: ${{ secrets.VITE_YA_REDIRECT_URI }}
-          DB_HOST: ${{ secrets.DB_HOST }}
-          DB_PORT: ${{ secrets.DB_PORT }}
-          DB_NAME: ${{ secrets.DB_NAME }}
-          DB_USER: ${{ secrets.DB_USER }}
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-          DB_ROOT_PASSWORD: ${{ secrets.DB_ROOT_PASSWORD }}
-          GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
-          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
-          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SSH_PORT }}
-          envs: IMAGE_OWNER,IMAGE_TAG,APP_STORAGE,APP_HOST,APP_PORT,LOG_LEVEL,DEEPSEEK_API_KEY,DEEPSEEK_API_ENDPOINT,DEEPSEEK_MODEL,DEEPSEEK_TIMEOUT_SEC,DEEPSEEK_MAX_RETRIES,CONTACT_EMAIL,CORS_ALLOWED_ORIGINS,COOKIE_SECURE,COOKIE_SAMESITE,COOKIE_DOMAIN,YANDEX_CLIENT_ID,YANDEX_CLIENT_SECRET,YANDEX_REDIRECT_URI,DB_HOST,DB_PORT,DB_NAME,DB_USER,DB_PASSWORD,DB_ROOT_PASSWORD,GRAFANA_ADMIN_PASSWORD,GHCR_USERNAME,GHCR_TOKEN
-          script: |
-            set -euo pipefail
-            umask 077
-            cat > $HOME/poshivon/nginx/default.conf <<'EOF'
-            server {
-              listen 80;
-              server_name api.poshivon.ru;
+      # Гейт перед тем, как шлюз узнает про новую ревизию (deploy review): без этого сломанная
+      # ревизия (упавший старт, опечатка в env) переключила бы на себя весь трафик молча — до
+      # первой жалобы пользователя, без единого сигнала в CI.
+      - name: Health check new backend revision
+        run: |
+          token=$(yc iam create-token --impersonate-service-account-id "${{ env.GATEWAY_RUNTIME_SA_ID }}")
+          url="https://${{ steps.deploy-backend.outputs.id }}.containers.yandexcloud.net/health"
+          for attempt in $(seq 1 5); do
+            if curl -sS -f --max-time 15 -H "Authorization: Bearer $token" "$url" >/dev/null; then
+              echo "health check ok (attempt $attempt)"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "::error::новая ревизия backend не прошла /health за 5 попыток — шлюз на неё не переключаю"
+          exit 1
 
-              location = /auth/status {
-                proxy_pass http://poshivon_app:8080;
-                proxy_set_header Host $host;
-                proxy_set_header X-Real-IP $remote_addr;
-                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                proxy_set_header X-Forwarded-Proto $scheme;
-              }
-
-              location = /auth/me {
-                proxy_pass http://poshivon_app:8080;
-                proxy_set_header Host $host;
-                proxy_set_header X-Real-IP $remote_addr;
-                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                proxy_set_header X-Forwarded-Proto $scheme;
-              }
-
-              location = /auth/logout {
-                proxy_pass http://poshivon_app:8080;
-                proxy_set_header Host $host;
-                proxy_set_header X-Real-IP $remote_addr;
-                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                proxy_set_header X-Forwarded-Proto $scheme;
-              }
-
-              location = /auth/refresh {
-                proxy_pass http://poshivon_app:8080;
-                proxy_set_header Host $host;
-                proxy_set_header X-Real-IP $remote_addr;
-                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                proxy_set_header X-Forwarded-Proto $scheme;
-              }
-
-              location = /auth/yandex/code {
-                proxy_pass http://poshivon_app:8080;
-                proxy_set_header Host $host;
-                proxy_set_header X-Real-IP $remote_addr;
-                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                proxy_set_header X-Forwarded-Proto $scheme;
-              }
-
-              location /health {
-                proxy_pass http://poshivon_app:8080;
-                proxy_set_header Host $host;
-                proxy_set_header X-Real-IP $remote_addr;
-                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                proxy_set_header X-Forwarded-Proto $scheme;
-              }
-
-              location /api/ {
-                proxy_pass http://poshivon_app:8080;
-                proxy_set_header Host $host;
-                proxy_set_header X-Real-IP $remote_addr;
-                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                proxy_set_header X-Forwarded-Proto $scheme;
-              }
-
-              location = /grafana {
-                return 301 /grafana/;
-              }
-
-              location /grafana/ {
-                proxy_pass http://poshivon_grafana:3000/grafana/;
-                proxy_set_header Host $host;
-                proxy_set_header X-Real-IP $remote_addr;
-                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                proxy_set_header X-Forwarded-Proto $scheme;
-              }
-            }
-            EOF
-            cat > $HOME/poshivon/.env <<EOF
-            IMAGE_OWNER=${IMAGE_OWNER}
-            IMAGE_TAG=${IMAGE_TAG}
-            APP_STORAGE=${APP_STORAGE}
-            APP_HOST=${APP_HOST}
-            APP_PORT=${APP_PORT}
-            LOG_LEVEL=${LOG_LEVEL}
-            DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
-            DEEPSEEK_API_ENDPOINT=${DEEPSEEK_API_ENDPOINT}
-            DEEPSEEK_MODEL=${DEEPSEEK_MODEL}
-            DEEPSEEK_TIMEOUT_SEC=${DEEPSEEK_TIMEOUT_SEC}
-            DEEPSEEK_MAX_RETRIES=${DEEPSEEK_MAX_RETRIES}
-            CONTACT_EMAIL=${CONTACT_EMAIL:-}
-            CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
-            COOKIE_SECURE=${COOKIE_SECURE}
-            COOKIE_SAMESITE=${COOKIE_SAMESITE}
-            COOKIE_DOMAIN=${COOKIE_DOMAIN}
-            YANDEX_CLIENT_ID=${YANDEX_CLIENT_ID}
-            YANDEX_CLIENT_SECRET=${YANDEX_CLIENT_SECRET}
-            YANDEX_REDIRECT_URI=${YANDEX_REDIRECT_URI}
-            DB_HOST=${DB_HOST}
-            DB_PORT=${DB_PORT}
-            DB_NAME=${DB_NAME}
-            DB_USER=${DB_USER}
-            DB_PASSWORD=${DB_PASSWORD}
-            DB_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
-            GRAFANA_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
-            EOF
-            docker login ghcr.io -u "${GHCR_USERNAME}" -p "${GHCR_TOKEN}"
-            docker compose --env-file $HOME/poshivon/.env -f $HOME/poshivon/docker-compose.prod.yml pull
-            docker compose --env-file $HOME/poshivon/.env -f $HOME/poshivon/docker-compose.prod.yml up -d db
-            for i in $(seq 1 30); do
-              if docker inspect -f '{{.State.Health.Status}}' poshivon_db 2>/dev/null | grep -q healthy; then
-                break
-              fi
-              sleep 2
-            done
-            docker exec -e DB_USER -e DB_PASSWORD -e DB_NAME poshivon_db /bin/sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" -h 127.0.0.1 -e "DROP USER IF EXISTS '\''$DB_USER'\''@'\''localhost'\''; DROP USER IF EXISTS '\''$DB_USER'\''@'\''127.0.0.1'\''; DROP USER IF EXISTS '\''$DB_USER'\''@'\''172.18.0.%'\''; DROP USER IF EXISTS '\''$DB_USER'\''@'\''%'\''; CREATE USER '\''$DB_USER'\''@'\''%'\'' IDENTIFIED BY '\''$DB_PASSWORD'\''; ALTER USER '\''$DB_USER'\''@'\''%'\'' IDENTIFIED BY '\''$DB_PASSWORD'\''; GRANT ALL PRIVILEGES ON \`$DB_NAME\`.* TO '\''$DB_USER'\''@'\''%'\''; FLUSH PRIVILEGES;"'
-            docker compose --env-file $HOME/poshivon/.env -f $HOME/poshivon/docker-compose.prod.yml up -d node_exporter prometheus grafana
-            docker compose --env-file $HOME/poshivon/.env -f $HOME/poshivon/docker-compose.prod.yml up -d --remove-orphans app proxy
-            # Сначала proxy поднимается с новым конфигом (apex-блока в нём уже
-            # нет, в poshivon_web никто не ходит), и только потом убирается сам
-            # контейнер — иначе между up и rm было бы окно 502.
-            docker rm -f poshivon_web 2>/dev/null || true
+      - name: Deploy API Gateway
+        run: |
+          # gateway_sa_id — переменная спеки (infra/api-gateway.yaml), а не второй
+          # захардкоженный литерал: раньше service_account_id был вписан в YAML напрямую,
+          # отдельно от GATEWAY_RUNTIME_SA_ID здесь — при ротации SA два места разошлись бы
+          # молча, и шлюз продолжил бы звать backend от лица уже недействующего SA (deploy
+          # review).
+          if yc serverless api-gateway get --name poshivon-api-gateway >/dev/null 2>&1; then
+            yc serverless api-gateway update --name poshivon-api-gateway \
+              --spec infra/api-gateway.yaml \
+              --variables backend_container_id="${{ steps.deploy-backend.outputs.id }}",gateway_sa_id="${{ env.GATEWAY_RUNTIME_SA_ID }}"
+          else
+            yc serverless api-gateway create --name poshivon-api-gateway \
+              --spec infra/api-gateway.yaml \
+              --variables backend_container_id="${{ steps.deploy-backend.outputs.id }}",gateway_sa_id="${{ env.GATEWAY_RUNTIME_SA_ID }}"
+          fi

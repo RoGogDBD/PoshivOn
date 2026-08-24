@@ -3,22 +3,24 @@ package config
 import (
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
 )
 
 type Config struct {
-	Host        string
-	Port        string
-	DatabaseURL string
-	Storage     string
-	LogLevel    string
-	DBHost      string
-	DBPort      string
-	DBName      string
-	DBUser      string
-	DBPassword  string
+	Host         string
+	Port         string
+	DatabaseURL  string
+	Storage      string
+	LogLevel     string
+	DBHost       string
+	DBPort       string
+	DBName       string
+	DBUser       string
+	DBPassword   string
+	DBServiceURL string
 
 	CookieDomain   string
 	CookiePath     string
@@ -58,8 +60,12 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
-		Host:        envOrDefault("APP_HOST", "0.0.0.0"),
-		Port:        envOrDefault("APP_PORT", "8080"),
+		Host: envOrDefault("APP_HOST", "0.0.0.0"),
+		// PORT — переменная, которую выставляет Yandex Serverless Containers (и совместимые
+		// платформы) автоматически при запуске ревизии; APP_PORT остаётся приоритетом на VPS,
+		// где PORT никогда не задан извне. Порядок обратно совместим: без PORT в окружении
+		// поведение не меняется.
+		Port:        envOrDefault("PORT", envOrDefault("APP_PORT", "8080")),
 		DatabaseURL: envOrDefault("DATABASE_URL", ""),
 		Storage:     envOrDefault("APP_STORAGE", "memory"),
 		LogLevel:    envOrDefault("LOG_LEVEL", "info"),
@@ -67,7 +73,11 @@ func Load() (*Config, error) {
 		DBPort:      envOrDefault("DB_PORT", "3306"),
 		DBName:      envOrDefault("DB_NAME", "poshivon"),
 		DBUser:      envOrDefault("DB_USER", "poshivon"),
-		DBPassword:  envOrDefault("DB_PASSWORD", "poshivon"),
+		DBPassword:  envOrDefault("DB_PASSWORD", ""),
+		// DB_SERVICE_URL — базовый URL db-service (см. server/internal/dbservice), задан
+		// только при APP_STORAGE=http: тогда бэкенд ходит за данными по HTTPS вместо
+		// прямого SQL-подключения (план миграции, раздел «Фаза 2»).
+		DBServiceURL: envOrDefault("DB_SERVICE_URL", ""),
 
 		CookieDomain:   envOrDefault("COOKIE_DOMAIN", ""),
 		CookiePath:     envOrDefault("COOKIE_PATH", "/"),
@@ -89,6 +99,35 @@ func Load() (*Config, error) {
 		DeepSeekModel:       envOrDefault("DEEPSEEK_MODEL", "deepseek-chat"),
 		DeepSeekTimeoutSec:  envInt("DEEPSEEK_TIMEOUT_SEC", 45),
 		DeepSeekMaxRetries:  envInt("DEEPSEEK_MAX_RETRIES", 3),
+	}
+
+	storageLower := strings.ToLower(cfg.Storage)
+
+	// Пустой DB_PASSWORD на реальном хранилище раньше молча подставлял дефолт "poshivon" —
+	// приложение стартовало и подключалось паролем, который виден в открытом виде в этом же
+	// файле, если кто-то забыл задать секрет (опечатка в имени переменной деплоя и т.п.).
+	// На memory отказ не нужен: там DBPassword не используется вообще. На http тоже не нужен —
+	// бэкенд ходит в db-service по HTTPS с IAM-токеном, прямого SQL-подключения (и вместе с
+	// ним DBPassword) там нет вовсе.
+	if storageLower != "memory" && storageLower != "http" && strings.TrimSpace(cfg.DBPassword) == "" {
+		return nil, fmt.Errorf("config: DB_PASSWORD is required when APP_STORAGE=%q", cfg.Storage)
+	}
+
+	// Симметричная проверка для http: без DB_SERVICE_URL HTTPRepository стучался бы в пустой
+	// baseURL и падал бы на первом же запросе к БД с непонятной сетевой ошибкой вместо ясной
+	// причины при старте. Схема проверяется отдельно и обязана быть https: HTTPRepository
+	// шлёт в этот адрес IAM Bearer-токен и пользовательские данные (чаты, email, настройки) в
+	// каждом запросе (security audit, HTTPRepository client) — опечатка или скопированный без
+	// схемы адрес молча увели бы это в открытый текст вместо явного отказа при старте.
+	if storageLower == "http" {
+		trimmedURL := strings.TrimSpace(cfg.DBServiceURL)
+		if trimmedURL == "" {
+			return nil, fmt.Errorf("config: DB_SERVICE_URL is required when APP_STORAGE=%q", cfg.Storage)
+		}
+		parsedURL, err := url.Parse(trimmedURL)
+		if err != nil || parsedURL.Scheme != "https" || parsedURL.Host == "" {
+			return nil, fmt.Errorf("config: DB_SERVICE_URL must be an https:// URL, got %q", cfg.DBServiceURL)
+		}
 	}
 
 	// Пустой CORS_ALLOWED_ORIGINS переводит RequireSameOrigin на сравнение Origin с

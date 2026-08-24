@@ -1,0 +1,42 @@
+# Сборка Go-бинарника обёртки — тот же паттерн, что и server/Dockerfile.
+ARG GO_VERSION=1.25.5
+FROM golang:${GO_VERSION}-alpine AS builder
+
+WORKDIR /app
+
+COPY go.mod go.sum* ./
+RUN go mod download
+
+COPY . .
+
+RUN go build -o /app/bin/dbservice ./cmd/dbservice
+
+# Финальный образ — официальный MariaDB, поверх которого запускается собранный бинарник.
+# Не alpine-минимализм ради размера образа: официальный entrypoint mariadb уже умеет
+# корректно инициализировать пустой datadir из переменных окружения, переизобретать эту
+# логику руками — источник тонких багов на ровном месте.
+FROM mariadb:11.4
+
+# Непривилегированный пользователь для самого Go-процесса — тот же принцип, что и в
+# основном server/Dockerfile (adduser -D, USER appuser). mariadbd продолжает стартовать от
+# root и сам роняет привилегии до mysql через gosu (это делает официальный entrypoint
+# образа, здесь не тронуто) — но HTTP-обёртка, разбирающая JSON от сети, root не нужна
+# вообще, и запускать её от root было немотивированным отступлением от практики проекта.
+RUN useradd --system --no-create-home --shell /usr/sbin/nologin dbservice-app
+
+COPY --from=builder /app/bin/dbservice /usr/local/bin/dbservice
+COPY docker-entrypoint-dbservice.sh /usr/local/bin/docker-entrypoint-dbservice.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint-dbservice.sh /usr/local/bin/dbservice
+
+# Порт приложения (Serverless Containers подставляет свой PORT автоматически при деплое
+# ревизии — эта декларация информационная, как и в основном server/Dockerfile).
+EXPOSE 8081
+
+# Обязательные переменные окружения ревизии — ДВА пересекающихся набора, а не один:
+#   DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD — читает сам dbservice (Go-бинарник);
+#   MARIADB_DATABASE=$DB_NAME, MARIADB_USER=$DB_USER, MARIADB_PASSWORD=$DB_PASSWORD,
+#   MARIADB_RANDOM_ROOT_PASSWORD=1 — читает официальный entrypoint mariadb при
+#   инициализации пустого datadir на каждом холодном старте (см. docker-entrypoint-
+#   dbservice.sh). Root-пароль намеренно случайный и одноразовый — ни dbservice, ни кто-
+#   либо ещё в этой архитектуре не обращается к MariaDB под root после инициализации.
+ENTRYPOINT ["docker-entrypoint-dbservice.sh"]

@@ -247,3 +247,34 @@ func TestBuildRepositories_UnknownStorageFails(t *testing.T) {
 		t.Fatalf("неподдерживаемое хранилище принято без ошибки")
 	}
 }
+
+// TestBuildRepositories_HTTPStorage — APP_STORAGE=http собирает HTTPRepository без обращения
+// к сети при самой сборке (это ленивый клиент, соединение открывается на первый вызов метода,
+// не здесь) — проверяем только то, что ветка не паникует и отдаёт все пять интерфейсов.
+func TestBuildRepositories_HTTPStorage(t *testing.T) {
+	settingsRepo, chatRepo, calculationRepo, userRepo, accessRequestRepo, cleanup, err := buildRepositories(&config.Config{
+		Storage:      "http",
+		DBServiceURL: "https://db-service.example",
+	})
+	if err != nil {
+		t.Fatalf("buildRepositories: %v", err)
+	}
+	defer cleanup()
+
+	if settingsRepo == nil || chatRepo == nil || calculationRepo == nil {
+		t.Fatalf("тройка репозиториев не собрана для APP_STORAGE=http")
+	}
+	if userRepo == nil || accessRequestRepo == nil {
+		t.Fatalf("репозитории доступа не собраны для APP_STORAGE=http")
+	}
+	if service.NewAccessService(userRepo, accessRequestRepo) == nil {
+		t.Fatalf("AccessService не собирается из репозиториев http storage")
+	}
+
+	// Проверка конкретного типа, а не только non-nil (test review): без неё диспетчерская
+	// ошибка вида "http и postgres перепутаны местами" (или подмена на memory) прошла бы тест
+	// незамеченной — MemoryRepository тоже реализует все пять интерфейсов и тоже не nil.
+	if _, ok := settingsRepo.(*repository.HTTPRepository); !ok {
+		t.Fatalf("APP_STORAGE=http собрал не HTTPRepository, а %T", settingsRepo)
+	}
+}

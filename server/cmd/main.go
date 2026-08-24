@@ -149,6 +149,31 @@ func buildRepositories(cfg *config.Config) (
 				_ = sqlDB.Close()
 			}
 		}, nil
+	case "http":
+		// noProxyTransport: ни metadata-сервис (169.254.169.254), ни db-service никогда не
+		// должны идти через прокси — оба всегда внутри одной сети Yandex Cloud. По умолчанию
+		// http.Client слушается HTTP_PROXY/HTTPS_PROXY из окружения (http.ProxyFromEnvironment);
+		// явное отключение — дешёвая защита в глубину на случай, если эти переменные когда-то
+		// окажутся выставлены по ошибке (security audit, HTTPRepository client).
+		noProxyTransport := &http.Transport{Proxy: nil}
+
+		// Токен берётся с metadata-сервиса Yandex Cloud: тот же самый сервисный аккаунт,
+		// под которым запущена ревизия бэкенда (--service-account-id), — impersonation не
+		// нужен, это не отладочный путь, а штатная авторизация инстанса перед db-service.
+		// Таймаут короткий и свой, отдельный от клиента db-service ниже: metadata — локальный
+		// для инстанса сервис, отвечающий обычно за миллисекунды; при зависшем ответе он не
+		// должен подвешивать запрос дольше, чем реально нужно (code review, security audit —
+		// раньше здесь стоял http.DefaultClient без таймаута вовсе).
+		metadataClient := &http.Client{Timeout: 5 * time.Second, Transport: noProxyTransport}
+		tokens := repository.NewMetadataTokenSource(metadataClient)
+
+		// Таймаут клиента должен покрывать холодный старт db-service (execution-timeout
+		// его ревизии, сейчас 90с — см. память проекта poshivon-backend-migration), иначе
+		// легитимный медленный первый запрос после простоя обрывался бы здесь раньше, чем
+		// на стороне db-service.
+		httpClient := &http.Client{Timeout: 100 * time.Second, Transport: noProxyTransport}
+		repo := repository.NewHTTPRepository(cfg.DBServiceURL, httpClient, tokens)
+		return repo, repo, repo, repo, repo, func() {}, nil
 	default:
 		return nil, nil, nil, nil, nil, nil, fmt.Errorf("неподдерживаемый APP_STORAGE=%q", cfg.Storage)
 	}
