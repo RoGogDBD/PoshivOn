@@ -161,6 +161,13 @@ jobs:
           tags: cr.yandex/${{ env.YC_REGISTRY_ID }}/backend:${{ steps.meta.outputs.tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # docker/build-push-action по умолчанию пушит provenance-атрибуцию (OCI manifest
+          # list с доп. attestation-манифестами поверх обычного образа) — именно на этом
+          # первый реальный прогон CI упал с "Cannot read manifest data" от Yandex Container
+          # Registry: он такой формат не принимает. Отключаем оба флага явно, не полагаясь
+          # на дефолт (sbom по той же причине).
+          provenance: false
+          sbom: false
 
       # SHA-пиннинг для этого action рекомендован security audit (единственный шаг, которому
       # передаётся живой SA-ключ, а не команда, которую пишем и контролируем сами) — не смог
