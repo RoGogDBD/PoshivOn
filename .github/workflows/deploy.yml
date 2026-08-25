@@ -315,3 +315,23 @@ jobs:
               --spec infra/api-gateway.yaml \
               --variables backend_container_id="${{ steps.deploy-backend.outputs.id }}",gateway_sa_id="${{ env.GATEWAY_RUNTIME_SA_ID }}"
           fi
+
+      # Держим только текущую версию образа backend в реестре (retention=1, решение
+      # владельца) — без этого каждый деплой оставляет прежний тег висеть в реестре
+      # бесконечно. Идёт последним шагом, после health-check и обновления шлюза: ничего не
+      # удаляем, пока не подтверждено, что новая ревизия реально работает и шлюз уже
+      # смотрит на неё — если бы чистка шла раньше, откат на предыдущий образ стал бы
+      # невозможен именно в момент, когда он нужнее всего. Только backend — это
+      # единственный репозиторий, которым управляет этот job (db-service пока деплоится
+      # вручную, у его реестра своя, отдельная чистка).
+      - name: Delete old backend images from registry
+        run: |
+          yc container image list --repository-name "${{ env.YC_REGISTRY_ID }}/backend" --format json \
+            | jq -r --arg tag "${{ steps.meta.outputs.tag }}" \
+                '.[] | select((.tags // []) | index($tag) | not) | .id' \
+            | while read -r image_id; do
+                echo "removing old backend image $image_id"
+                # Чистка best-effort: ошибка удаления одного старого образа не должна
+                # валить прогон, который уже успешно задеплоил и проверил новую ревизию.
+                yc container image delete "$image_id" || true
+              done
