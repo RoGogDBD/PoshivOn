@@ -113,7 +113,13 @@ dump_and_upload_once() {
     return 1
   fi
 
-  if ! curl -sS --max-time 60 --request PUT \
+  # --fail обязателен: без него curl завершается кодом 0 на любом полученном HTTP-ответе,
+  # включая 403/404/500 — сама попытка получить ответ уже "успех" с точки зрения curl,
+  # независимо от кода статуса. Без этого флага, найденного при повторном тесте (реальный
+  # 403 AccessDenied на заведомо неверный токен), скрипт писал бы "выгружен успешно" даже
+  # когда объект по факту не сохранился — просроченный/неверный IAM-токен, отозванные права
+  # на бакет и т.п. остались бы незамеченными молча.
+  if ! curl -sS -f --max-time 60 --request PUT \
       --header "Authorization: Bearer ${iam_token}" \
       --upload-file "$dump_path" \
       "https://storage.yandexcloud.net/poshivon-db-dumps/${dump_name}" >/dev/null; then
@@ -129,8 +135,34 @@ dump_and_upload_once() {
 dump_loop() {
   # Первый дамп — сразу после старта, не через 6 часов: инстанс может прожить меньше цикла
   # (редеплой, ручной рестарт), и без этого свежий дамп не появился бы вовсе до первого
-  # полного интервала.
-  dump_and_upload_once || true
+  # полного интервала. Но НЕ раньше, чем сам dbservice подтвердит готовность через
+  # собственный /health: найдено на реальном деплое (лог db-service, Error 1412) — dump_loop
+  # стартует практически одновременно с Go-процессом (exec gosu dbservice-app dbservice на
+  # следующей строке), а тот прогоняет migrations.Run() ДО открытия HTTP-порта; если первый
+  # дамп бьёт по БД в этом окне, --single-transaction ловит конкурентный DDL миграций и
+  # падает на первой же таблице. /health отвечает 200 только после того, как HTTP-сервер
+  # реально поднялся, то есть строго после успешного завершения migrations.Run() (порядок
+  # вызовов в cmd/dbservice/main.go) — самый надёжный локальный сигнал "миграции точно
+  # закончились", без обращения по сети наружу.
+  health_attempt=0
+  health_max_attempts="${DUMP_HEALTH_WAIT_ATTEMPTS:-60}" # 60 × 1с = 60с
+  health_ok=0
+  while ! curl -sS --max-time 2 -o /dev/null "http://127.0.0.1:${PORT:-8081}/health" 2>/dev/null; do
+    health_attempt=$((health_attempt + 1))
+    if [ "$health_attempt" -ge "$health_max_attempts" ]; then
+      echo "db-dump: dbservice не ответил на /health за ${health_max_attempts}с, первый дамп пропущен" >&2
+      break
+    fi
+    sleep 1
+  done
+  if [ "$health_attempt" -lt "$health_max_attempts" ]; then
+    health_ok=1
+  fi
+
+  # Первый дамп выполняется, только если /health реально подтвердил готовность — иначе лог
+  # выше ("первый дамп пропущен") был бы неправдой, а сама попытка почти наверняка повторила
+  # бы ту же гонку с миграциями, ради которой весь этот цикл ожидания и написан.
+  [ "$health_ok" -eq 1 ] && dump_and_upload_once || true
   while true; do
     sleep "${DUMP_INTERVAL_SEC:-21600}"
     dump_and_upload_once || true
