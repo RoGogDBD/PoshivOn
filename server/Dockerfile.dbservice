@@ -24,6 +24,14 @@ FROM mariadb:11.4
 # вообще, и запускать её от root было немотивированным отступлением от практики проекта.
 RUN useradd --system --no-create-home --shell /usr/sbin/nologin dbservice-app
 
+# curl — единственная новая зависимость образа, для периодической выгрузки дампа БД в
+# Object Storage (docker-entrypoint-dbservice.sh): загрузка идёт простым PUT с IAM-токеном
+# с metadata-сервиса (Bearer-заголовок, без подписи AWS SigV4 — см. официальную документацию
+# Yandex Object Storage), поэтому полноценный aws-cli не нужен. gzip уже есть в базовом
+# образе mariadb.
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=builder /app/bin/dbservice /usr/local/bin/dbservice
 COPY docker-entrypoint-dbservice.sh /usr/local/bin/docker-entrypoint-dbservice.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint-dbservice.sh /usr/local/bin/dbservice
