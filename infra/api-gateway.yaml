@@ -34,7 +34,7 @@ x-yc-apigateway:
     # приложения). PUT не добавляем: ни одного PUT-маршрута в handler/http.go нет.
     methods: GET, POST, DELETE, OPTIONS
     allowedHeaders: Content-Type, Authorization
-    allowCredentials: true
+    credentials: true
     maxAge: 3600
   # Глобальный предохранитель от стоимостной амплификации (security audit): в отличие от
   # VPS с фиксированной мощностью, serverless-контейнер за шлюзом тарифицируется по факту
