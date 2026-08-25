@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/RoGogDBD/PoshivOn/internal/auth"
 	backendconfig "github.com/RoGogDBD/PoshivOn/internal/config"
 	"github.com/RoGogDBD/PoshivOn/internal/db"
 	"github.com/RoGogDBD/PoshivOn/internal/dbservice"
@@ -52,12 +53,19 @@ func main() {
 	}
 
 	repo := repository.NewPostgresRepository(gormDB)
+	// auth.Store — тот же прямой SQL-доступ, что и у repo, только для сессий входа (своя
+	// таблица oauth_sessions, отдельная от пятёрки репозиториев выше). При APP_STORAGE=http
+	// у бэкенда нет вообще никакого прямого доступа к БД, поэтому сессии тоже идут через
+	// db-service — найдено на реальном деплое: без этого бэкенд падал на старте, пытаясь
+	// открыть прямое подключение только ради auth.NewStore.
+	sessions := auth.NewStore(sqlDB)
 	mux := dbservice.Routes(dbservice.Deps{
 		Users:        repo,
 		AccessReqs:   repo,
 		Settings:     repo,
 		Chats:        repo,
 		Calculations: repo,
+		Sessions:     sessions,
 	})
 
 	server := &http.Server{

@@ -22,27 +22,36 @@ func main() {
 		log.Fatalf("Ошибка загрузки конфигурации: %v", err)
 	}
 
-	database, err := db.Open(cfg)
-	if err != nil {
-		log.Fatalf("Ошибка подключения к БД: %v", err)
-	}
-	defer database.Close()
-
-	if err := migrations.Run(database); err != nil {
-		log.Fatalf("Ошибка применения миграций: %v", err)
-	}
-
-	settingsRepo, chatRepo, calculationRepo, userRepo, accessRequestRepo, cleanup, err := buildRepositories(cfg)
+	settingsRepo, chatRepo, calculationRepo, userRepo, accessRequestRepo, sessionStore, cleanup, err := buildRepositories(cfg)
 	if err != nil {
 		log.Fatalf("Ошибка инициализации репозитория: %v", err)
 	}
 	defer cleanup()
 
-	store := auth.NewStore(database)
+	// APP_STORAGE=http: buildRepositories уже вернул готовое хранилище сессий поверх
+	// db-service (тот же HTTPRepository, что и пять репозиториев выше) — прямого SQL у
+	// бэкенда в этом режиме нет вообще ни для чего (найдено на реальном деплое: без этого
+	// бэкенд падал на старте, открывая подключение только ради сессий). Любое другое
+	// хранилище по-прежнему держит сессии в той же БД, что и остальные данные — этот путь
+	// не менялся, только стал условным, а не единственным.
+	if sessionStore == nil {
+		database, err := db.Open(cfg)
+		if err != nil {
+			log.Fatalf("Ошибка подключения к БД: %v", err)
+		}
+		defer database.Close()
+
+		if err := migrations.Run(database); err != nil {
+			log.Fatalf("Ошибка применения миграций: %v", err)
+		}
+
+		sessionStore = auth.NewStore(database)
+	}
+
 	// AccessService собирается из тех же конкретных репозиториев, что и всё остальное:
 	// строка users должна появляться при входе по-настоящему, а не в заглушке.
 	accessService := service.NewAccessService(userRepo, accessRequestRepo)
-	authHandler := handler.NewAuthHandler(store, cfg, accessService)
+	authHandler := handler.NewAuthHandler(sessionStore, cfg, accessService)
 
 	costingService := service.NewCostingService(settingsRepo, chatRepo, calculationRepo)
 	deepSeekClient, err := service.NewDeepSeekClient(service.DeepSeekConfig{
@@ -60,7 +69,7 @@ func main() {
 	apiHandler := handler.NewAPIHandler(costingService, deepSeekClient)
 	accessHandler := handler.NewAccessHandler(accessService, cfg.ContactEmail)
 
-	mux := newMux(cfg, authHandler, apiHandler, accessHandler, accessService, handler.StoreSessionResolver(store))
+	mux := newMux(cfg, authHandler, apiHandler, accessHandler, accessService, handler.StoreSessionResolver(sessionStore))
 
 	handlerWithCORS := handler.WithCORS(handler.CORSConfig{
 		AllowedOrigins: splitCSV(cfg.AllowedOrigins),
@@ -123,27 +132,33 @@ func splitCSV(value string) []string {
 // buildRepositories отдаёт все интерфейсы хранилища, которые нужны сервисам. Конкретный
 // репозиторий один и тот же на все пять: и настройки с чатами, и пользователей с заявками
 // обслуживает одна реализация — выбор хранилища от этого не зависит.
+//
+// Шестое возвращаемое значение — handler.SessionStore — nil для memory/postgres/mysql
+// (main() строит его сам поверх той же БД, что и раньше, через auth.NewStore) и заполнено
+// только для http: там это тот же самый *repository.HTTPRepository, что отдан во все пять
+// репозиториев выше, — прямого SQL у бэкенда в этом режиме нет вообще ни для чего.
 func buildRepositories(cfg *config.Config) (
 	service.UserSettingsRepository,
 	service.ChatRepository,
 	service.ChatCalculationRepository,
 	service.UserRepository,
 	service.AccessRequestRepository,
+	handler.SessionStore,
 	func(),
 	error,
 ) {
 	switch strings.ToLower(cfg.Storage) {
 	case "", "memory":
 		repo := repository.NewMemoryRepository()
-		return repo, repo, repo, repo, repo, func() {}, nil
+		return repo, repo, repo, repo, repo, nil, func() {}, nil
 	case "postgres", "mysql", "mariadb":
 		dbConn, err := db.OpenGORM(cfg)
 		if err != nil {
-			return nil, nil, nil, nil, nil, nil, fmt.Errorf("open sql connection: %w", err)
+			return nil, nil, nil, nil, nil, nil, nil, fmt.Errorf("open sql connection: %w", err)
 		}
 
 		repo := repository.NewPostgresRepository(dbConn)
-		return repo, repo, repo, repo, repo, func() {
+		return repo, repo, repo, repo, repo, nil, func() {
 			sqlDB, err := dbConn.DB()
 			if err == nil {
 				_ = sqlDB.Close()
@@ -173,8 +188,8 @@ func buildRepositories(cfg *config.Config) (
 		// на стороне db-service.
 		httpClient := &http.Client{Timeout: 100 * time.Second, Transport: noProxyTransport}
 		repo := repository.NewHTTPRepository(cfg.DBServiceURL, httpClient, tokens)
-		return repo, repo, repo, repo, repo, func() {}, nil
+		return repo, repo, repo, repo, repo, repo, func() {}, nil
 	default:
-		return nil, nil, nil, nil, nil, nil, fmt.Errorf("неподдерживаемый APP_STORAGE=%q", cfg.Storage)
+		return nil, nil, nil, nil, nil, nil, nil, fmt.Errorf("неподдерживаемый APP_STORAGE=%q", cfg.Storage)
 	}
 }

@@ -2,12 +2,15 @@ package dbservice
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/RoGogDBD/PoshivOn/internal/auth"
 	"github.com/RoGogDBD/PoshivOn/internal/service"
 )
 
@@ -378,6 +381,256 @@ func TestListCalculations(t *testing.T) {
 	}
 	if len(got.Items) != 2 {
 		t.Errorf("items = %d, want 2", len(got.Items))
+	}
+}
+
+// --- SessionRepository ---
+
+// Различимые, не соседние по значению времена (test review): проверка ниже должна ловить
+// перепутанные местами AccessExpiresAt/RefreshExpiresAt, а не только их наличие.
+var (
+	testAccessExpiresAt = time.Date(2026, 8, 24, 12, 0, 0, 0, time.UTC)
+	testRefreshExpires  = time.Date(2026, 9, 10, 3, 0, 0, 0, time.UTC)
+	testCreatedAt       = time.Date(2026, 8, 20, 9, 0, 0, 0, time.UTC)
+	testUpdatedAt       = time.Date(2026, 8, 23, 15, 30, 0, 0, time.UTC)
+	testRevokedAt       = time.Date(2026, 8, 24, 18, 0, 0, 0, time.UTC)
+)
+
+func TestCreateSession(t *testing.T) {
+	repo := &fakeSessionRepository{}
+	mux := Routes(newTestDepsWithSessions(&fakeRepository{}, repo))
+
+	refreshTok := "yandex-refresh-tok"
+	login := "ivanov"
+	req := auth.SessionDTO{
+		RefreshTokenHash:   "hash-1",
+		YandexAccessToken:  "access-tok",
+		YandexRefreshToken: &refreshTok,
+		YandexLogin:        &login,
+		// YandexEmail/YandexDisplayName намеренно nil — проверяют обратное направление
+		// nullString(nil): должно дать Valid=false, а не Valid=true с пустой строкой
+		// (test review — раньше проверялась только "указатель есть" сторона).
+		AccessExpiresAt:  testAccessExpiresAt,
+		RefreshExpiresAt: testRefreshExpires,
+	}
+
+	var got auth.CreateSessionResponse
+	rec := postJSON(t, mux, "/rpc/CreateSession", req, &got)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	if got.ID != 42 {
+		t.Errorf("ID = %d, want 42 (из fakeSessionRepository.CreateSession)", got.ID)
+	}
+	if repo.lastCreated.RefreshTokenHash != "hash-1" || repo.lastCreated.YandexAccessToken != "access-tok" {
+		t.Errorf("CreateSession получил %+v, часть значений не дошла", repo.lastCreated)
+	}
+	if !repo.lastCreated.YandexRefreshToken.Valid || repo.lastCreated.YandexRefreshToken.String != refreshTok {
+		t.Errorf("YandexRefreshToken = %+v, ожидался валидный %q", repo.lastCreated.YandexRefreshToken, refreshTok)
+	}
+	if !repo.lastCreated.YandexLogin.Valid || repo.lastCreated.YandexLogin.String != login {
+		t.Errorf("YandexLogin = %+v, ожидался валидный %q", repo.lastCreated.YandexLogin, login)
+	}
+	if repo.lastCreated.YandexEmail.Valid || repo.lastCreated.YandexDisplayName.Valid {
+		t.Errorf("YandexEmail/YandexDisplayName = %+v/%+v, ожидался Valid=false для nil-указателей",
+			repo.lastCreated.YandexEmail, repo.lastCreated.YandexDisplayName)
+	}
+	if !repo.lastCreated.AccessExpiresAt.Equal(testAccessExpiresAt) || !repo.lastCreated.RefreshExpiresAt.Equal(testRefreshExpires) {
+		t.Errorf("AccessExpiresAt/RefreshExpiresAt = %v/%v, ожидались %v/%v",
+			repo.lastCreated.AccessExpiresAt, repo.lastCreated.RefreshExpiresAt, testAccessExpiresAt, testRefreshExpires)
+	}
+}
+
+func TestFindSessionByRefreshHash(t *testing.T) {
+	login, email, displayName, refreshTok := "ivanov", "ivanov@example.com", "Иванов", "yandex-refresh-tok"
+	stored := auth.Session{
+		ID:                 7,
+		RefreshTokenHash:   "hash-7",
+		YandexAccessToken:  "tok-7",
+		YandexRefreshToken: sql.NullString{String: refreshTok, Valid: true},
+		YandexLogin:        sql.NullString{String: login, Valid: true},
+		YandexEmail:        sql.NullString{String: email, Valid: true},
+		YandexDisplayName:  sql.NullString{String: displayName, Valid: true},
+		AccessExpiresAt:    testAccessExpiresAt,
+		RefreshExpiresAt:   testRefreshExpires,
+		RevokedAt:          sql.NullTime{Time: testRevokedAt, Valid: true},
+		CreatedAt:          testCreatedAt,
+		UpdatedAt:          testUpdatedAt,
+	}
+	repo := &fakeSessionRepository{stored: stored}
+	mux := Routes(newTestDepsWithSessions(&fakeRepository{}, repo))
+
+	var got auth.SessionDTO
+	rec := postJSON(t, mux, "/rpc/FindSessionByRefreshHash", auth.RefreshHashPayload{RefreshHash: "hash-7"}, &got)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	if repo.lastRefreshHash != "hash-7" {
+		t.Errorf("FindByRefreshHash вызван с %q, ожидался hash-7", repo.lastRefreshHash)
+	}
+	if got.ID != 7 || got.RefreshTokenHash != "hash-7" {
+		t.Errorf("ответ = %+v, часть значений не дошла", got)
+	}
+	// "Есть значение" направление (test review — раньше проверялось только nil):
+	// stringPtr(Valid sql.NullString) должен дать указатель на реальную строку, не nil.
+	if got.YandexLogin == nil || *got.YandexLogin != login {
+		t.Errorf("YandexLogin = %v, ожидался указатель на %q", got.YandexLogin, login)
+	}
+	if got.YandexEmail == nil || *got.YandexEmail != email {
+		t.Errorf("YandexEmail = %v, ожидался указатель на %q", got.YandexEmail, email)
+	}
+	if got.YandexDisplayName == nil || *got.YandexDisplayName != displayName {
+		t.Errorf("YandexDisplayName = %v, ожидался указатель на %q", got.YandexDisplayName, displayName)
+	}
+	if got.YandexRefreshToken == nil || *got.YandexRefreshToken != refreshTok {
+		t.Errorf("YandexRefreshToken = %v, ожидался указатель на %q", got.YandexRefreshToken, refreshTok)
+	}
+	if !got.AccessExpiresAt.Equal(testAccessExpiresAt) || !got.RefreshExpiresAt.Equal(testRefreshExpires) {
+		t.Errorf("AccessExpiresAt/RefreshExpiresAt = %v/%v, ожидались %v/%v",
+			got.AccessExpiresAt, got.RefreshExpiresAt, testAccessExpiresAt, testRefreshExpires)
+	}
+	if !got.CreatedAt.Equal(testCreatedAt) || !got.UpdatedAt.Equal(testUpdatedAt) {
+		t.Errorf("CreatedAt/UpdatedAt = %v/%v, ожидались %v/%v", got.CreatedAt, got.UpdatedAt, testCreatedAt, testUpdatedAt)
+	}
+	if got.RevokedAt == nil || !got.RevokedAt.Equal(testRevokedAt) {
+		t.Errorf("RevokedAt = %v, ожидался указатель на %v", got.RevokedAt, testRevokedAt)
+	}
+}
+
+// TestFindSessionByRefreshHash_NullFields — обратная сторона предыдущего теста: у stored
+// nullable-поля не заданы (zero-value sql.Null*) — на wire должны прийти как nil, не как
+// указатель на пустую строку/нулевое время.
+func TestFindSessionByRefreshHash_NullFields(t *testing.T) {
+	stored := auth.Session{
+		ID:                7,
+		RefreshTokenHash:  "hash-7",
+		YandexAccessToken: "tok-7",
+		AccessExpiresAt:   testAccessExpiresAt,
+		RefreshExpiresAt:  testRefreshExpires,
+		CreatedAt:         testCreatedAt,
+		UpdatedAt:         testUpdatedAt,
+	}
+	repo := &fakeSessionRepository{stored: stored}
+	mux := Routes(newTestDepsWithSessions(&fakeRepository{}, repo))
+
+	var got auth.SessionDTO
+	rec := postJSON(t, mux, "/rpc/FindSessionByRefreshHash", auth.RefreshHashPayload{RefreshHash: "hash-7"}, &got)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	if got.YandexLogin != nil || got.YandexEmail != nil || got.YandexDisplayName != nil || got.YandexRefreshToken != nil {
+		t.Errorf("nullable-поля = %+v, ожидался nil для невалидных sql.NullString", got)
+	}
+	if got.RevokedAt != nil {
+		t.Errorf("RevokedAt = %v, ожидался nil для невалидного sql.NullTime", got.RevokedAt)
+	}
+}
+
+// TestFindSessionByRefreshHash_NotFound — именно sql.ErrNoRows, как реально возвращает
+// *auth.Store.FindByRefreshHash на пустой результат (row.Scan), а не произвольная ошибка
+// (code review: раньше здесь стояла generic errors.New — не тот случай, который
+// действительно проверяет ветку "сессии нет").
+func TestFindSessionByRefreshHash_NotFound(t *testing.T) {
+	repo := &fakeSessionRepository{err: sql.ErrNoRows}
+	mux := Routes(newTestDepsWithSessions(&fakeRepository{}, repo))
+
+	var errBody map[string]string
+	rec := postJSON(t, mux, "/rpc/FindSessionByRefreshHash", auth.RefreshHashPayload{RefreshHash: "missing"}, nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404; body=%s", rec.Code, rec.Body.String())
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&errBody); err != nil {
+		t.Fatalf("decode error body: %v", err)
+	}
+	if errBody["error"] != "not_found" {
+		t.Errorf("error = %q, want not_found", errBody["error"])
+	}
+}
+
+// TestFindSessionByRefreshHash_InfraError — критическая находка code review: раньше ЛЮБАЯ
+// ошибка (не только sql.ErrNoRows) молча превращалась в 404, маскируя реальный сбой БД под
+// "сессии нет" — у всех залогиненных пользователей разом при обычном сетевом сбое, да ещё
+// без исходного текста ошибки в логе. Настоящий сбой — не sql.ErrNoRows — обязан остаться
+// 500 с непотерянным текстом.
+func TestFindSessionByRefreshHash_InfraError(t *testing.T) {
+	repo := &fakeSessionRepository{err: errors.New("dial tcp: connection refused")}
+	mux := Routes(newTestDepsWithSessions(&fakeRepository{}, repo))
+
+	rec := postJSON(t, mux, "/rpc/FindSessionByRefreshHash", auth.RefreshHashPayload{RefreshHash: "hash-7"}, nil)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500 для инфраструктурной ошибки (не sql.ErrNoRows); body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestUpdateSessionTokens(t *testing.T) {
+	repo := &fakeSessionRepository{}
+	mux := Routes(newTestDepsWithSessions(&fakeRepository{}, repo))
+
+	newRefresh := "new-refresh-tok"
+	req := auth.UpdateSessionTokensPayload{
+		SessionID:        7,
+		RefreshTokenHash: "hash-new",
+		AccessToken:      "access-new",
+		RefreshToken:     &newRefresh,
+		AccessExpiresAt:  testAccessExpiresAt,
+		RefreshExpiresAt: testRefreshExpires,
+	}
+	rec := postJSON(t, mux, "/rpc/UpdateSessionTokens", req, nil)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	if repo.lastSessionID != 7 || repo.lastRefreshHash != "hash-new" || repo.lastAccessToken != "access-new" {
+		t.Errorf("UpdateSessionTokens вызван с session_id=%d hash=%q access=%q, часть значений не дошла",
+			repo.lastSessionID, repo.lastRefreshHash, repo.lastAccessToken)
+	}
+	if repo.lastRefreshToken != newRefresh {
+		t.Errorf("refresh_token = %q, ожидался %q", repo.lastRefreshToken, newRefresh)
+	}
+	// Раздельная, не переставляемая проверка (test review): позиционная перестановка
+	// AccessExpiresAt/RefreshExpiresAt в обработчике осталась бы незамеченной, если бы эти
+	// два поля вообще не попадали в fakeSessionRepository (раньше не попадали).
+	if !repo.lastAccessExpiresAt.Equal(testAccessExpiresAt) {
+		t.Errorf("AccessExpiresAt = %v, ожидался %v (не перепутан с RefreshExpiresAt)", repo.lastAccessExpiresAt, testAccessExpiresAt)
+	}
+	if !repo.lastRefreshExpiresAt.Equal(testRefreshExpires) {
+		t.Errorf("RefreshExpiresAt = %v, ожидался %v (не перепутан с AccessExpiresAt)", repo.lastRefreshExpiresAt, testRefreshExpires)
+	}
+}
+
+func TestRevokeSessionByRefreshHash(t *testing.T) {
+	repo := &fakeSessionRepository{}
+	mux := Routes(newTestDepsWithSessions(&fakeRepository{}, repo))
+
+	rec := postJSON(t, mux, "/rpc/RevokeSessionByRefreshHash", auth.RefreshHashPayload{RefreshHash: "hash-1"}, nil)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	if repo.lastRefreshHash != "hash-1" {
+		t.Errorf("RevokeByRefreshHash вызван с %q, ожидался hash-1", repo.lastRefreshHash)
+	}
+}
+
+func TestRevokeSessionByRefreshHash_NotFound(t *testing.T) {
+	repo := &fakeSessionRepository{err: service.ErrNotFound}
+	mux := Routes(newTestDepsWithSessions(&fakeRepository{}, repo))
+
+	var errBody map[string]string
+	rec := postJSON(t, mux, "/rpc/RevokeSessionByRefreshHash", auth.RefreshHashPayload{RefreshHash: "missing"}, nil)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404; body=%s", rec.Code, rec.Body.String())
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&errBody); err != nil {
+		t.Fatalf("decode error body: %v", err)
+	}
+	if errBody["error"] != "not_found" {
+		t.Errorf("error = %q, want not_found", errBody["error"])
 	}
 }
 

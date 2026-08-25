@@ -2,25 +2,57 @@ package dbservice
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
+	"github.com/RoGogDBD/PoshivOn/internal/auth"
 	"github.com/RoGogDBD/PoshivOn/internal/service"
 )
 
 // Deps — репозитории, которые db-service оборачивает как HTTP. В проде на всех пяти полях
-// один и тот же *repository.PostgresRepository (та же реализация, что сегодня использует
-// бэкенд напрямую, см. server/cmd/main.go, buildRepositories) — раздельные поля нужны
-// только чтобы тесты могли подменить любую комбинацию, не реализуя все пятнадцать методов
-// ради проверки одного эндпоинта.
+// UserRepository..Calculations — один и тот же *repository.PostgresRepository (та же
+// реализация, что сегодня использует бэкенд напрямую, см. server/cmd/main.go,
+// buildRepositories) — раздельные поля нужны только чтобы тесты могли подменить любую
+// комбинацию, не реализуя все методы ради проверки одного эндпоинта.
+//
+// Sessions — отдельный путь: хранилище сессий входа (*auth.Store) исторически не входит в
+// пятёрку репозиториев сервисного слоя, у него свой прямой SQL-доступ (server/internal/
+// auth/store.go). При APP_STORAGE=http бэкенду прямой SQL недоступен вообще ни для чего —
+// поэтому сессии идут через db-service тем же способом, что и остальные данные, а не
+// остаются забытым исключением (найдено на реальном деплое: бэкенд падал на старте, пытаясь
+// открыть прямое подключение к БД только ради сессий).
 type Deps struct {
 	Users        service.UserRepository
 	AccessReqs   service.AccessRequestRepository
 	Settings     service.UserSettingsRepository
 	Chats        service.ChatRepository
 	Calculations service.ChatCalculationRepository
+	Sessions     SessionRepository
 }
+
+// SessionRepository — набор методов, идентичный handler.SessionStore на стороне бэкенда
+// (server/internal/handler/auth.go), определён здесь заново, а не импортирован: db-service
+// не должен зависеть от browser-facing пакета handler. *auth.Store уже реализует его один в
+// один — см. var _ ниже.
+type SessionRepository interface {
+	CreateSession(session *auth.Session) error
+	FindByRefreshHash(refreshHash string) (*auth.Session, error)
+	UpdateSessionTokens(
+		sessionID uint64,
+		refreshHash string,
+		accessToken string,
+		refreshToken sql.NullString,
+		accessExpiresAt time.Time,
+		refreshExpiresAt time.Time,
+	) error
+	RevokeByRefreshHash(refreshHash string) error
+}
+
+var _ SessionRepository = (*auth.Store)(nil)
 
 // Routes собирает HTTP-маршруты db-service: один POST-эндпоинт на метод репозитория, путь
 // /rpc/<MethodName>. Не REST-иерархия ресурсов, а RPC-по-HTTP — единственный вызывающий это
@@ -39,8 +71,8 @@ type Deps struct {
 // нового интеграционного пути и т.п.) — значит терять эти проверки молча.
 func Routes(deps Deps) *http.ServeMux {
 	if deps.Users == nil || deps.AccessReqs == nil || deps.Settings == nil ||
-		deps.Chats == nil || deps.Calculations == nil {
-		panic("dbservice.Routes: Deps содержит nil-поле — все пять репозиториев обязательны")
+		deps.Chats == nil || deps.Calculations == nil || deps.Sessions == nil {
+		panic("dbservice.Routes: Deps содержит nil-поле — все шесть зависимостей обязательны")
 	}
 
 	mux := http.NewServeMux()
@@ -121,6 +153,53 @@ func Routes(deps Deps) *http.ServeMux {
 		items, err := deps.Calculations.ListCalculations(ctx, req.UserID, req.ChatID)
 		return itemsResponse[service.CalculationResult]{Items: items}, err
 	}))
+
+	// --- SessionRepository --- методы *auth.Store не принимают context.Context (сырой
+	// database/sql, не переведён на *Context-варианты) — ctx в замыканиях ниже поэтому не
+	// используется, это не упущение.
+	//
+	// CreateSession и RevokeSessionByRefreshHash — под audited(), тем же принципом, что и
+	// SetAccess/DecideRequest выше: выдача и отзыв сессии входа — такая же security-sensitive
+	// мутация, и без сетевого следа об успехе расследование инцидента (спорный логаут,
+	// подозрительные повторные входы) опиралось бы только на содержимое oauth_sessions,
+	// без операционного контекста (security audit). FindSessionByRefreshHash/
+	// UpdateSessionTokens намеренно не аудируются — они срабатывают на каждый
+	// авторизованный запрос/рефреш, и лог захлебнулся бы шумом (тот же довод, что уже
+	// объясняет отсутствие audited() у ListChats/GetSettings).
+	mux.HandleFunc("POST /rpc/CreateSession", audited("CreateSession", rpc(func(_ context.Context, req auth.SessionDTO) (auth.CreateSessionResponse, error) {
+		session := req.ToSession()
+		if err := deps.Sessions.CreateSession(&session); err != nil {
+			return auth.CreateSessionResponse{}, err
+		}
+		return auth.CreateSessionResponse{ID: session.ID}, nil
+	})))
+	mux.HandleFunc("POST /rpc/FindSessionByRefreshHash", rpc(func(_ context.Context, req auth.RefreshHashPayload) (auth.SessionDTO, error) {
+		session, err := deps.Sessions.FindByRefreshHash(req.RefreshHash)
+		if err != nil {
+			// Различаем "точно нет такой строки" (sql.ErrNoRows от *auth.Store.
+			// FindByRefreshHash — единственное, что оно возвращает на пустой результат) от
+			// любой другой ошибки: раньше здесь любая ошибка молча становилась 404,
+			// маскируя реальный сбой БД под "сессии нет" — сразу у всех залогиненных
+			// пользователей разом при обычном сетевом сбое, да ещё без исходного текста
+			// ошибки в логе (code review — тот же принцип уже соблюдён в
+			// repository/postgres.go для GetUser/GetRequest/GetSettings, здесь просто не
+			// был перенесён при первой версии).
+			if errors.Is(err, sql.ErrNoRows) {
+				return auth.SessionDTO{}, fmt.Errorf("session not found: %w", service.ErrNotFound)
+			}
+			return auth.SessionDTO{}, err
+		}
+		return session.ToDTO(), nil
+	}))
+	mux.HandleFunc("POST /rpc/UpdateSessionTokens", rpc(func(_ context.Context, req auth.UpdateSessionTokensPayload) (emptyResponse, error) {
+		return emptyResponse{}, deps.Sessions.UpdateSessionTokens(
+			req.SessionID, req.RefreshTokenHash, req.AccessToken, auth.NullString(req.RefreshToken),
+			req.AccessExpiresAt, req.RefreshExpiresAt,
+		)
+	}))
+	mux.HandleFunc("POST /rpc/RevokeSessionByRefreshHash", audited("RevokeSessionByRefreshHash", rpc(func(_ context.Context, req auth.RefreshHashPayload) (emptyResponse, error) {
+		return emptyResponse{}, deps.Sessions.RevokeByRefreshHash(req.RefreshHash)
+	})))
 
 	return mux
 }

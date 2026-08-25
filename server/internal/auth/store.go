@@ -4,8 +4,10 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
-	"errors"
+	"fmt"
 	"time"
+
+	"github.com/RoGogDBD/PoshivOn/internal/service"
 )
 
 // Session — строка oauth_sessions. Поля личности (YandexLogin/YandexEmail/YandexDisplayName)
@@ -160,7 +162,10 @@ func (s *Store) RevokeByRefreshHash(refreshHash string) error {
 		return err
 	}
 	if affected == 0 {
-		return errors.New("session not found")
+		// Sentinel, а не голый errors.New (db-service, session RPC): без него classifyError
+		// на границе db-service не отличил бы «сессии уже нет» от реального сбоя записи и
+		// отдал бы 500 вместо 404 — молчаливая деградация без единого сигнала о причине.
+		return fmt.Errorf("session not found: %w", service.ErrNotFound)
 	}
 	return nil
 }

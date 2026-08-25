@@ -3,12 +3,15 @@ package repository
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
+	"github.com/RoGogDBD/PoshivOn/internal/auth"
 	"github.com/RoGogDBD/PoshivOn/internal/service"
 )
 
@@ -257,4 +260,55 @@ func (r *HTTPRepository) ListCalculations(ctx context.Context, userID, chatID st
 		UserID: userID, ChatID: chatID,
 	})
 	return resp.Items, err
+}
+
+// --- handler.SessionStore ------------------------------------------------------------
+//
+// Хранилище сессий входа — отдельный от пяти репозиториев выше путь (своя таблица
+// oauth_sessions, свой прямой SQL-доступ через *auth.Store на стороне db-service), но при
+// APP_STORAGE=http бэкенду прямой SQL недоступен вообще ни для чего, поэтому идёт через
+// db-service тем же HTTPRepository (найдено на реальном деплое — без этого бэкенд падал на
+// старте, пытаясь открыть подключение только ради сессий). Методы без context.Context —
+// зеркало сигнатуры *auth.Store, у которой его никогда не было (сырой database/sql, не
+// *Context-варианты); используем context.Background() для самого HTTP-вызова.
+//
+// Известный разрыв (code review): в отличие от остальных пятнадцати методов, отмену запроса
+// браузером или дедлайн вызывающего сюда не протащить — эти четыре вызова ограничены только
+// общим таймаутом http.Client (100с, cmd/main.go). Чинится только протаскиванием
+// context.Context через handler.SessionStore/SessionFinder и сам *auth.Store — за рамками
+// этой задачи (mirror существующего паттерна, не его расширение).
+
+func (r *HTTPRepository) CreateSession(session *auth.Session) error {
+	resp, err := callRPC[auth.SessionDTO, auth.CreateSessionResponse](context.Background(), r, "CreateSession", session.ToDTO())
+	if err != nil {
+		return err
+	}
+	session.ID = resp.ID
+	return nil
+}
+
+func (r *HTTPRepository) FindByRefreshHash(refreshHash string) (*auth.Session, error) {
+	dto, err := callRPC[auth.RefreshHashPayload, auth.SessionDTO](context.Background(), r, "FindSessionByRefreshHash", auth.RefreshHashPayload{RefreshHash: refreshHash})
+	if err != nil {
+		return nil, err
+	}
+	session := dto.ToSession()
+	return &session, nil
+}
+
+func (r *HTTPRepository) UpdateSessionTokens(sessionID uint64, refreshHash string, accessToken string, refreshToken sql.NullString, accessExpiresAt time.Time, refreshExpiresAt time.Time) error {
+	_, err := callRPC[auth.UpdateSessionTokensPayload, emptyRPCResponse](context.Background(), r, "UpdateSessionTokens", auth.UpdateSessionTokensPayload{
+		SessionID:        sessionID,
+		RefreshTokenHash: refreshHash,
+		AccessToken:      accessToken,
+		RefreshToken:     auth.StringPtr(refreshToken),
+		AccessExpiresAt:  accessExpiresAt,
+		RefreshExpiresAt: refreshExpiresAt,
+	})
+	return err
+}
+
+func (r *HTTPRepository) RevokeByRefreshHash(refreshHash string) error {
+	_, err := callRPC[auth.RefreshHashPayload, emptyRPCResponse](context.Background(), r, "RevokeSessionByRefreshHash", auth.RefreshHashPayload{RefreshHash: refreshHash})
+	return err
 }

@@ -2,6 +2,7 @@ package auth
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/RoGogDBD/PoshivOn/internal/service"
 	_ "github.com/go-sql-driver/mysql"
 )
 
@@ -236,5 +238,48 @@ func TestAuthStore_NullYandexLoginRoundTrips(t *testing.T) {
 	}
 	if found.YandexDisplayName.Valid || found.YandexDisplayName.String != "" {
 		t.Errorf("yandex_display_name = %+v, ожидался пустой NULL", found.YandexDisplayName)
+	}
+}
+
+// TestAuthStore_RevokeByRefreshHash_NotFound — против настоящей MariaDB, не заглушки
+// (code review): в дальнейшем на этой ошибке основан HTTP-статус на границе db-service
+// (dbservice.classifyError, errors.Is(err, service.ErrNotFound) → 404) — до этого теста
+// реальный RowsAffected()==0 код на строке 164-169 store.go проверялся только фейком,
+// который просто возвращал sentinel напрямую, не проходя через настоящий UPDATE.
+func TestAuthStore_RevokeByRefreshHash_NotFound(t *testing.T) {
+	db := openTestDB(t)
+	store := NewStore(db)
+
+	hash := newRefreshHash(t) // ни разу не вставлялась — гарантированно нет такой строки
+
+	err := store.RevokeByRefreshHash(hash)
+	if !errors.Is(err, service.ErrNotFound) {
+		t.Fatalf("err = %v, ожидалась обёртка service.ErrNotFound", err)
+	}
+}
+
+// TestAuthStore_RevokeByRefreshHash_Success — симметрично: реальный UPDATE реальной строки
+// не должен возвращать ErrNotFound.
+func TestAuthStore_RevokeByRefreshHash_Success(t *testing.T) {
+	db := openTestDB(t)
+	store := NewStore(db)
+
+	hash := newRefreshHash(t)
+	cleanupSession(t, db, hash)
+
+	if err := store.CreateSession(newSessionFixture(hash)); err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	if err := store.RevokeByRefreshHash(hash); err != nil {
+		t.Fatalf("RevokeByRefreshHash: %v", err)
+	}
+
+	found, err := store.FindByRefreshHash(hash)
+	if err != nil {
+		t.Fatalf("FindByRefreshHash после revoke: %v", err)
+	}
+	if !found.RevokedAt.Valid {
+		t.Errorf("RevokedAt.Valid = false после успешного RevokeByRefreshHash, ожидался true")
 	}
 }

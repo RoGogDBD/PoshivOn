@@ -224,7 +224,7 @@ func TestNewMux_AccessChainsAreAttached(t *testing.T) {
 }
 
 func TestBuildRepositories_ProvidesAccessRepositories(t *testing.T) {
-	settingsRepo, chatRepo, calculationRepo, userRepo, accessRequestRepo, cleanup, err := buildRepositories(&config.Config{Storage: "memory"})
+	settingsRepo, chatRepo, calculationRepo, userRepo, accessRequestRepo, sessionStore, cleanup, err := buildRepositories(&config.Config{Storage: "memory"})
 	if err != nil {
 		t.Fatalf("buildRepositories: %v", err)
 	}
@@ -239,10 +239,15 @@ func TestBuildRepositories_ProvidesAccessRepositories(t *testing.T) {
 	if service.NewAccessService(userRepo, accessRequestRepo) == nil {
 		t.Fatalf("AccessService не собирается из выданных репозиториев")
 	}
+	// memory (как и postgres/mysql) не даёт готового SessionStore — main() строит его сам
+	// поверх db.Open, ровно как раньше; nil здесь — это сигнал "собери сам", а не пробел.
+	if sessionStore != nil {
+		t.Fatalf("sessionStore = %T, ожидался nil для memory storage", sessionStore)
+	}
 }
 
 func TestBuildRepositories_UnknownStorageFails(t *testing.T) {
-	_, _, _, _, _, _, err := buildRepositories(&config.Config{Storage: "cassandra"})
+	_, _, _, _, _, _, _, err := buildRepositories(&config.Config{Storage: "cassandra"})
 	if err == nil {
 		t.Fatalf("неподдерживаемое хранилище принято без ошибки")
 	}
@@ -250,9 +255,11 @@ func TestBuildRepositories_UnknownStorageFails(t *testing.T) {
 
 // TestBuildRepositories_HTTPStorage — APP_STORAGE=http собирает HTTPRepository без обращения
 // к сети при самой сборке (это ленивый клиент, соединение открывается на первый вызов метода,
-// не здесь) — проверяем только то, что ветка не паникует и отдаёт все пять интерфейсов.
+// не здесь) — проверяем только то, что ветка не паникует и отдаёт все пять интерфейсов плюс
+// готовый SessionStore (найдено на реальном деплое: без него бэкенд падал на старте, пытаясь
+// открыть прямое подключение к БД только ради сессий).
 func TestBuildRepositories_HTTPStorage(t *testing.T) {
-	settingsRepo, chatRepo, calculationRepo, userRepo, accessRequestRepo, cleanup, err := buildRepositories(&config.Config{
+	settingsRepo, chatRepo, calculationRepo, userRepo, accessRequestRepo, sessionStore, cleanup, err := buildRepositories(&config.Config{
 		Storage:      "http",
 		DBServiceURL: "https://db-service.example",
 	})
@@ -270,11 +277,24 @@ func TestBuildRepositories_HTTPStorage(t *testing.T) {
 	if service.NewAccessService(userRepo, accessRequestRepo) == nil {
 		t.Fatalf("AccessService не собирается из репозиториев http storage")
 	}
+	if sessionStore == nil {
+		t.Fatalf("sessionStore = nil для APP_STORAGE=http — бэкенд упал бы на старте без прямого SQL")
+	}
 
 	// Проверка конкретного типа, а не только non-nil (test review): без неё диспетчерская
 	// ошибка вида "http и postgres перепутаны местами" (или подмена на memory) прошла бы тест
 	// незамеченной — MemoryRepository тоже реализует все пять интерфейсов и тоже не nil.
-	if _, ok := settingsRepo.(*repository.HTTPRepository); !ok {
+	settingsHTTPRepo, ok := settingsRepo.(*repository.HTTPRepository)
+	if !ok {
 		t.Fatalf("APP_STORAGE=http собрал не HTTPRepository, а %T", settingsRepo)
+	}
+	sessionHTTPRepo, ok := sessionStore.(*repository.HTTPRepository)
+	if !ok {
+		t.Fatalf("sessionStore = %T, ожидался тот же *repository.HTTPRepository", sessionStore)
+	}
+	// Один и тот же экземпляр, а не два (test review): раздельные HTTPRepository задвоили бы
+	// http.Client/IAMTokenSource и пул соединений без всякой пользы.
+	if sessionHTTPRepo != settingsHTTPRepo {
+		t.Fatalf("sessionStore и settingsRepo — разные экземпляры, ожидался общий *repository.HTTPRepository")
 	}
 }
