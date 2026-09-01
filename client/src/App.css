@@ -2144,3 +2144,584 @@ h1.hero-title span { color: var(--accent); }
   display: grid;
   gap: 6px;
 }
+
+/* ============================================================
+   Demo page (/demo) — витрина отдельной услуги + опрос-виджет.
+   Переиспользует токены/классы выше (.section, .btn, .eyebrow, .footer),
+   всё специфичное для страницы — под префиксом .demo-.
+
+   Оформление намеренно НЕ повторяет синий бренд PoshivOn (референс — фото-лендинги
+   в духе friday/zero-space: полноэкранное фото-hero, плавающая карточка, пилюльные
+   теги, тёмная секция с фичами поверх фото). Переопределяем только CSS-переменные
+   и только внутри .demo-page — общие классы (.btn, .eyebrow и т.д.) продолжают
+   физически ссылаться на var(--accent) и т.п., поэтому смена их значения здесь
+   не задевает основной сайт: там та же переменная по-прежнему резолвится в
+   исходное синее значение из :root.
+   ============================================================ */
+.demo-page {
+  --accent: #016449;
+  --accent-2: #016449;
+  --accent-soft: rgba(1, 100, 73, 0.1);
+  --accent-shadow: 0 16px 30px rgba(1, 100, 73, 0.24);
+  --ink: #000000;
+  --ink-2: #262626;
+  --ink-3: #6b6b6b;
+  --ink-4: #9ca3af;
+  --card: #f2f3f5;
+  --card-solid: #ffffff;
+  --card-soft: #f2f3f5;
+  --border: rgba(0, 0, 0, 0.1);
+  --border-2: rgba(0, 0, 0, 0.08);
+  background: #ffffff;
+  min-height: 100vh;
+}
+/* Пилюльные кнопки — тоже только внутри .demo-page, тем же приёмом. */
+.demo-page .btn { border-radius: 999px; }
+.demo-page .btn:active { transform: scale(0.97); }
+/* "Далее" на multi-шагах опроса неактивен, пока не отмечен ни один вариант — деталь
+   реальной формы (там эти поля обязательные). */
+.demo-page .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.demo-page .btn:disabled:active { transform: none; }
+
+/* ---- Hero: полноэкранное фото, встроенная навигация, плавающая карточка ----
+   Референс: friday-style лендинг (фото на весь экран + крупный заголовок слева +
+   карточка-пример справа). Своей отдельной шапки (.nav-bar) у страницы больше нет —
+   навигация встроена в верх фото-секции, как в референсе. */
+.demo-hero-photo {
+  position: relative;
+  overflow: hidden;
+  min-height: min(880px, 94vh);
+  display: flex;
+  flex-direction: column;
+  padding: 28px 0 40px;
+  color: #ffffff;
+}
+.demo-hero-photo__media {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center 30%;
+}
+.demo-hero-photo__scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(10, 15, 12, 0.5) 0%, rgba(10, 15, 12, 0.1) 32%, rgba(6, 10, 8, 0.55) 100%);
+}
+.demo-hero-photo__nav,
+.demo-hero-photo__body {
+  position: relative;
+  z-index: 1;
+}
+.demo-hero-photo__nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.demo-hero-photo__nav-right { display: flex; align-items: center; gap: 22px; }
+.demo-hero-photo__brand {
+  color: #ffffff;
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.3);
+}
+.demo-hero-photo__brand .brand-dot { color: #7fe6c7; }
+.demo-hero-photo__navlink {
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+  transition: color 0.15s ease;
+}
+.demo-hero-photo__navlink:hover { color: #ffffff; }
+.demo-hero-photo__navcta { height: 40px; padding: 0 20px; font-size: 13px; }
+
+/* Тело hero растягивается на оставшуюся высоту (flex: 1 внутри flex-колонки
+   .demo-hero-photo) — так заголовок держится у верха, а CTA/карточка/теги
+   прижимаются к нижнему краю, как в референсе. */
+.demo-hero-photo__body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  gap: 40px;
+  margin-top: 36px;
+}
+.demo-hero-photo__copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.demo-hero-photo__eyebrow {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+.demo-hero-photo__title {
+  margin-top: 18px;
+  font-weight: 800;
+  font-size: clamp(38px, 5.4vw, 62px);
+  line-height: 1.03;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+}
+.demo-hero-photo__title span { color: #a9f0d6; }
+/* Приглушённая вторая строка заголовка — короткое продолжение фразы меньшим
+   весом/прозрачностью, а не отдельный абзац-подзаголовок. */
+.demo-hero-photo__title-muted {
+  display: inline-block;
+  margin-top: 10px;
+  font-size: clamp(16px, 1.8vw, 21px);
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: rgba(255, 255, 255, 0.55);
+}
+.demo-hero-photo__cta {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.demo-hero-photo__link {
+  font-size: 14px;
+  font-weight: 600;
+  color: #ffffff;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.4);
+  padding-bottom: 2px;
+  transition: border-color 0.15s ease;
+}
+.demo-hero-photo__link:hover { border-color: #ffffff; }
+.demo-hero-photo__caption {
+  margin-top: 14px;
+  max-width: 340px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* Карточка-пример: фото на всю карточку, подпись — тёмная плашка поверх нижнего
+   края фото (не отдельный белый блок под ним), как в референсе. */
+.demo-hero-photo__card-wrap { display: flex; flex-direction: column; gap: 16px; height: 100%; }
+.demo-hero-photo__card {
+  position: relative;
+  flex: 1;
+  min-height: 320px;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.35);
+}
+.demo-hero-photo__card-img {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+}
+.demo-hero-photo__card-bar {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px;
+  background: linear-gradient(180deg, transparent 0%, rgba(6, 10, 8, 0.72) 55%, rgba(6, 10, 8, 0.88) 100%);
+}
+.demo-hero-photo__card-swatch {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  font-size: 16px;
+}
+.demo-hero-photo__card-title { font-weight: 800; color: #ffffff; font-size: 14px; }
+.demo-hero-photo__card-sub { margin-top: 1px; font-size: 12px; color: rgba(255, 255, 255, 0.75); }
+.demo-hero-photo__card-btn {
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  font-size: 12px;
+  font-weight: 700;
+  color: #ffffff;
+  transition: background 0.15s ease;
+}
+.demo-hero-photo__card-btn:hover { background: rgba(255, 255, 255, 0.28); }
+
+.demo-hero-photo__tags { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* ---- Пилюли-теги: базовый (светлый фон) и модификатор для тёмного hero ---- */
+.demo-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--card-soft);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.demo-tag--lg { padding: 12px 18px; font-size: 14px; }
+.demo-tag--on-dark {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.28);
+  color: #ffffff;
+}
+
+/* ---- Liquid glass: настоящее преломление фона (SVG-фильтр demo-glass-filter в
+   Demo.jsx), а не просто полупрозрачная заливка. Фильтр задан в процентах,
+   поэтому один и тот же <filter> растягивается под любой размер/форму элемента —
+   адаптивность уже встроена в саму технику, отдельных медиа-запросов не нужно.
+   Применяется только там, где под элементом реально фото/тёмный фон (иначе
+   преломлять нечего и эффект не виден). ---- */
+.demo-glass-filter-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.demo-glass {
+  position: relative;
+  background: hsl(0 0% 100% / 0.14);
+  -webkit-backdrop-filter: url(#demo-glass-filter) saturate(1.4);
+  backdrop-filter: url(#demo-glass-filter) saturate(1.4);
+  box-shadow:
+    inset 0 0 2px 1px rgba(255, 255, 255, 0.35),
+    inset 0 0 10px 4px rgba(255, 255, 255, 0.15),
+    inset 0 4px 16px rgba(6, 10, 8, 0.06),
+    inset 0 8px 24px rgba(6, 10, 8, 0.06);
+}
+/* Без поддержки backdrop-filter или при "меньше прозрачности" в ОС — плотный
+   матовый фон вместо стекла: читаемость важнее эффекта (apple-design,
+   prefers-reduced-transparency). */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .demo-glass { background: rgba(20, 24, 22, 0.55); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .demo-glass {
+    background: rgba(20, 24, 22, 0.7);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* ---- Intro statement (эйброу + крупный тезис) ---- */
+.demo-intro-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.3fr);
+  gap: 56px;
+  align-items: start;
+}
+.demo-intro-eyebrow {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-3);
+}
+.demo-intro-statement {
+  font-size: clamp(22px, 2.6vw, 30px);
+  line-height: 1.45;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  text-wrap: balance;
+}
+
+/* ---- Фото-галерея категорий (референс: zero-space "Focus Room / Café / …") ---- */
+.demo-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+}
+.demo-gallery-photo {
+  height: 260px;
+  border-radius: var(--radius-lg);
+  background-size: cover;
+  background-position: center;
+}
+.demo-gallery-title {
+  margin-top: 18px;
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.demo-gallery-caption {
+  margin-top: 4px;
+  font-size: 14px;
+  color: var(--ink-3);
+}
+
+/* ---- Полоса открытых цифр без карточек (референс: zero-space "1200 m² / 15+ Zones") ---- */
+.demo-stats { padding: 12px 0 56px; }
+.demo-stats-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 32px;
+  padding-top: 40px;
+  border-top: 1px solid var(--border-2);
+}
+.demo-stat-open { display: flex; flex-direction: column; gap: 6px; }
+.demo-stat-open-num {
+  font-size: clamp(30px, 4vw, 42px);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--ink);
+}
+.demo-stat-open-label { font-size: 14px; color: var(--ink-3); }
+
+/* ---- Audience: строка тегов вместо карточек — легче на фоне соседних фото-блоков ---- */
+.demo-audience-title {
+  font-size: clamp(24px, 2.8vw, 32px);
+  letter-spacing: -0.02em;
+  margin-bottom: 24px;
+}
+.demo-audience-tags { display: flex; flex-wrap: wrap; gap: 10px; }
+
+/* ---- Тёмная секция с фото и плавающими карточками-фичами ---- */
+.demo-feature-band {
+  position: relative;
+  overflow: hidden;
+  padding: 88px 0;
+  color: #ffffff;
+}
+.demo-feature-band__media {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+}
+.demo-feature-band__scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, rgba(6, 10, 8, 0.92) 0%, rgba(6, 10, 8, 0.78) 45%, rgba(6, 10, 8, 0.4) 100%);
+}
+.demo-feature-band__inner {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 56px;
+  align-items: center;
+}
+.demo-feature-band__eyebrow {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+.demo-feature-band__title {
+  margin-top: 16px;
+  font-size: clamp(26px, 3.2vw, 36px);
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+.demo-feature-band__text {
+  margin-top: 16px;
+  font-size: 16px;
+  line-height: 1.65;
+  color: rgba(255, 255, 255, 0.78);
+  max-width: 420px;
+}
+.demo-feature-band__inner .btn { margin-top: 28px; }
+.demo-feature-band__cards { display: grid; gap: 14px; }
+.demo-feature-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 20px 22px;
+  background: rgba(255, 255, 255, 0.96);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25);
+}
+.demo-feature-card__icon { font-size: 22px; line-height: 1; }
+.demo-feature-card__title { font-weight: 800; color: var(--ink); font-size: 15px; }
+.demo-feature-card__desc { margin-top: 4px; font-size: 13px; line-height: 1.5; color: var(--ink-3); }
+
+/* ---- Calculator section ---- */
+.demo-calculator { background: var(--card-soft); }
+.demo-calculator-inner {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 48px;
+  align-items: start;
+}
+.demo-calculator-intro h2 {
+  margin-top: 14px;
+  font-size: clamp(26px, 3vw, 34px);
+  letter-spacing: -0.02em;
+}
+
+/* ---- Quiz widget ---- */
+.demo-quiz { max-width: 560px; }
+.demo-quiz__progress {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--border-2);
+  overflow: hidden;
+  margin-bottom: 24px;
+}
+.demo-quiz__progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent) 0%, var(--accent-2) 100%);
+  border-radius: 999px;
+  transition: width 0.4s var(--ease-soft-spring, ease);
+}
+.demo-quiz__card {
+  background: var(--card-solid);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 32px;
+  box-shadow: var(--shadow-md);
+  animation: fade-rise 0.4s var(--ease-soft-spring, ease);
+}
+.demo-quiz__step-label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+  margin-bottom: 10px;
+}
+.demo-quiz__question {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+.demo-quiz__subtitle {
+  margin-top: 10px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--ink-3);
+}
+.demo-quiz__options {
+  margin-top: 24px;
+  display: grid;
+  gap: 12px;
+}
+.demo-quiz__option {
+  text-align: left;
+  padding: 16px 20px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--card-soft);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.12s ease;
+}
+.demo-quiz__option:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  transform: translateY(-1px);
+}
+.demo-quiz__option:active { transform: scale(0.97); }
+/* Мульти-выбор (виджет реальной анкеты пошива: "какие детали" — можно отметить несколько) —
+   тот же .demo-quiz__option, плюс явное состояние "отмечено", раз тут нет перехода на
+   следующий шаг сразу по клику. */
+.demo-quiz__option.is-selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.demo-quiz__back {
+  margin-top: 18px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-3);
+}
+.demo-quiz__back:hover { color: var(--accent); }
+
+.demo-quiz__result { text-align: left; }
+/* Единственный по-настоящему завершающий момент за сессию (заявка отправлена) —
+   чуть более выразительный вход, чем у рядовых карточек вопросов: soft-pop вместо
+   fade-rise, тот же --ease-soft-spring, готовый keyframe из index.css. */
+.demo-quiz__result--success { animation: var(--animate-soft-pop); }
+.demo-quiz__result-actions {
+  margin-top: 24px;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* Примерная стоимость — единственная цифра, которую виджет вообще показывает, поэтому
+   выделена как отдельный акцентный блок, а не строка текста внутри subtitle. */
+.demo-quiz__price {
+  margin-top: 20px;
+  padding: 20px 24px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  border: 1px solid var(--border);
+  text-align: center;
+}
+.demo-quiz__price-label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-3);
+}
+.demo-quiz__price-value {
+  margin-top: 6px;
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.demo-quiz__price-note {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+
+.demo-quiz__form {
+  margin-top: 24px;
+  display: grid;
+  gap: 12px;
+}
+.demo-quiz__input {
+  height: 50px;
+  padding: 0 18px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--card-soft);
+  font-size: 15px;
+  color: var(--ink);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.demo-quiz__input::placeholder { color: var(--ink-4); }
+.demo-quiz__input:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--card-solid);
+}
+.demo-quiz__submit { margin-top: 4px; width: 100%; }
+.demo-quiz__result > .demo-quiz__back { margin-top: 16px; }
+
+@media (max-width: 980px) {
+  .demo-hero-photo { min-height: 0; }
+  .demo-hero-photo__body { grid-template-columns: 1fr; gap: 36px; }
+  .demo-hero-photo__copy { gap: 36px; }
+  .demo-hero-photo__card { min-height: 280px; }
+  .demo-intro-grid { grid-template-columns: 1fr; gap: 20px; }
+  .demo-gallery-grid { grid-template-columns: repeat(2, 1fr); }
+  .demo-stats-row { grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .demo-feature-band__inner { grid-template-columns: 1fr; }
+  .demo-feature-band__text { max-width: none; }
+  .demo-calculator-inner { grid-template-columns: 1fr; gap: 32px; }
+}
+
+@media (max-width: 600px) {
+  .demo-hero-photo__nav-right { gap: 12px; }
+  .demo-hero-photo__navcta { padding: 0 14px; font-size: 12px; }
+  .demo-gallery-grid { grid-template-columns: 1fr; }
+  .demo-stats-row { grid-template-columns: 1fr; gap: 24px; }
+  .demo-quiz__card { padding: 24px; }
+  .demo-quiz__result-actions { flex-direction: column; }
+  .demo-quiz__result-actions .btn { width: 100%; }
+}

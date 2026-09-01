@@ -15,6 +15,7 @@ import { useAuthModal } from "./hooks/useAuthModal.js";
 import AuthCallback from "./pages/AuthCallback.jsx";
 import Panel from "./pages/Panel.jsx";
 import PrivacyPolicy from "./pages/PrivacyPolicy.jsx";
+import Demo from "./pages/Demo.jsx";
 import CookieConsent from "./components/CookieConsent.jsx";
 import { checkAuthStatus } from "./utils/yandexAuth.js";
 
@@ -27,7 +28,12 @@ function App() {
 
   useEffect(() => {
     const pathname = window.location.pathname;
-    if (pathname.startsWith("/auth") || pathname.startsWith("/panel") || pathname.startsWith("/privacy")) {
+    if (
+      pathname.startsWith("/auth") ||
+      pathname.startsWith("/panel") ||
+      pathname.startsWith("/privacy") ||
+      pathname.startsWith("/demo")
+    ) {
       return;
     }
     checkAuthStatus()
@@ -42,6 +48,8 @@ function App() {
     content = <Panel />;
   } else if (window.location.pathname.startsWith("/privacy")) {
     content = <PrivacyPolicy />;
+  } else if (window.location.pathname.startsWith("/demo")) {
+    content = <Demo />;
   } else {
     content = (
       <div>
@@ -61,12 +69,15 @@ function App() {
     );
   }
 
-  // Уведомление о cookie — на каждом маршруте, а не только на лендинге: обработка данных
-  // Яндекс-логина начинается уже на /panel (в т.ч. при заходе туда напрямую по ссылке).
+  // Уведомление о cookie — на каждом маршруте, где реально идёт обработка Яндекс-логина
+  // (она начинается уже на /panel, в т.ч. при заходе туда напрямую по ссылке), кроме /demo:
+  // это отдельная витринная страница без входа через Яндекс и без auth-cookie, показывать
+  // плашку там нечего обосновывать.
+  const isDemo = window.location.pathname.startsWith("/demo");
   return (
     <>
       {content}
-      <CookieConsent />
+      {!isDemo && <CookieConsent />}
     </>
   );
 }
