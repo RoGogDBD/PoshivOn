@@ -34,12 +34,16 @@ function useCountUp(target, duration = 900) {
 
 // Отдельный компонент — чтобы хук считал именно от 0 при каждом попадании на экран
 // результата (монтируется/размонтируется вместе с ним), а не при каждом ререндере DemoQuiz.
-const PriceEstimate = ({ amount }) => {
-  const animated = useCountUp(amount);
+const PriceEstimate = ({ estimate }) => {
+  const animated = useCountUp(estimate.total);
   return (
     <div className="demo-quiz__price">
-      <div className="demo-quiz__price-label">Примерная стоимость</div>
+      <div className="demo-quiz__price-label">Примерная стоимость партии</div>
       <div className="demo-quiz__price-value">{RUB_FORMAT.format(animated)}</div>
+      <p className="demo-quiz__price-note">
+        {estimate.quantity} шт. × ~{RUB_FORMAT.format(estimate.pricePerUnit)} за изделие
+        {estimate.discountPercent > 0 && ` · скидка за партию ${estimate.discountPercent}%`}
+      </p>
       <p className="demo-quiz__price-note">Ориентир по вашим ответам — точную цену назовём после уточнения деталей.</p>
     </div>
   );
@@ -163,7 +167,7 @@ const DemoQuiz = () => {
           )}
 
           {step.type === "multi" && <MultiStep step={step} onSubmit={handleMultiSubmit} />}
-          {step.type === "number" && <NumberStep onSubmit={handleValueSubmit} />}
+          {step.type === "number" && <NumberStep step={step} onSubmit={handleValueSubmit} />}
           {step.type === "text" && <TextStep onSubmit={handleValueSubmit} />}
 
           {history.length > 1 && (
@@ -182,7 +186,7 @@ const DemoQuiz = () => {
             Осталось оставить контактные данные — и с вами свяжутся, чтобы уточнить детали и
             посчитать точную стоимость.
           </p>
-          <PriceEstimate amount={estimate} />
+          <PriceEstimate estimate={estimate} />
           <form className="demo-quiz__form" onSubmit={handleContactSubmit}>
             <input
               className="demo-quiz__input"
@@ -273,7 +277,7 @@ const MultiStep = ({ step, onSubmit }) => {
   );
 };
 
-const NumberStep = ({ onSubmit }) => {
+const NumberStep = ({ step, onSubmit }) => {
   const [value, setValue] = useState("");
 
   const handleSubmit = (event) => {
@@ -287,8 +291,8 @@ const NumberStep = ({ onSubmit }) => {
         className="demo-quiz__input"
         type="number"
         inputMode="numeric"
-        min="0"
-        placeholder="Количество"
+        min={step.min ?? 0}
+        placeholder={step.placeholder ?? "Количество"}
         required
         value={value}
         onChange={(event) => setValue(event.target.value)}

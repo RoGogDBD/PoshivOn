@@ -74,12 +74,12 @@ export const QUIZ_STEPS = {
       { label: "Валан / баска", value: "flounce", priceModifier: 900 },
       { label: "Другое", value: "other", followUp: "skirt-other-text" },
     ],
-    next: "result",
+    next: "batch-size",
   },
-  "skirt-cut-count": { id: "skirt-cut-count", type: "number", question: "Сколько должно быть разрезов?", next: "result", unitPrice: 350 },
-  "skirt-zip-count": { id: "skirt-zip-count", type: "number", question: "Сколько молний?", next: "result", unitPrice: 400 },
-  "skirt-pocket-count": { id: "skirt-pocket-count", type: "number", question: "Сколько карманов?", next: "result", unitPrice: 300 },
-  "skirt-other-text": { id: "skirt-other-text", type: "text", question: "Что ещё должно быть на юбке?", next: "result", flatSurcharge: 600 },
+  "skirt-cut-count": { id: "skirt-cut-count", type: "number", question: "Сколько должно быть разрезов?", next: "batch-size", unitPrice: 350 },
+  "skirt-zip-count": { id: "skirt-zip-count", type: "number", question: "Сколько молний?", next: "batch-size", unitPrice: 400 },
+  "skirt-pocket-count": { id: "skirt-pocket-count", type: "number", question: "Сколько карманов?", next: "batch-size", unitPrice: 300 },
+  "skirt-other-text": { id: "skirt-other-text", type: "text", question: "Что ещё должно быть на юбке?", next: "batch-size", flatSurcharge: 600 },
 
   // ---- Брюки ----
   "trousers-type": {
@@ -106,9 +106,9 @@ export const QUIZ_STEPS = {
       { label: "Потёртости", value: "distressing", priceModifier: 400 },
       { label: "Другое", value: "other", followUp: "jeans-other-text" },
     ],
-    next: "result",
+    next: "batch-size",
   },
-  "jeans-other-text": { id: "jeans-other-text", type: "text", question: "Что ещё должно быть на джинсах?", next: "result", flatSurcharge: 600 },
+  "jeans-other-text": { id: "jeans-other-text", type: "text", question: "Что ещё должно быть на джинсах?", next: "batch-size", flatSurcharge: 600 },
   "trousers-details-formal": {
     id: "trousers-details-formal",
     type: "multi",
@@ -122,7 +122,7 @@ export const QUIZ_STEPS = {
       { label: "Карман с клапаном", value: "flap-pocket", followUp: "trousers-flap-pocket-count" },
       { label: "Другое", value: "other", followUp: "trousers-other-text" },
     ],
-    next: "result",
+    next: "batch-size",
   },
   "trousers-details-knit": {
     id: "trousers-details-knit",
@@ -137,13 +137,13 @@ export const QUIZ_STEPS = {
       { label: "Карман в шве", value: "side-pocket", followUp: "trousers-side-pocket-count" },
       { label: "Другое", value: "other", followUp: "trousers-other-text" },
     ],
-    next: "result",
+    next: "batch-size",
   },
-  "trousers-side-pocket-count": { id: "trousers-side-pocket-count", type: "number", question: "Сколько должно быть карманов в боковых швах?", next: "result", unitPrice: 250 },
-  "trousers-patch-pocket-count": { id: "trousers-patch-pocket-count", type: "number", question: "Сколько должно быть накладных карманов?", next: "result", unitPrice: 300 },
-  "trousers-framed-pocket-count": { id: "trousers-framed-pocket-count", type: "number", question: "Сколько должно быть карманов в рамку?", next: "result", unitPrice: 450 },
-  "trousers-flap-pocket-count": { id: "trousers-flap-pocket-count", type: "number", question: "Сколько карманов должны иметь клапан?", next: "result", unitPrice: 400 },
-  "trousers-other-text": { id: "trousers-other-text", type: "text", question: "Что ещё должно быть на брюках?", next: "result", flatSurcharge: 600 },
+  "trousers-side-pocket-count": { id: "trousers-side-pocket-count", type: "number", question: "Сколько должно быть карманов в боковых швах?", next: "batch-size", unitPrice: 250 },
+  "trousers-patch-pocket-count": { id: "trousers-patch-pocket-count", type: "number", question: "Сколько должно быть накладных карманов?", next: "batch-size", unitPrice: 300 },
+  "trousers-framed-pocket-count": { id: "trousers-framed-pocket-count", type: "number", question: "Сколько должно быть карманов в рамку?", next: "batch-size", unitPrice: 450 },
+  "trousers-flap-pocket-count": { id: "trousers-flap-pocket-count", type: "number", question: "Сколько карманов должны иметь клапан?", next: "batch-size", unitPrice: 400 },
+  "trousers-other-text": { id: "trousers-other-text", type: "text", question: "Что ещё должно быть на брюках?", next: "batch-size", flatSurcharge: 600 },
 
   // ---- Футболка ----
   "tshirt-type": {
@@ -151,13 +151,13 @@ export const QUIZ_STEPS = {
     type: "single",
     question: "Какой вид футболки?",
     options: [
-      { label: "Простая трикотажная", value: "basic", next: "result", priceModifier: 0 },
+      { label: "Простая трикотажная", value: "basic", next: "batch-size", priceModifier: 0 },
       { label: "Поло", value: "polo", next: "tshirt-collar", priceModifier: 400 },
-      { label: "Текстильная", value: "woven", next: "result", priceModifier: 300 },
+      { label: "Текстильная", value: "woven", next: "batch-size", priceModifier: 300 },
       { label: "Другое", value: "other", next: "tshirt-other-text", priceModifier: 500 },
     ],
   },
-  "tshirt-other-text": { id: "tshirt-other-text", type: "text", question: "Что должно быть на футболке?", next: "result", flatSurcharge: 500 },
+  "tshirt-other-text": { id: "tshirt-other-text", type: "text", question: "Что должно быть на футболке?", next: "batch-size", flatSurcharge: 500 },
   "tshirt-collar": {
     id: "tshirt-collar",
     type: "multi",
@@ -170,9 +170,9 @@ export const QUIZ_STEPS = {
       { label: "Ничего", value: "none", priceModifier: 0 },
       { label: "Другое", value: "other", followUp: "tshirt-collar-other-text" },
     ],
-    next: "result",
+    next: "batch-size",
   },
-  "tshirt-collar-other-text": { id: "tshirt-collar-other-text", type: "text", question: "Что должно быть на футболке?", next: "result", flatSurcharge: 500 },
+  "tshirt-collar-other-text": { id: "tshirt-collar-other-text", type: "text", question: "Что должно быть на футболке?", next: "batch-size", flatSurcharge: 500 },
 
   // ---- Рубашка ----
   "shirt-details": {
@@ -186,11 +186,11 @@ export const QUIZ_STEPS = {
       { label: "Складка / сборка", value: "pleat", priceModifier: 400 },
       { label: "Другое", value: "other", followUp: "shirt-other-text" },
     ],
-    next: "result",
+    next: "batch-size",
   },
-  "shirt-patch-pocket-count": { id: "shirt-patch-pocket-count", type: "number", question: "Сколько должно быть накладных карманов?", next: "result", unitPrice: 300 },
-  "shirt-flap-pocket-count": { id: "shirt-flap-pocket-count", type: "number", question: "Сколько карманов должны иметь клапан?", next: "result", unitPrice: 400 },
-  "shirt-other-text": { id: "shirt-other-text", type: "text", question: "Что ещё должно быть на рубашке?", next: "result", flatSurcharge: 600 },
+  "shirt-patch-pocket-count": { id: "shirt-patch-pocket-count", type: "number", question: "Сколько должно быть накладных карманов?", next: "batch-size", unitPrice: 300 },
+  "shirt-flap-pocket-count": { id: "shirt-flap-pocket-count", type: "number", question: "Сколько карманов должны иметь клапан?", next: "batch-size", unitPrice: 400 },
+  "shirt-other-text": { id: "shirt-other-text", type: "text", question: "Что ещё должно быть на рубашке?", next: "batch-size", flatSurcharge: 600 },
 
   // ---- Пиджак / жакет ----
   "blazer-details": {
@@ -206,12 +206,12 @@ export const QUIZ_STEPS = {
       { label: "Карман с клапаном", value: "flap-pocket", followUp: "blazer-flap-pocket-count" },
       { label: "Другое", value: "other", followUp: "blazer-other-text" },
     ],
-    next: "result",
+    next: "batch-size",
   },
-  "blazer-patch-pocket-count": { id: "blazer-patch-pocket-count", type: "number", question: "Сколько накладных карманов?", next: "result", unitPrice: 350 },
-  "blazer-framed-pocket-count": { id: "blazer-framed-pocket-count", type: "number", question: "Сколько карманов в рамку?", next: "result", unitPrice: 500 },
-  "blazer-flap-pocket-count": { id: "blazer-flap-pocket-count", type: "number", question: "Сколько карманов должно быть с клапаном?", next: "result", unitPrice: 450 },
-  "blazer-other-text": { id: "blazer-other-text", type: "text", question: "Что ещё должно быть на пиджаке/жакете?", next: "result", flatSurcharge: 700 },
+  "blazer-patch-pocket-count": { id: "blazer-patch-pocket-count", type: "number", question: "Сколько накладных карманов?", next: "batch-size", unitPrice: 350 },
+  "blazer-framed-pocket-count": { id: "blazer-framed-pocket-count", type: "number", question: "Сколько карманов в рамку?", next: "batch-size", unitPrice: 500 },
+  "blazer-flap-pocket-count": { id: "blazer-flap-pocket-count", type: "number", question: "Сколько карманов должно быть с клапаном?", next: "batch-size", unitPrice: 450 },
+  "blazer-other-text": { id: "blazer-other-text", type: "text", question: "Что ещё должно быть на пиджаке/жакете?", next: "batch-size", flatSurcharge: 700 },
 
   // ---- Пальто/плащ/тренч и куртка/пуховик — общая ветка (как в реальной форме) ----
   "outerwear-details": {
@@ -228,13 +228,13 @@ export const QUIZ_STEPS = {
       { label: "Карман в боковом шве", value: "side-pocket", followUp: "outerwear-side-pocket-count" },
       { label: "Другое", value: "other", followUp: "outerwear-other-text" },
     ],
-    next: "result",
+    next: "batch-size",
   },
-  "outerwear-patch-pocket-count": { id: "outerwear-patch-pocket-count", type: "number", question: "Сколько должно быть накладных карманов?", next: "result", unitPrice: 350 },
-  "outerwear-framed-pocket-count": { id: "outerwear-framed-pocket-count", type: "number", question: "Сколько должно быть карманов в рамку?", next: "result", unitPrice: 500 },
-  "outerwear-flap-pocket-count": { id: "outerwear-flap-pocket-count", type: "number", question: "Сколько карманов должно быть с клапаном?", next: "result", unitPrice: 450 },
-  "outerwear-side-pocket-count": { id: "outerwear-side-pocket-count", type: "number", question: "Сколько карманов должно быть в боковых швах?", next: "result", unitPrice: 300 },
-  "outerwear-other-text": { id: "outerwear-other-text", type: "text", question: "Что ещё должно быть на изделии?", next: "result", flatSurcharge: 800 },
+  "outerwear-patch-pocket-count": { id: "outerwear-patch-pocket-count", type: "number", question: "Сколько должно быть накладных карманов?", next: "batch-size", unitPrice: 350 },
+  "outerwear-framed-pocket-count": { id: "outerwear-framed-pocket-count", type: "number", question: "Сколько должно быть карманов в рамку?", next: "batch-size", unitPrice: 500 },
+  "outerwear-flap-pocket-count": { id: "outerwear-flap-pocket-count", type: "number", question: "Сколько карманов должно быть с клапаном?", next: "batch-size", unitPrice: 450 },
+  "outerwear-side-pocket-count": { id: "outerwear-side-pocket-count", type: "number", question: "Сколько карманов должно быть в боковых швах?", next: "batch-size", unitPrice: 300 },
+  "outerwear-other-text": { id: "outerwear-other-text", type: "text", question: "Что ещё должно быть на изделии?", next: "batch-size", flatSurcharge: 800 },
 
   // ---- Платье ----
   "dress-length": {
@@ -261,7 +261,7 @@ export const QUIZ_STEPS = {
       { label: "Карман", value: "pocket", followUp: "dress-pocket-type" },
       { label: "Другое", value: "other", followUp: "dress-other-text" },
     ],
-    next: "result",
+    next: "batch-size",
   },
   // Вложенный multi: реальная форма сначала спрашивает категорию "Карман" в общем списке
   // деталей, и только если она выбрана — уточняет вид карманов отдельным шагом. Виджет
@@ -277,33 +277,86 @@ export const QUIZ_STEPS = {
       { label: "С клапаном", value: "flap", followUp: "dress-flap-pocket-count" },
       { label: "В боковых швах", value: "side", followUp: "dress-side-pocket-count" },
     ],
+    next: "batch-size",
+  },
+  "dress-patch-pocket-count": { id: "dress-patch-pocket-count", type: "number", question: "Сколько должно быть накладных карманов?", next: "batch-size", unitPrice: 300 },
+  "dress-framed-pocket-count": { id: "dress-framed-pocket-count", type: "number", question: "Сколько должно быть карманов в рамку?", next: "batch-size", unitPrice: 450 },
+  "dress-flap-pocket-count": { id: "dress-flap-pocket-count", type: "number", question: "Сколько карманов должно быть с клапаном?", next: "batch-size", unitPrice: 400 },
+  "dress-side-pocket-count": { id: "dress-side-pocket-count", type: "number", question: "Сколько должно быть карманов в боковых швах?", next: "batch-size", unitPrice: 250 },
+  "dress-other-text": { id: "dress-other-text", type: "text", question: "Что ещё должно быть у платья?", next: "batch-size", flatSurcharge: 600 },
+
+  // ---- Общий финальный шаг для всех веток: размер партии ----
+  // Все ветки сходятся сюда перед результатом. isQuantity — это не счётчик деталей с
+  // unitPrice, а множитель всего заказа: calculateEstimate не суммирует его, а умножает на
+  // него цену одного изделия и применяет скидку за партию (BATCH_DISCOUNTS ниже).
+  "batch-size": {
+    id: "batch-size",
+    type: "number",
+    question: "Какой размер партии?",
+    subtitle: "Сколько одинаковых изделий нужно отшить. С ростом партии цена за штуку снижается.",
+    placeholder: "Штук в партии",
+    min: 1,
+    isQuantity: true,
     next: "result",
   },
-  "dress-patch-pocket-count": { id: "dress-patch-pocket-count", type: "number", question: "Сколько должно быть накладных карманов?", next: "result", unitPrice: 300 },
-  "dress-framed-pocket-count": { id: "dress-framed-pocket-count", type: "number", question: "Сколько должно быть карманов в рамку?", next: "result", unitPrice: 450 },
-  "dress-flap-pocket-count": { id: "dress-flap-pocket-count", type: "number", question: "Сколько карманов должно быть с клапаном?", next: "result", unitPrice: 400 },
-  "dress-side-pocket-count": { id: "dress-side-pocket-count", type: "number", question: "Сколько должно быть карманов в боковых швах?", next: "result", unitPrice: 250 },
-  "dress-other-text": { id: "dress-other-text", type: "text", question: "Что ещё должно быть у платья?", next: "result", flatSurcharge: 600 },
 };
+
+// Скидки за партию — те же диапазоны, что и дефолтные правила производства на основном
+// сайте (DefaultUserSettings().BatchDiscounts в server/internal/service/costing.go), чтобы
+// демо и панель считали партию одинаково. Меняете там — поменяйте и здесь.
+export const BATCH_DISCOUNTS = [
+  { minQty: 1, maxQty: 10, percent: 0 },
+  { minQty: 11, maxQty: 50, percent: 5 },
+  { minQty: 51, maxQty: 100, percent: 10 },
+  { minQty: 101, maxQty: 1000000, percent: 12 },
+];
+
+// Аналог pickDiscount из costing.go: из подходящих диапазонов берём максимальный процент.
+export function pickBatchDiscount(quantity) {
+  let percent = 0;
+  for (const tier of BATCH_DISCOUNTS) {
+    if (quantity >= tier.minQty && quantity <= tier.maxQty && tier.percent >= percent) {
+      percent = tier.percent;
+    }
+  }
+  return percent;
+}
 
 // Сумма ответов, а не отдельная параллельная модель: идём по всем данным ответам, для
 // каждого смотрим тип его шага и складываем ту наценку, что там определена (см. комментарий
-// про priceModifier/unitPrice/flatSurcharge вверху файла). Округляем до сотни — это оценка
-// "на глаз", а не точный расчёт, для точного нужны контакты (см. DemoQuiz.jsx).
+// про priceModifier/unitPrice/flatSurcharge вверху файла) — это цена одного изделия. Затем,
+// как в costing.go: subtotal = цена × партия, скидка по BATCH_DISCOUNTS от subtotal,
+// итог = subtotal − скидка. Округляем до сотни — это оценка "на глаз", а не точный расчёт,
+// для точного нужны контакты (см. DemoQuiz.jsx).
 export function calculateEstimate(answers) {
-  let total = 0;
+  let unitPrice = 0;
+  let quantity = 1;
   for (const [stepId, answer] of Object.entries(answers)) {
     const step = QUIZ_STEPS[stepId];
     if (!step || answer == null) continue;
-    if (step.type === "single") {
-      total += answer.priceModifier ?? 0;
+    if (step.isQuantity) {
+      quantity = Math.max(1, Math.floor(Number(answer) || 1));
+    } else if (step.type === "single") {
+      unitPrice += answer.priceModifier ?? 0;
     } else if (step.type === "multi") {
-      for (const option of answer) total += option.priceModifier ?? 0;
+      for (const option of answer) unitPrice += option.priceModifier ?? 0;
     } else if (step.type === "number") {
-      total += (Number(answer) || 0) * (step.unitPrice ?? 0);
+      unitPrice += (Number(answer) || 0) * (step.unitPrice ?? 0);
     } else if (step.type === "text") {
-      total += step.flatSurcharge ?? 0;
+      unitPrice += step.flatSurcharge ?? 0;
     }
   }
-  return Math.max(0, Math.round(total / 100) * 100);
+  unitPrice = Math.max(0, unitPrice);
+
+  const subtotal = unitPrice * quantity;
+  const discountPercent = pickBatchDiscount(quantity);
+  const total = Math.max(0, Math.round((subtotal * (100 - discountPercent)) / 100 / 100) * 100);
+  return {
+    quantity,
+    discountPercent,
+    pricePerUnit: Math.round(total / quantity),
+    subtotal,
+    discountAmount: Math.max(0, subtotal - total),
+    total,
+  };
 }
